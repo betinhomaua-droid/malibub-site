@@ -191,18 +191,17 @@ def result_pdf(eid):
   try:
    bg=Image(str(model_path)); bg._restrictSize(170*mm,48*mm); story += [bg,Spacer(1,4*mm)]
   except Exception: pass
- if not story: story=[Paragraph("MALIBUB",title),Paragraph("Imaginologia Odontológica",ParagraphStyle("s",parent=styles["Normal"],alignment=TA_CENTER,textColor=teal,fontSize=10)),Spacer(1,6*mm)]
+ if not story and not has_pdf_model: story=[Paragraph("MALIBUB",title),Paragraph("Imaginologia Odontológica",ParagraphStyle("s",parent=styles["Normal"],alignment=TA_CENTER,textColor=teal,fontSize=10)),Spacer(1,6*mm)]
  if not has_pdf_model:
   data=[["Protocolo",escape(e.protocol or "")],["Paciente",escape(e.patient or "")],["Exame",escape(e.exam_type or "")],["Dentista solicitante",escape(e.dentist or "")],["Data do exame",escape(e.exam_date or "")]]
   t=Table(data,colWidths=[42*mm,120*mm]); t.setStyle(TableStyle([("GRID",(0,0),(-1,-1),.4,colors.HexColor("#DCE8EC")),("BACKGROUND",(0,0),(0,-1),colors.HexColor("#F1F6F7")),("FONTNAME",(0,0),(0,-1),"Helvetica-Bold"),("FONTSIZE",(0,0),(-1,-1),9),("PADDING",(0,0),(-1,-1),6)])); story += [t,Spacer(1,7*mm),Paragraph("LAUDO RADIOLÓGICO",ParagraphStyle("h",parent=title,alignment=0,fontSize=12,textColor=navy)),Spacer(1,2*mm)]
- else:
-  story += [Paragraph("LAUDO RADIOLÓGICO",ParagraphStyle("h",parent=title,alignment=0,fontSize=11,textColor=navy)),Spacer(1,2*mm)]
- for line in (e.report or "").splitlines(): story.append(Paragraph(escape(line) or "&nbsp;",body))
+ if not has_pdf_model:
+  for line in (e.report or "").splitlines(): story.append(Paragraph(escape(line) or "&nbsp;",body))
  signer=escape(e.signed_by or "Dra. Marina"); signed=e.signed_at.strftime("%d/%m/%Y %H:%M") if e.signed_at else (e.released_at.strftime("%d/%m/%Y %H:%M") if e.released_at else "")
  if not has_pdf_model:
   story += [Spacer(1,12*mm),Table([[""]],colWidths=[70*mm],style=TableStyle([("LINEABOVE",(0,0),(-1,-1),.6,navy)])),Paragraph(f"<b>{signer}</b>",ParagraphStyle("sig",parent=body,alignment=TA_CENTER,textColor=navy)),Paragraph("Radiologista responsável",ParagraphStyle("sig2",parent=styles["Normal"],alignment=TA_CENTER,fontSize=8,textColor=colors.HexColor("#657F89"))),Spacer(1,3*mm),Paragraph(f"Assinado eletronicamente em {escape(signed)}",ParagraphStyle("f",parent=styles["Normal"],fontSize=8,textColor=colors.HexColor("#657F89"))),Paragraph(f"Validação MALIBUB · Protocolo {escape(e.protocol or '')}",ParagraphStyle("f3",parent=styles["Normal"],fontSize=7.5,textColor=colors.HexColor("#657F89"))),Spacer(1,2*mm),Paragraph((escape(clinic.name)+" · MALIBUB Imaginologia Odontológica") if clinic else "MALIBUB Imaginologia Odontológica",ParagraphStyle("f2",parent=styles["Normal"],fontSize=8,textColor=gold))]
  else:
-  story += [Spacer(1,6*mm),Paragraph(f"Assinado eletronicamente por <b>{signer}</b> em {escape(signed)} · Protocolo {escape(e.protocol or '')}",ParagraphStyle("f",parent=styles["Normal"],fontSize=7.5,textColor=colors.HexColor("#657F89")))]
+  story += [Spacer(1,6*mm),Paragraph(f"Assinado digitalmente por <b>{signer}</b><br/>Data: {escape(signed)} · Protocolo {escape(e.protocol or '')}",ParagraphStyle("f",parent=styles["Normal"],alignment=TA_CENTER,fontSize=8,textColor=colors.HexColor("#26383D")))]
  doc.build(story); buf.seek(0)
  # Quando a clínica cadastrou um PDF timbrado, use a primeira página como fundo
  # e sobreponha o laudo gerado, preservando a identidade visual da clínica.
