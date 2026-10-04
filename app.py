@@ -21,7 +21,7 @@ def assets(filename):
  return send_from_directory(Path(app.root_path)/"assets", filename)
 
 class User(db.Model):
- id=db.Column(db.Integer,primary_key=True); name=db.Column(db.String(100)); email=db.Column(db.String(120),unique=True); password=db.Column(db.String(255)); role=db.Column(db.String(30)); report_model=db.Column(db.String(255)); report_model_name=db.Column(db.String(255))
+ id=db.Column(db.Integer,primary_key=True); name=db.Column(db.String(100)); email=db.Column(db.String(120),unique=True); password=db.Column(db.String(255)); role=db.Column(db.String(30)); report_model=db.Column(db.String(255)); report_model_name=db.Column(db.String(255)); report_top_mm=db.Column(db.Integer,default=72); report_bottom_mm=db.Column(db.Integer,default=42)
 class Exam(db.Model):
  id=db.Column(db.Integer,primary_key=True); protocol=db.Column(db.String(30),unique=True); patient=db.Column(db.String(120)); sex=db.Column(db.String(20)); birth=db.Column(db.String(20)); dentist=db.Column(db.String(120)); exam_date=db.Column(db.String(20)); exam_type=db.Column(db.String(100)); observation=db.Column(db.String(500)); status=db.Column(db.String(50),default="Enviado"); clinic_id=db.Column(db.Integer); due_at=db.Column(db.DateTime); report=db.Column(db.Text,default=""); released_at=db.Column(db.DateTime); signed_by=db.Column(db.String(120)); signed_at=db.Column(db.DateTime); created_at=db.Column(db.DateTime,default=datetime.utcnow)
 class ExamFile(db.Model):
@@ -98,6 +98,10 @@ def report_model():
  if session.get("role")!="Clinica": return redirect("/dashboard")
  u=User.query.get_or_404(session["uid"])
  if request.method=="POST":
+  try:
+   u.report_top_mm=max(20,min(120,int(request.form.get("report_top_mm",u.report_top_mm or 72))))
+   u.report_bottom_mm=max(15,min(100,int(request.form.get("report_bottom_mm",u.report_bottom_mm or 42))))
+  except Exception: pass
   file=request.files.get("report_model")
   if file and file.filename:
    name=secure_filename(file.filename); ext=Path(name).suffix.lower()
@@ -106,7 +110,7 @@ def report_model():
    u.report_model=stored; u.report_model_name=name; db.session.commit(); flash("Modelo personalizado da clínica salvo.")
   return redirect("/modelo-laudo")
  current=(f"<p><b>Modelo atual:</b> {u.report_model_name}</p><a class='btn' href='/modelo-laudo/arquivo' target='_blank'>Visualizar modelo</a>" if u.report_model else "<div class='notice'>Nenhum modelo personalizado cadastrado.</div>")
- body=f"""<h1>Modelo de laudo da clínica</h1><div class='card'><p>Envie a página/modelo personalizado que deverá servir de referência para os laudos desta clínica.</p>{current}<form method='post' enctype='multipart/form-data'><label>Modelo personalizado (PDF, JPG ou PNG)<input type='file' name='report_model' accept='.pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png' required></label><button class='gold' type='submit'>Salvar modelo da clínica</button></form></div>"""
+ body=f"""<h1>Modelo de laudo da clínica</h1><div class='card'><p>Envie a página/modelo personalizado que deverá servir de referência para os laudos desta clínica.</p>{current}<form method='post' enctype='multipart/form-data'><label>Modelo personalizado (PDF, JPG ou PNG)<input type='file' name='report_model' accept='.pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png'></label><div class='grid'><label>Margem superior do conteúdo (mm)<input type='number' name='report_top_mm' min='20' max='120' value='{u.report_top_mm or 72}'></label><label>Margem inferior (mm)<input type='number' name='report_bottom_mm' min='15' max='100' value='{u.report_bottom_mm or 42}'></label></div><p class='muted'>Ajuste estes valores quando o papel timbrado tiver cabeçalho ou rodapé maiores.</p><button class='gold' type='submit'>Salvar modelo e posicionamento</button></form></div>"""
  return page(body)
 
 @app.route("/modelo-laudo/arquivo")
@@ -177,7 +181,7 @@ def result_pdf(eid):
  from reportlab.lib.units import mm
  from xml.sax.saxutils import escape
  buf=io.BytesIO(); clinic=User.query.get(e.clinic_id); has_pdf_model=bool(clinic and clinic.report_model and Path(clinic.report_model).suffix.lower()==".pdf")
- doc=SimpleDocTemplate(buf,pagesize=A4,rightMargin=22*mm,leftMargin=22*mm,topMargin=(72*mm if has_pdf_model else 16*mm),bottomMargin=(42*mm if has_pdf_model else 18*mm),title=f"{e.protocol} - Laudo MALIBUB",author="MALIBUB Imaginologia Odontológica")
+ doc=SimpleDocTemplate(buf,pagesize=A4,rightMargin=22*mm,leftMargin=22*mm,topMargin=((clinic.report_top_mm or 72)*mm if has_pdf_model else 16*mm),bottomMargin=((clinic.report_bottom_mm or 42)*mm if has_pdf_model else 18*mm),title=f"{e.protocol} - Laudo MALIBUB",author="MALIBUB Imaginologia Odontológica")
  styles=getSampleStyleSheet(); navy=colors.HexColor("#06394C"); teal=colors.HexColor("#087B9B"); gold=colors.HexColor("#C99B3B")
  title=ParagraphStyle("t",parent=styles["Heading1"],alignment=TA_CENTER,textColor=navy,fontSize=16,leading=20); body=ParagraphStyle("b",parent=styles["BodyText"],fontSize=10,leading=15,textColor=colors.HexColor("#26383D"))
  story=[]
