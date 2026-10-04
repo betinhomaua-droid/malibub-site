@@ -1,4 +1,4 @@
-from flask import Flask, request, redirect, url_for, session, flash, render_template_string
+from flask import Flask, request, redirect, url_for, session, flash, render_template_string, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -13,6 +13,10 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"]=False
 app.config["MAX_CONTENT_LENGTH"]=200*1024*1024
 db=SQLAlchemy(app)
 UPLOAD=Path(app.instance_path)/"uploads"; UPLOAD.mkdir(parents=True,exist_ok=True)
+
+@app.route("/assets/<path:filename>")
+def assets(filename):
+ return send_from_directory(Path(app.root_path)/"assets", filename)
 
 class User(db.Model):
  id=db.Column(db.Integer,primary_key=True); name=db.Column(db.String(100)); email=db.Column(db.String(120),unique=True); password=db.Column(db.String(255)); role=db.Column(db.String(30))
