@@ -201,7 +201,9 @@ def result_pdf(eid):
  if not has_pdf_model:
   story += [Spacer(1,12*mm),Table([[""]],colWidths=[70*mm],style=TableStyle([("LINEABOVE",(0,0),(-1,-1),.6,navy)])),Paragraph(f"<b>{signer}</b>",ParagraphStyle("sig",parent=body,alignment=TA_CENTER,textColor=navy)),Paragraph("Radiologista responsável",ParagraphStyle("sig2",parent=styles["Normal"],alignment=TA_CENTER,fontSize=8,textColor=colors.HexColor("#657F89"))),Spacer(1,3*mm),Paragraph(f"Assinado eletronicamente em {escape(signed)}",ParagraphStyle("f",parent=styles["Normal"],fontSize=8,textColor=colors.HexColor("#657F89"))),Paragraph(f"Validação MALIBUB · Protocolo {escape(e.protocol or '')}",ParagraphStyle("f3",parent=styles["Normal"],fontSize=7.5,textColor=colors.HexColor("#657F89"))),Spacer(1,2*mm),Paragraph((escape(clinic.name)+" · MALIBUB Imaginologia Odontológica") if clinic else "MALIBUB Imaginologia Odontológica",ParagraphStyle("f2",parent=styles["Normal"],fontSize=8,textColor=gold))]
  else:
-  story += [Spacer(1,6*mm),Paragraph(f"Assinado digitalmente por <b>{signer}</b><br/>Data: {escape(signed)} · Protocolo {escape(e.protocol or '')}",ParagraphStyle("f",parent=styles["Normal"],alignment=TA_CENTER,fontSize=8,textColor=colors.HexColor("#26383D")))]
+  # No modelo personalizado, a confirmação da assinatura é aplicada depois,
+  # como rodapé fixo em todas as páginas do PDF final.
+  pass
  doc.build(story); buf.seek(0)
  # Quando a clínica cadastrou um PDF timbrado, use a primeira página como fundo
  # e sobreponha o laudo gerado, preservando a identidade visual da clínica.
@@ -217,7 +219,17 @@ def result_pdf(eid):
      base_page=base_reader.pages[0]
     base_page.merge_page(overlay_page)
     writer.add_page(base_page)
-   merged=io.BytesIO(); writer.write(merged); merged.seek(0); buf=merged
+   # Rodapé fixo de confirmação da assinatura digital em todas as páginas.
+   from reportlab.pdfgen import canvas
+   footer_buf=io.BytesIO(); cv=canvas.Canvas(footer_buf,pagesize=A4)
+   cv.setFont("Helvetica",7.5); cv.setFillColor(colors.HexColor("#52666E"))
+   cv.drawCentredString(A4[0]/2,10*mm,f"Assinado digitalmente por {e.signed_by or 'Dra. Marina'}")
+   cv.drawCentredString(A4[0]/2,6.5*mm,f"Data: {signed} · Protocolo {e.protocol or ''}")
+   cv.save(); footer_buf.seek(0); footer_page=PdfReader(footer_buf).pages[0]
+   final_writer=PdfWriter()
+   for page in writer.pages:
+    page.merge_page(footer_page); final_writer.add_page(page)
+   merged=io.BytesIO(); final_writer.write(merged); merged.seek(0); buf=merged
   except Exception:
    buf.seek(0)
  return send_file(buf,mimetype="application/pdf",as_attachment=True,download_name=f"{e.protocol}_laudo.pdf")
