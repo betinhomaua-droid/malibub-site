@@ -204,7 +204,9 @@ def result_pdf(eid):
   # No modelo personalizado, a confirmação da assinatura é aplicada depois,
   # como rodapé fixo em todas as páginas do PDF final.
   pass
- if not has_pdf_model:\n  doc.build(story); buf.seek(0)
+ if not has_pdf_model:
+  doc.build(story)
+  buf.seek(0)
  # Quando a clínica cadastrou um PDF timbrado, preserve o PDF original inteiro
  # e acrescente somente a confirmação da assinatura no rodapé.
  if model_path and model_path.exists() and model_path.suffix.lower()==".pdf":
