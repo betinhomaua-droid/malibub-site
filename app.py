@@ -166,7 +166,12 @@ def result_pdf(eid):
 def result(eid):
  if not session.get("uid"): return redirect("/")
  e=Exam.query.get_or_404(eid)
- body=f'''<h1>Resultado — {e.protocol}</h1><div class="card"><div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap"><div><h2 style="margin:0 0 6px">{e.patient}</h2><div class="muted">{e.exam_type} · {e.dentist or 'Dentista não informado'}</div></div><span class="badge">{e.status}</span></div><hr><h3>Laudo radiológico</h3><div style="white-space:pre-wrap;min-height:280px;line-height:1.6">{e.report or 'Laudo não informado.'}</div><hr><a class="btn gold" href="/result/{e.id}/pdf">Baixar laudo em PDF</a><button onclick="window.print()">Imprimir</button></div>'''
+ if session.get("role")=="Clinica" and e.clinic_id!=session.get("uid"): return redirect("/dashboard")
+ if e.status!="Liberado": return redirect("/dashboard")
+ ready=ExamFile.query.filter_by(exam_id=e.id,kind="exame_pronto").all()
+ ready_html="".join((f"<div class='exam-file'><div class='filebar'><b>{f.name}</b><a class='btn' href='/exam-file/{f.id}' target='_blank'>Abrir</a><a class='btn gold' href='/exam-file/{f.id}?download=1'>Baixar</a></div>" + (f"<img src='/exam-file/{f.id}' alt='{f.name}'>" if f.name.lower().endswith(('.jpg','.jpeg')) else f"<iframe src='/exam-file/{f.id}' title='{f.name}'></iframe>") + "</div>") for f in ready)
+ signed=(e.signed_at.strftime("%d/%m/%Y %H:%M") if e.signed_at else "")
+ body=f'''<h1>Resultado — {e.protocol}</h1><div class="card"><div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap"><div><h2 style="margin:0 0 6px">{e.patient}</h2><div class="muted">{e.exam_type} · {e.dentist or 'Dentista não informado'}</div></div><span class="badge">{e.status}</span></div><hr><h3>Laudo radiológico</h3><div style="white-space:pre-wrap;min-height:220px;line-height:1.6">{e.report or 'Laudo não informado.'}</div><div style="margin-top:22px;padding-top:16px;border-top:1px solid #dce8ec"><b>{e.signed_by or 'Dra. Marina'}</b><br><span class="muted">Radiologista responsável · Assinado eletronicamente {signed}</span></div><hr><a class="btn gold" href="/result/{e.id}/pdf">Baixar laudo assinado em PDF</a><button onclick="window.print()">Imprimir</button></div><section class="card viewer"><h2>Exame pronto / Templates</h2><p class="muted">Arquivos finais disponibilizados pela radiologista.</p>{ready_html or '<div class="notice">Nenhum arquivo final foi anexado.</div>'}</section>'''
  return page(body)
 
 @app.route("/finance",methods=["GET","POST"])
