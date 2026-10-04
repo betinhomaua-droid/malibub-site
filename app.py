@@ -1,16 +1,18 @@
-from flask import Flask, request, redirect, url_for, session, flash, render_template_string, send_from_directory
+from flask import Flask, request, redirect, url_for, session, flash, render_template_string, send_from_directory, send_file
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from datetime import datetime, timedelta
 from pathlib import Path
-import os, uuid
+import os, uuid, io
 
 app=Flask(__name__)
 app.config["SECRET_KEY"]=os.getenv("SECRET_KEY","malibub-homologacao")
 app.config["SQLALCHEMY_DATABASE_URI"]=os.getenv("DATABASE_URL","sqlite:///malibub.db")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"]=False
 app.config["MAX_CONTENT_LENGTH"]=200*1024*1024
+app.config["SESSION_COOKIE_HTTPONLY"]=True
+app.config["SESSION_COOKIE_SAMESITE"]="Lax"
 db=SQLAlchemy(app)
 UPLOAD=Path(app.instance_path)/"uploads"; UPLOAD.mkdir(parents=True,exist_ok=True)
 
@@ -114,11 +116,35 @@ def report(eid):
  body=f'''<h1>Ambiente da Radiologista — {e.protocol}</h1><div class="card"><b>{e.patient}</b> · {e.exam_type}<br><span class="muted">{e.observation or 'Sem observação clínica.'}</span></div><div class="workspace"><section class="card viewer"><h2>Imagens / arquivos</h2>{imgs or 'Nenhum anexo.'}</section><section class="card editor"><h2>Laudo escrito</h2><form method="post"><textarea name="report" placeholder="Digite o laudo..." required>{e.report or ''}</textarea><label>Valor do laudo (R$)<input type="number" step="0.01" name="amount" value="0"></label><div class="editor-actions"><button type="button" onclick="localStorage.setItem('malibub_draft_{e.id}',document.querySelector('[name=report]').value);this.textContent='Rascunho salvo ✓'">Salvar rascunho</button><button class="gold" type="submit">Finalizar e liberar</button></div></form><script>const ta=document.querySelector('[name=report]');if(!ta.value)ta.value=localStorage.getItem('malibub_draft_{e.id}')||'';</script></section></div>'''
  return page(body)
 
+@app.route("/result/<int:eid>/pdf")
+def result_pdf(eid):
+ if not session.get("uid"): return redirect("/")
+ e=Exam.query.get_or_404(eid)
+ if session.get("role")=="Clinica" and e.clinic_id!=session.get("uid"): return redirect("/dashboard")
+ if e.status!="Liberado": return redirect("/dashboard")
+ from reportlab.lib.pagesizes import A4
+ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+ from reportlab.lib import colors
+ from reportlab.lib.enums import TA_CENTER
+ from reportlab.lib.units import mm
+ from xml.sax.saxutils import escape
+ buf=io.BytesIO(); doc=SimpleDocTemplate(buf,pagesize=A4,rightMargin=18*mm,leftMargin=18*mm,topMargin=16*mm,bottomMargin=18*mm,title=f"{e.protocol} - Laudo MALIBUB",author="MALIBUB Imaginologia Odontológica")
+ styles=getSampleStyleSheet(); navy=colors.HexColor("#06394C"); teal=colors.HexColor("#087B9B"); gold=colors.HexColor("#C99B3B")
+ title=ParagraphStyle("t",parent=styles["Heading1"],alignment=TA_CENTER,textColor=navy,fontSize=16,leading=20); body=ParagraphStyle("b",parent=styles["BodyText"],fontSize=10,leading=15,textColor=colors.HexColor("#26383D"))
+ story=[Paragraph("MALIBUB",title),Paragraph("Imaginologia Odontológica",ParagraphStyle("s",parent=styles["Normal"],alignment=TA_CENTER,textColor=teal,fontSize=10)),Spacer(1,6*mm)]
+ data=[["Protocolo",escape(e.protocol or "")],["Paciente",escape(e.patient or "")],["Exame",escape(e.exam_type or "")],["Dentista solicitante",escape(e.dentist or "")],["Data do exame",escape(e.exam_date or "")]]
+ t=Table(data,colWidths=[42*mm,120*mm]); t.setStyle(TableStyle([("GRID",(0,0),(-1,-1),.4,colors.HexColor("#DCE8EC")),("BACKGROUND",(0,0),(0,-1),colors.HexColor("#F1F6F7")),("FONTNAME",(0,0),(0,-1),"Helvetica-Bold"),("FONTSIZE",(0,0),(-1,-1),9),("PADDING",(0,0),(-1,-1),6)])); story += [t,Spacer(1,7*mm),Paragraph("LAUDO RADIOLÓGICO",ParagraphStyle("h",parent=title,alignment=0,fontSize=12,textColor=navy)),Spacer(1,2*mm)]
+ for line in (e.report or "").splitlines(): story.append(Paragraph(escape(line) or "&nbsp;",body))
+ story += [Spacer(1,12*mm),Paragraph("Documento liberado eletronicamente pela radiologista responsável.",ParagraphStyle("f",parent=styles["Normal"],fontSize=8,textColor=colors.HexColor("#657F89"))),Spacer(1,2*mm),Paragraph("MALIBUB Imaginologia Odontológica",ParagraphStyle("f2",parent=styles["Normal"],fontSize=8,textColor=gold))]
+ doc.build(story); buf.seek(0)
+ return send_file(buf,mimetype="application/pdf",as_attachment=True,download_name=f"{e.protocol}_laudo.pdf")
+
 @app.route("/result/<int:eid>")
 def result(eid):
  if not session.get("uid"): return redirect("/")
  e=Exam.query.get_or_404(eid)
- body=f'''<h1>Resultado — {e.protocol}</h1><div class="card"><h2>{e.patient}</h2><p>{e.exam_type}</p><hr><div style="white-space:pre-wrap;min-height:280px">{e.report}</div><button onclick="window.print()">Imprimir / Salvar PDF</button></div>'''
+ body=f'''<h1>Resultado — {e.protocol}</h1><div class="card"><div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap"><div><h2 style="margin:0 0 6px">{e.patient}</h2><div class="muted">{e.exam_type} · {e.dentist or 'Dentista não informado'}</div></div><span class="badge">{e.status}</span></div><hr><h3>Laudo radiológico</h3><div style="white-space:pre-wrap;min-height:280px;line-height:1.6">{e.report or 'Laudo não informado.'}</div><hr><a class="btn gold" href="/result/{e.id}/pdf">Baixar laudo em PDF</a><button onclick="window.print()">Imprimir</button></div>'''
  return page(body)
 
 @app.route("/finance",methods=["GET","POST"])
