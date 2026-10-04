@@ -194,6 +194,23 @@ def result_pdf(eid):
  signer=escape(e.signed_by or "Dra. Marina"); signed=e.signed_at.strftime("%d/%m/%Y %H:%M") if e.signed_at else (e.released_at.strftime("%d/%m/%Y %H:%M") if e.released_at else "")
  story += [Spacer(1,12*mm),Table([[""]],colWidths=[70*mm],style=TableStyle([("LINEABOVE",(0,0),(-1,-1),.6,navy)])),Paragraph(f"<b>{signer}</b>",ParagraphStyle("sig",parent=body,alignment=TA_CENTER,textColor=navy)),Paragraph("Radiologista responsável",ParagraphStyle("sig2",parent=styles["Normal"],alignment=TA_CENTER,fontSize=8,textColor=colors.HexColor("#657F89"))),Spacer(1,3*mm),Paragraph(f"Assinado eletronicamente em {escape(signed)}",ParagraphStyle("f",parent=styles["Normal"],fontSize=8,textColor=colors.HexColor("#657F89"))),Paragraph(f"Validação MALIBUB · Protocolo {escape(e.protocol or '')}",ParagraphStyle("f3",parent=styles["Normal"],fontSize=7.5,textColor=colors.HexColor("#657F89"))),Spacer(1,2*mm),Paragraph((escape(clinic.name)+" · MALIBUB Imaginologia Odontológica") if clinic else "MALIBUB Imaginologia Odontológica",ParagraphStyle("f2",parent=styles["Normal"],fontSize=8,textColor=gold))]
  doc.build(story); buf.seek(0)
+ # Quando a clínica cadastrou um PDF timbrado, use a primeira página como fundo
+ # e sobreponha o laudo gerado, preservando a identidade visual da clínica.
+ if model_path and model_path.exists() and model_path.suffix.lower()==".pdf":
+  try:
+   from pypdf import PdfReader, PdfWriter
+   base_reader=PdfReader(str(model_path)); overlay_reader=PdfReader(buf)
+   writer=PdfWriter()
+   for idx,overlay_page in enumerate(overlay_reader.pages):
+    if idx < len(base_reader.pages):
+     base_page=base_reader.pages[idx]
+    else:
+     base_page=base_reader.pages[0]
+    base_page.merge_page(overlay_page)
+    writer.add_page(base_page)
+   merged=io.BytesIO(); writer.write(merged); merged.seek(0); buf=merged
+  except Exception:
+   buf.seek(0)
  return send_file(buf,mimetype="application/pdf",as_attachment=True,download_name=f"{e.protocol}_laudo.pdf")
 
 @app.route("/result/<int:eid>")
