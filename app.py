@@ -21,7 +21,7 @@ def assets(filename):
  return send_from_directory(Path(app.root_path)/"assets", filename)
 
 class User(db.Model):
- id=db.Column(db.Integer,primary_key=True); name=db.Column(db.String(100)); email=db.Column(db.String(120),unique=True); password=db.Column(db.String(255)); role=db.Column(db.String(30))
+ id=db.Column(db.Integer,primary_key=True); name=db.Column(db.String(100)); email=db.Column(db.String(120),unique=True); password=db.Column(db.String(255)); role=db.Column(db.String(30)); report_model=db.Column(db.String(255)); report_model_name=db.Column(db.String(255))
 class Exam(db.Model):
  id=db.Column(db.Integer,primary_key=True); protocol=db.Column(db.String(30),unique=True); patient=db.Column(db.String(120)); sex=db.Column(db.String(20)); birth=db.Column(db.String(20)); dentist=db.Column(db.String(120)); exam_date=db.Column(db.String(20)); exam_type=db.Column(db.String(100)); observation=db.Column(db.String(500)); status=db.Column(db.String(50),default="Enviado"); clinic_id=db.Column(db.Integer); due_at=db.Column(db.DateTime); report=db.Column(db.Text,default=""); released_at=db.Column(db.DateTime); signed_by=db.Column(db.String(120)); signed_at=db.Column(db.DateTime); created_at=db.Column(db.DateTime,default=datetime.utcnow)
 class ExamFile(db.Model):
@@ -90,8 +90,34 @@ def dashboard():
  for e in exams:
   action=f'<a class="btn" href="/report/{e.id}">Laudar</a>' if session["role"]=="Radiologista" and e.status!="Liberado" else (f'<a class="btn" href="/result/{e.id}">Resultado</a>' if e.status=="Liberado" else "")
   rows+=f"<tr><td>{e.protocol}</td><td>{e.patient}</td><td>{e.exam_type}</td><td><span class='badge'>{e.status}</span></td><td>{action}</td></tr>"
- body=f'''<h1>Painel {'da Clínica' if session["role"]=="Clinica" else 'da Radiologista'}</h1><p>Olá, {session["name"]}.</p>{'<a class="btn gold" href="/new">+ Novo Exame</a>' if session["role"]=="Clinica" else ''}<div class="card"><h2>Exames</h2><table><tr><th>Protocolo</th><th>Paciente</th><th>Exame</th><th>Status</th><th>Ação</th></tr>{rows or '<tr><td colspan=5>Nenhum exame.</td></tr>'}</table></div>'''
+ body=f'''<h1>Painel {'da Clínica' if session["role"]=="Clinica" else 'da Radiologista'}</h1><p>Olá, {session["name"]}.</p>{'<a class="btn gold" href="/new">+ Novo Exame</a><a class="btn" href="/modelo-laudo">Modelo de laudo</a>' if session["role"]=="Clinica" else ''}<div class="card"><h2>Exames</h2><table><tr><th>Protocolo</th><th>Paciente</th><th>Exame</th><th>Status</th><th>Ação</th></tr>{rows or '<tr><td colspan=5>Nenhum exame.</td></tr>'}</table></div>'''
  return page(body)
+
+@app.route("/modelo-laudo",methods=["GET","POST"])
+def report_model():
+ if session.get("role")!="Clinica": return redirect("/dashboard")
+ u=User.query.get_or_404(session["uid"])
+ if request.method=="POST":
+  file=request.files.get("report_model")
+  if file and file.filename:
+   name=secure_filename(file.filename); ext=Path(name).suffix.lower()
+   if ext not in {".pdf",".jpg",".jpeg",".png"}: flash("Use PDF, JPG ou PNG."); return redirect("/modelo-laudo")
+   stored="modelo_"+str(u.id)+"_"+uuid.uuid4().hex+ext; file.save(UPLOAD/stored)
+   u.report_model=stored; u.report_model_name=name; db.session.commit(); flash("Modelo personalizado da clínica salvo.")
+  return redirect("/modelo-laudo")
+ current=(f"<p><b>Modelo atual:</b> {u.report_model_name}</p><a class='btn' href='/modelo-laudo/arquivo' target='_blank'>Visualizar modelo</a>" if u.report_model else "<div class='notice'>Nenhum modelo personalizado cadastrado.</div>")
+ body=f"""<h1>Modelo de laudo da clínica</h1><div class='card'><p>Envie a página/modelo personalizado que deverá servir de referência para os laudos desta clínica.</p>{current}<form method='post' enctype='multipart/form-data'><label>Modelo personalizado (PDF, JPG ou PNG)<input type='file' name='report_model' accept='.pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png' required></label><button class='gold' type='submit'>Salvar modelo da clínica</button></form></div>"""
+ return page(body)
+
+@app.route("/modelo-laudo/arquivo")
+def report_model_file():
+ if not session.get("uid"): return redirect("/")
+ uid=session.get("uid")
+ if session.get("role")=="Radiologista":
+  eid=request.args.get("exam",type=int); e=Exam.query.get_or_404(eid); uid=e.clinic_id
+ u=User.query.get_or_404(uid)
+ if not u.report_model: return redirect("/dashboard")
+ return send_from_directory(UPLOAD,u.report_model,download_name=u.report_model_name,as_attachment=False)
 
 @app.route("/new",methods=["GET","POST"])
 def new():
@@ -133,7 +159,8 @@ def report(eid):
   e.report=request.form["report"]; e.status="Liberado"; e.released_at=datetime.utcnow(); e.signed_by=session.get("name") or "Dra. Marina"; e.signed_at=datetime.utcnow(); db.session.add(Finance(description=f"Laudo {e.protocol}",kind="Entrada",amount=float(request.form.get("amount") or 0))); db.session.commit(); return redirect("/dashboard")
  imgs="".join((f"<div class='exam-file'><div class='filebar'><b>{f.name}</b><a class='btn' href='/exam-file/{f.id}' target='_blank'>Abrir</a><a class='btn gold' href='/exam-file/{f.id}?download=1'>Baixar</a></div>" + (f"<img src='/exam-file/{f.id}' alt='{f.name}'>" if f.name.lower().endswith(('.jpg','.jpeg','.png','.webp')) else (f"<iframe src='/exam-file/{f.id}' title='{f.name}'></iframe>" if f.name.lower().endswith('.pdf') else "<div class='notice'>Pré-visualização indisponível para este formato. Use Abrir ou Baixar.</div>")) + "</div>") for f in files)
  ready_html="".join((f"<div class='exam-file'><div class='filebar'><b>{f.name}</b><a class='btn' href='/exam-file/{f.id}' target='_blank'>Abrir</a><a class='btn gold' href='/exam-file/{f.id}?download=1'>Baixar</a></div>" + (f"<img src='/exam-file/{f.id}'>" if f.name.lower().endswith(('.jpg','.jpeg')) else f"<iframe src='/exam-file/{f.id}'></iframe>") + "</div>") for f in ready_files)
- body=f'''<h1>Ambiente da Radiologista — {e.protocol}</h1><div class="card"><b>{e.patient}</b> · {e.exam_type}<br><span class="muted">{e.observation or 'Sem observação clínica.'}</span></div><div class="workspace"><section class="card viewer"><h2>Imagens / arquivos</h2>{imgs or 'Nenhum anexo.'}<hr style="margin:24px 0;border:0;border-top:1px solid #dce8ec"><h2>Exame pronto / Templates</h2><p class="muted">Anexe o exame final produzido pela radiologista em JPG/JPEG e/ou PDF. Os arquivos ficarão vinculados a este exame.</p><form method="post" action="/report/{e.id}/exame-pronto" enctype="multipart/form-data"><input type="file" name="finished_files" accept=".jpg,.jpeg,.pdf,image/jpeg,application/pdf" multiple required><button class="gold" type="submit">Anexar exame pronto</button></form>{ready_html or '<div class="notice">Nenhum template/exame pronto anexado ainda.</div>'}</section><section class="card editor"><h2>Laudo escrito</h2><form method="post"><textarea name="report" placeholder="Digite o laudo..." required>{e.report or ''}</textarea><label>Valor do laudo (R$)<input type="number" step="0.01" name="amount" value="0"></label><div class="editor-actions"><button type="button" onclick="localStorage.setItem('malibub_draft_{e.id}',document.querySelector('[name=report]').value);this.textContent='Rascunho salvo ✓'">Salvar rascunho</button><button class="gold" type="submit">Finalizar e liberar</button></div></form><script>const ta=document.querySelector('[name=report]');if(!ta.value)ta.value=localStorage.getItem('malibub_draft_{e.id}')||'';</script></section></div>'''
+ clinic=User.query.get(e.clinic_id); model_link=(f"<a class='btn' href='/modelo-laudo/arquivo?exam={e.id}' target='_blank'>Ver modelo de laudo da clínica</a>" if clinic and clinic.report_model else "<span class='muted'>Clínica sem modelo de laudo cadastrado.</span>")
+ body=f'''<h1>Ambiente da Radiologista — {e.protocol}</h1><div style="margin-bottom:12px">{model_link}</div><div class="card"><b>{e.patient}</b> · {e.exam_type}<br><span class="muted">{e.observation or 'Sem observação clínica.'}</span></div><div class="workspace"><section class="card viewer"><h2>Imagens / arquivos</h2>{imgs or 'Nenhum anexo.'}<hr style="margin:24px 0;border:0;border-top:1px solid #dce8ec"><h2>Exame pronto / Templates</h2><p class="muted">Anexe o exame final produzido pela radiologista em JPG/JPEG e/ou PDF. Os arquivos ficarão vinculados a este exame.</p><form method="post" action="/report/{e.id}/exame-pronto" enctype="multipart/form-data"><input type="file" name="finished_files" accept=".jpg,.jpeg,.pdf,image/jpeg,application/pdf" multiple required><button class="gold" type="submit">Anexar exame pronto</button></form>{ready_html or '<div class="notice">Nenhum template/exame pronto anexado ainda.</div>'}</section><section class="card editor"><h2>Laudo escrito</h2><form method="post"><textarea name="report" placeholder="Digite o laudo..." required>{e.report or ''}</textarea><label>Valor do laudo (R$)<input type="number" step="0.01" name="amount" value="0"></label><div class="editor-actions"><button type="button" onclick="localStorage.setItem('malibub_draft_{e.id}',document.querySelector('[name=report]').value);this.textContent='Rascunho salvo ✓'">Salvar rascunho</button><button class="gold" type="submit">Finalizar e liberar</button></div></form><script>const ta=document.querySelector('[name=report]');if(!ta.value)ta.value=localStorage.getItem('malibub_draft_{e.id}')||'';</script></section></div>'''
  return page(body)
 
 @app.route("/result/<int:eid>/pdf")
