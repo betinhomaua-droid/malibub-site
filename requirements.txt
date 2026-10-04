@@ -4,3 +4,4 @@ Werkzeug>=3,<4
 gunicorn>=23,<24
 psycopg[binary]>=3.2,<4
 reportlab>=4.2,<5
+pypdf>=5,<7
