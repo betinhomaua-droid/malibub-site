@@ -204,34 +204,26 @@ def result_pdf(eid):
   # No modelo personalizado, a confirmação da assinatura é aplicada depois,
   # como rodapé fixo em todas as páginas do PDF final.
   pass
- doc.build(story); buf.seek(0)
- # Quando a clínica cadastrou um PDF timbrado, use a primeira página como fundo
- # e sobreponha o laudo gerado, preservando a identidade visual da clínica.
+ if not has_pdf_model:\n  doc.build(story); buf.seek(0)
+ # Quando a clínica cadastrou um PDF timbrado, preserve o PDF original inteiro
+ # e acrescente somente a confirmação da assinatura no rodapé.
  if model_path and model_path.exists() and model_path.suffix.lower()==".pdf":
   try:
    from pypdf import PdfReader, PdfWriter
-   base_reader=PdfReader(str(model_path)); overlay_reader=PdfReader(buf)
-   writer=PdfWriter()
-   for idx,overlay_page in enumerate(overlay_reader.pages):
-    if idx < len(base_reader.pages):
-     base_page=base_reader.pages[idx]
-    else:
-     base_page=base_reader.pages[0]
-    base_page.merge_page(overlay_page)
-    writer.add_page(base_page)
-   # Rodapé fixo de confirmação da assinatura digital em todas as páginas.
    from reportlab.pdfgen import canvas
-   footer_buf=io.BytesIO(); cv=canvas.Canvas(footer_buf,pagesize=A4)
-   cv.setFont("Helvetica",7.5); cv.setFillColor(colors.HexColor("#52666E"))
-   cv.drawCentredString(A4[0]/2,10*mm,f"Assinado digitalmente por {e.signed_by or 'Dra. Marina'}")
-   cv.drawCentredString(A4[0]/2,6.5*mm,f"Data: {signed} · Protocolo {e.protocol or ''}")
-   cv.save(); footer_buf.seek(0); footer_page=PdfReader(footer_buf).pages[0]
-   final_writer=PdfWriter()
-   for page in writer.pages:
-    page.merge_page(footer_page); final_writer.add_page(page)
+   base_reader=PdfReader(str(model_path)); final_writer=PdfWriter()
+   for base_page in base_reader.pages:
+    width=float(base_page.mediabox.width); height=float(base_page.mediabox.height)
+    footer_buf=io.BytesIO(); cv=canvas.Canvas(footer_buf,pagesize=(width,height))
+    cv.setFont("Helvetica",7.5); cv.setFillColor(colors.HexColor("#52666E"))
+    cv.drawCentredString(width/2,10*mm,f"Assinado digitalmente por {e.signed_by or 'Dra. Marina'}")
+    cv.drawCentredString(width/2,6.5*mm,f"Data: {signed} · Protocolo {e.protocol or ''}")
+    cv.save(); footer_buf.seek(0)
+    footer_page=PdfReader(footer_buf).pages[0]
+    base_page.merge_page(footer_page); final_writer.add_page(base_page)
    merged=io.BytesIO(); final_writer.write(merged); merged.seek(0); buf=merged
   except Exception:
-   buf.seek(0)
+   return "Não foi possível gerar o PDF personalizado. Verifique o modelo de laudo cadastrado.",500
  return send_file(buf,mimetype="application/pdf",as_attachment=True,download_name=f"{e.protocol}_laudo.pdf")
 
 @app.route("/result/<int:eid>")
