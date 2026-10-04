@@ -25,7 +25,7 @@ class User(db.Model):
 class Exam(db.Model):
  id=db.Column(db.Integer,primary_key=True); protocol=db.Column(db.String(30),unique=True); patient=db.Column(db.String(120)); sex=db.Column(db.String(20)); birth=db.Column(db.String(20)); dentist=db.Column(db.String(120)); exam_date=db.Column(db.String(20)); exam_type=db.Column(db.String(100)); observation=db.Column(db.String(500)); status=db.Column(db.String(50),default="Enviado"); clinic_id=db.Column(db.Integer); due_at=db.Column(db.DateTime); report=db.Column(db.Text,default=""); released_at=db.Column(db.DateTime); signed_by=db.Column(db.String(120)); signed_at=db.Column(db.DateTime); created_at=db.Column(db.DateTime,default=datetime.utcnow)
 class ExamFile(db.Model):
- id=db.Column(db.Integer,primary_key=True); exam_id=db.Column(db.Integer); name=db.Column(db.String(255)); stored=db.Column(db.String(255))
+ id=db.Column(db.Integer,primary_key=True); exam_id=db.Column(db.Integer); name=db.Column(db.String(255)); stored=db.Column(db.String(255)); kind=db.Column(db.String(30),default="entrada"); uploaded_by=db.Column(db.String(100))
 class Finance(db.Model):
  id=db.Column(db.Integer,primary_key=True); date=db.Column(db.Date,default=datetime.utcnow().date); description=db.Column(db.String(200)); kind=db.Column(db.String(20)); amount=db.Column(db.Float,default=0)
 
@@ -112,14 +112,29 @@ def exam_file(fid):
  if session.get("role")=="Clinica" and e.clinic_id!=session.get("uid"): return redirect("/dashboard")
  return send_from_directory(UPLOAD,f.stored,as_attachment=request.args.get("download")=="1",download_name=f.name)
 
+@app.route("/report/<int:eid>/exame-pronto",methods=["POST"])
+def upload_ready_exam(eid):
+ if session.get("role")!="Radiologista": return redirect("/")
+ e=Exam.query.get_or_404(eid); saved=0
+ for file in request.files.getlist("finished_files"):
+  if not file or not file.filename: continue
+  name=secure_filename(file.filename); ext=Path(name).suffix.lower()
+  if ext not in {".jpg",".jpeg",".pdf"}: continue
+  stored=uuid.uuid4().hex+ext; file.save(UPLOAD/stored)
+  db.session.add(ExamFile(exam_id=e.id,name=name,stored=stored,kind="exame_pronto",uploaded_by=session.get("name"))); saved+=1
+ db.session.commit(); flash(f"{saved} arquivo(s) do exame pronto anexado(s)." if saved else "Selecione JPG ou PDF.")
+ return redirect(url_for("report",eid=e.id))
+
 @app.route("/report/<int:eid>",methods=["GET","POST"])
 def report(eid):
  if session.get("role")!="Radiologista": return redirect("/")
- e=Exam.query.get_or_404(eid); files=ExamFile.query.filter_by(exam_id=e.id).all()
+ e=Exam.query.get_or_404(eid); files=ExamFile.query.filter_by(exam_id=e.id).filter((ExamFile.kind=="entrada") | (ExamFile.kind==None)).all(); ready_files=ExamFile.query.filter_by(exam_id=e.id,kind="exame_pronto").all()
  if request.method=="POST":
   e.report=request.form["report"]; e.status="Liberado"; e.released_at=datetime.utcnow(); e.signed_by=session.get("name") or "Dra. Marina"; e.signed_at=datetime.utcnow(); db.session.add(Finance(description=f"Laudo {e.protocol}",kind="Entrada",amount=float(request.form.get("amount") or 0))); db.session.commit(); return redirect("/dashboard")
  imgs="".join((f"<div class='exam-file'><div class='filebar'><b>{f.name}</b><a class='btn' href='/exam-file/{f.id}' target='_blank'>Abrir</a><a class='btn gold' href='/exam-file/{f.id}?download=1'>Baixar</a></div>" + (f"<img src='/exam-file/{f.id}' alt='{f.name}'>" if f.name.lower().endswith(('.jpg','.jpeg','.png','.webp')) else (f"<iframe src='/exam-file/{f.id}' title='{f.name}'></iframe>" if f.name.lower().endswith('.pdf') else "<div class='notice'>Pré-visualização indisponível para este formato. Use Abrir ou Baixar.</div>")) + "</div>") for f in files)
+ ready_html="".join((f"<div class='exam-file'><div class='filebar'><b>{f.name}</b><a class='btn' href='/exam-file/{f.id}' target='_blank'>Abrir</a><a class='btn gold' href='/exam-file/{f.id}?download=1'>Baixar</a></div>" + (f"<img src='/exam-file/{f.id}'>" if f.name.lower().endswith(('.jpg','.jpeg')) else f"<iframe src='/exam-file/{f.id}'></iframe>") + "</div>") for f in ready_files)
  body=f'''<h1>Ambiente da Radiologista — {e.protocol}</h1><div class="card"><b>{e.patient}</b> · {e.exam_type}<br><span class="muted">{e.observation or 'Sem observação clínica.'}</span></div><div class="workspace"><section class="card viewer"><h2>Imagens / arquivos</h2>{imgs or 'Nenhum anexo.'}</section><section class="card editor"><h2>Laudo escrito</h2><form method="post"><textarea name="report" placeholder="Digite o laudo..." required>{e.report or ''}</textarea><label>Valor do laudo (R$)<input type="number" step="0.01" name="amount" value="0"></label><div class="editor-actions"><button type="button" onclick="localStorage.setItem('malibub_draft_{e.id}',document.querySelector('[name=report]').value);this.textContent='Rascunho salvo ✓'">Salvar rascunho</button><button class="gold" type="submit">Finalizar e liberar</button></div></form><script>const ta=document.querySelector('[name=report]');if(!ta.value)ta.value=localStorage.getItem('malibub_draft_{e.id}')||'';</script></section></div>'''
+ body += f'''<section class="card"><h2>Exame pronto / Templates</h2><p class="muted">Anexe o exame final produzido pela radiologista em JPG/JPEG e/ou PDF. Os arquivos ficarão vinculados a este exame.</p><form method="post" action="/report/{e.id}/exame-pronto" enctype="multipart/form-data"><input type="file" name="finished_files" accept=".jpg,.jpeg,.pdf,image/jpeg,application/pdf" multiple required><button class="gold" type="submit">Anexar exame pronto</button></form>{ready_html or '<div class="notice">Nenhum template/exame pronto anexado ainda.</div>'}</section>'''
  return page(body)
 
 @app.route("/result/<int:eid>/pdf")
