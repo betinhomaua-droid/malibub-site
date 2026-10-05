@@ -202,6 +202,13 @@ def init():
  global _initialized
  if _initialized: return
  db.create_all()
+ if db.engine.dialect.name=="postgresql":
+  try:
+   db.session.execute(db.text("ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE"))
+   db.session.execute(db.text("UPDATE \"user\" SET active=TRUE WHERE active IS NULL"))
+   db.session.commit()
+  except Exception:
+   db.session.rollback()
  if db.engine.dialect.name=="sqlite":
   try:
    cols=[r[1] for r in db.session.execute(db.text("PRAGMA table_info(exam)")).fetchall()]
