@@ -126,6 +126,23 @@ def health():
  except Exception:
   return {"status":"error","database":"unavailable"},503
 
+@app.route("/health/storage")
+def health_storage():
+ if not object_storage_enabled():
+  return {"status":"error","storage":"not_configured"},503
+ probe=f"health/{uuid.uuid4().hex}.txt"
+ try:
+  r2_client().put_object(Bucket=R2_BUCKET,Key=probe,Body=b"malibub-storage-check",ContentType="text/plain")
+  r2_client().head_object(Bucket=R2_BUCKET,Key=probe)
+  body=r2_client().get_object(Bucket=R2_BUCKET,Key=probe)["Body"].read()
+  if body!=b"malibub-storage-check": raise RuntimeError("storage probe mismatch")
+  r2_client().delete_object(Bucket=R2_BUCKET,Key=probe)
+  return {"status":"ok","storage":"read_write_delete"},200
+ except Exception:
+  try: r2_client().delete_object(Bucket=R2_BUCKET,Key=probe)
+  except Exception: pass
+  return {"status":"error","storage":"unavailable"},503
+
 @app.route("/assets/<path:filename>")
 def assets(filename):
  return send_from_directory(Path(app.root_path)/"assets", filename)
