@@ -2,6 +2,7 @@ from flask import Flask, request, redirect, url_for, session, flash, render_temp
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+from markupsafe import escape as html_escape
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import os, uuid, io, secrets
@@ -149,6 +150,7 @@ def page(body,title="MALIBUB"):
 def init():
  db.create_all()
  try:
+  if db.engine.dialect.name!="sqlite": raise RuntimeError("sqlite migration skipped")
   cols=[r[1] for r in db.session.execute(db.text("PRAGMA table_info(exam)")).fetchall()]
   if "signed_by" not in cols: db.session.execute(db.text("ALTER TABLE exam ADD COLUMN signed_by VARCHAR(120)"))
   if "signed_at" not in cols: db.session.execute(db.text("ALTER TABLE exam ADD COLUMN signed_at DATETIME"))
@@ -337,7 +339,7 @@ def result_pdf(eid):
    canv.drawString(22*mm,H-31*mm,f"Indicação clínica: {e.observation or ''}")
    canv.drawString(22*mm,H-38*mm,f"Dentista solicitante: {e.dentist or ''}")
    canv.setFont("Helvetica-Bold",7.5); canv.setFillColor(colors.HexColor("#52666E"))
-   canv.drawCentredString(W/2,10*mm,f"Assinado digitalmente por {e.signed_by or 'Dra. Marina'}")
+   canv.drawCentredString(W/2,10*mm,f"Assinado eletronicamente por {e.signed_by or 'Dra. Marina'}")
    canv.drawCentredString(W/2,6.5*mm,f"Data: {signed} · Protocolo {e.protocol or ''}")
    canv.restoreState()
   frame=Frame(22*mm,18*mm,W-44*mm,H-65*mm,leftPadding=0,rightPadding=0,topPadding=0,bottomPadding=0,id="tmj_body")
