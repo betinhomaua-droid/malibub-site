@@ -107,7 +107,7 @@ def cleanup_expired_files_command():
 def health():
  try:
   db.session.execute(db.text("SELECT 1"))
-  storage="configured" if object_storage_enabled() else "local"
+  storage="enabled" if object_storage_enabled() else "local"
   return {"status":"ok","database":"ok","storage":storage},200
  except Exception:
   return {"status":"error","database":"unavailable"},503
