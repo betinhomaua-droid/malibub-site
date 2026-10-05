@@ -246,6 +246,7 @@ def exam_file(fid):
  if not session.get("uid"): return redirect("/")
  f=ExamFile.query.get_or_404(fid); e=Exam.query.get_or_404(f.exam_id)
  if session.get("role")=="Clinica" and e.clinic_id!=session.get("uid"): return redirect("/dashboard")
+ if session.get("role") not in {"Clinica","Radiologista"}: return redirect("/")
  return storage_response(f.stored,f.name,request.args.get("download")=="1")
 
 @app.route("/report/<int:eid>/exame-pronto",methods=["POST"])
