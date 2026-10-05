@@ -583,10 +583,16 @@ def my_account():
   if email and email!=u.email:
    if User.query.filter_by(email=email).first(): flash("Este e-mail já está em uso."); return redirect("/minha-conta")
    u.email=email
+  credentials_changed=False
   if new:
    if len(new)<10: flash("A nova senha deve ter pelo menos 10 caracteres."); return redirect("/minha-conta")
-   u.password=generate_password_hash(new)
-  db.session.commit(); flash("Dados de acesso atualizados."); return redirect("/minha-conta")
+   u.password=generate_password_hash(new); credentials_changed=True
+  db.session.commit()
+  if credentials_changed:
+   session.clear()
+   flash("Senha atualizada. Entre novamente com a nova senha.")
+   return redirect("/")
+  flash("Dados de acesso atualizados."); return redirect("/minha-conta")
  body=f"""<h1>Minha conta</h1><div class='card'><form method='post'>{csrf_field()}<label>E-mail de acesso<input type='email' name='email' value='{html_escape(u.email)}' required></label><label>Senha atual<input type='password' name='current_password' required></label><label>Nova senha (opcional)<input type='password' name='new_password' minlength='10'></label><button class='gold'>Salvar alterações</button></form></div>"""
  return page(body)
 
