@@ -338,6 +338,7 @@ def br_date(value):
 @app.route("/result/<int:eid>/pdf")
 def result_pdf(eid):
  if not session.get("uid"): return redirect("/")
+ if session.get("role") not in {"Clinica","Radiologista"}: return redirect("/")
  e=Exam.query.get_or_404(eid)
  if session.get("role")=="Clinica" and e.clinic_id!=session.get("uid"): return redirect("/dashboard")
  if e.status!="Liberado": return redirect("/dashboard")
@@ -507,6 +508,7 @@ def result_pdf(eid):
 @app.route("/result/<int:eid>")
 def result(eid):
  if not session.get("uid"): return redirect("/")
+ if session.get("role") not in {"Clinica","Radiologista"}: return redirect("/")
  e=Exam.query.get_or_404(eid)
  if session.get("role")=="Clinica" and e.clinic_id!=session.get("uid"): return redirect("/dashboard")
  if e.status!="Liberado": return redirect("/dashboard")
