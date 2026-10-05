@@ -347,6 +347,20 @@ def report_model():
    u.report_top_mm=max(20,min(120,int(request.form.get("report_top_mm",u.report_top_mm or 72))))
    u.report_bottom_mm=max(15,min(100,int(request.form.get("report_bottom_mm",u.report_bottom_mm or 42))))
   except Exception: pass
+  logo=request.files.get("logo")
+  if logo and logo.filename:
+   logo_name=secure_filename(logo.filename); logo_ext=Path(logo_name).suffix.lower()
+   if logo_ext not in {".jpg",".jpeg",".png"}:
+    flash("A logomarca deve estar em JPG ou PNG."); return redirect("/modelo-laudo")
+   logo_stored="logo_"+str(u.id)+"_"+uuid.uuid4().hex+logo_ext
+   store_upload(logo,logo_stored,logo.mimetype)
+   old_logo=u.logo
+   u.logo=logo_stored; u.logo_name=logo_name
+   db.session.commit()
+   if old_logo:
+    try: storage_delete(old_logo)
+    except Exception: pass
+   flash("Logomarca da clínica atualizada.")
   file=request.files.get("report_model")
   if file and file.filename:
    name=secure_filename(file.filename); ext=Path(name).suffix.lower()
@@ -355,7 +369,7 @@ def report_model():
    u.report_model=stored; u.report_model_name=name; db.session.commit(); flash("Modelo personalizado da clínica salvo.")
   return redirect("/modelo-laudo")
  current=(f"<p><b>Modelo atual:</b> {html_escape(u.report_model_name or '')}</p><a class='btn' href='/modelo-laudo/arquivo' target='_blank'>Visualizar modelo</a>" if u.report_model else "<div class='notice'>Nenhum modelo personalizado cadastrado.</div>")
- body=f"""<h1>Modelo de laudo da clínica</h1><div class='card'><p>Envie a página/modelo personalizado que deverá servir de referência para os laudos desta clínica.</p>{current}<form method='post' enctype='multipart/form-data'>{csrf_field()}<label>Modelo personalizado (PDF, DOCX, JPG ou PNG)<input type='file' name='report_model' accept='.pdf,.docx,.jpg,.jpeg,.png,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png'></label><div class='grid'><label>Margem superior do conteúdo (mm)<input type='number' name='report_top_mm' min='20' max='120' value='{u.report_top_mm or 72}'></label><label>Margem inferior (mm)<input type='number' name='report_bottom_mm' min='15' max='100' value='{u.report_bottom_mm or 42}'></label></div><p class='muted'>Ajuste estes valores quando o papel timbrado tiver cabeçalho ou rodapé maiores.</p><button class='gold' type='submit'>Salvar modelo e posicionamento</button></form></div>"""
+ body=f"""<h1>Identidade visual / Modelo de laudo</h1><div class='card'><p>Cadastre a identidade visual da clínica e o modelo personalizado que servirá de referência para os laudos.</p>{("<p><b>Logomarca atual:</b> "+html_escape(u.logo_name or "")+"</p>") if u.logo else "<div class='notice'>Nenhuma logomarca cadastrada.</div>"}{current}<form method='post' enctype='multipart/form-data'>{csrf_field()}<label>Logomarca da clínica (JPG ou PNG)<input type='file' name='logo' accept='.jpg,.jpeg,.png,image/jpeg,image/png'></label><label>Modelo personalizado (PDF, DOCX, JPG ou PNG)<input type='file' name='report_model' accept='.pdf,.docx,.jpg,.jpeg,.png,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png'></label><div class='grid'><label>Margem superior do conteúdo (mm)<input type='number' name='report_top_mm' min='20' max='120' value='{u.report_top_mm or 72}'></label><label>Margem inferior (mm)<input type='number' name='report_bottom_mm' min='15' max='100' value='{u.report_bottom_mm or 42}'></label></div><p class='muted'>Ajuste estes valores quando o papel timbrado tiver cabeçalho ou rodapé maiores.</p><button class='gold' type='submit'>Salvar modelo e posicionamento</button></form></div>"""
  return page(body)
 
 @app.route("/modelo-laudo/arquivo")
