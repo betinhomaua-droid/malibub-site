@@ -5,6 +5,7 @@ from werkzeug.utils import secure_filename
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import os, uuid, io, secrets
+import boto3
 
 app=Flask(__name__)
 app.config["SECRET_KEY"]=os.getenv("SECRET_KEY","malibub-homologacao")
@@ -18,6 +19,36 @@ app.config["SESSION_COOKIE_SECURE"]=os.getenv("APP_ENV","production")=="producti
 app.config["PERMANENT_SESSION_LIFETIME"]=timedelta(hours=8)
 db=SQLAlchemy(app)
 UPLOAD=Path(app.instance_path)/"uploads"; UPLOAD.mkdir(parents=True,exist_ok=True)
+R2_BUCKET=os.getenv("R2_BUCKET","")
+R2_ENDPOINT_URL=os.getenv("R2_ENDPOINT_URL","")
+def object_storage_enabled():
+ return all([R2_BUCKET,R2_ENDPOINT_URL,os.getenv("R2_ACCESS_KEY_ID"),os.getenv("R2_SECRET_ACCESS_KEY")])
+def r2_client():
+ return boto3.client("s3",endpoint_url=R2_ENDPOINT_URL,aws_access_key_id=os.getenv("R2_ACCESS_KEY_ID"),aws_secret_access_key=os.getenv("R2_SECRET_ACCESS_KEY"),region_name="auto")
+def store_upload(fileobj,key,content_type=None):
+ if object_storage_enabled():
+  extra={"ContentType":content_type} if content_type else {}
+  r2_client().upload_fileobj(fileobj,R2_BUCKET,key,ExtraArgs=extra or None)
+ else: fileobj.save(UPLOAD/key)
+def storage_bytes(key):
+ if object_storage_enabled():
+  return r2_client().get_object(Bucket=R2_BUCKET,Key=key)["Body"].read()
+ return (UPLOAD/key).read_bytes()
+def storage_delete(key):
+ if object_storage_enabled(): r2_client().delete_object(Bucket=R2_BUCKET,Key=key)
+ else:
+  p=UPLOAD/key
+  if p.exists(): p.unlink()
+def storage_exists(key):
+ if object_storage_enabled():
+  try: r2_client().head_object(Bucket=R2_BUCKET,Key=key); return True
+  except Exception: return False
+ return (UPLOAD/key).exists()
+def storage_response(key,name=None,download=False):
+ if object_storage_enabled():
+  data=storage_bytes(key)
+  return send_file(io.BytesIO(data),as_attachment=download,download_name=name or Path(key).name)
+ return send_from_directory(UPLOAD,key,as_attachment=download,download_name=name or Path(key).name)
 
 def csrf_token():
  token=session.get("_csrf_token")
@@ -170,7 +201,7 @@ def report_model():
   if file and file.filename:
    name=secure_filename(file.filename); ext=Path(name).suffix.lower()
    if ext not in {".pdf",".docx",".jpg",".jpeg",".png"}: flash("Use PDF, DOCX, JPG ou PNG."); return redirect("/modelo-laudo")
-   stored="modelo_"+str(u.id)+"_"+uuid.uuid4().hex+ext; file.save(UPLOAD/stored)
+   stored="modelo_"+str(u.id)+"_"+uuid.uuid4().hex+ext; store_upload(file,stored,file.mimetype)
    u.report_model=stored; u.report_model_name=name; db.session.commit(); flash("Modelo personalizado da clínica salvo.")
   return redirect("/modelo-laudo")
  current=(f"<p><b>Modelo atual:</b> {u.report_model_name}</p><a class='btn' href='/modelo-laudo/arquivo' target='_blank'>Visualizar modelo</a>" if u.report_model else "<div class='notice'>Nenhum modelo personalizado cadastrado.</div>")
@@ -189,7 +220,7 @@ def report_model_file():
  if not path.exists():
   flash("O modelo de laudo não está disponível no armazenamento atual. Envie o modelo novamente.")
   return redirect("/modelo-laudo" if session.get("role")=="Clinica" else "/dashboard")
- return send_from_directory(UPLOAD,u.report_model,download_name=u.report_model_name,as_attachment=False)
+ return storage_response(u.report_model,u.report_model_name,False)
 
 @app.route("/new",methods=["GET","POST"])
 def new():
@@ -201,7 +232,7 @@ def new():
   e=Exam(protocol="MB"+datetime.now().strftime("%y%m%d%H%M%S"),patient=request.form["patient"],sex=request.form["sex"],birth=request.form["birth"],dentist=request.form["dentist"],exam_date=request.form["exam_date"],exam_type=request.form["exam_type"],observation=request.form.get("observation","")[:500],clinic_id=session["uid"],status="Aguardando laudo",due_at=datetime.utcnow()+timedelta(hours=24)); db.session.add(e); db.session.commit()
   for f in request.files.getlist("files"):
    if f and f.filename:
-    name=secure_filename(f.filename); stored=uuid.uuid4().hex+"_"+name; f.save(UPLOAD/stored); db.session.add(ExamFile(exam_id=e.id,name=name,stored=stored))
+    name=secure_filename(f.filename); stored=uuid.uuid4().hex+"_"+name; store_upload(f,stored,f.mimetype); db.session.add(ExamFile(exam_id=e.id,name=name,stored=stored))
   db.session.commit(); return redirect("/dashboard")
  body='''<h1>Novo Exame</h1><div class="card"><form method="post" enctype="multipart/form-data">{csrf_field()}<div class="grid"><label>Nome do paciente<input name="patient" required></label><label>Sexo<select name="sex"><option>Feminino</option><option>Masculino</option><option>Não informado</option></select></label><label>Data de nascimento<input type="date" name="birth" required></label><label>Dentista solicitante<input name="dentist" required></label><label>Data do exame<input type="date" name="exam_date" required></label><label>Tipo de exame<select name="exam_type"><option>Tomografia computadorizada</option><option>Panorâmica</option><option>Documentação</option><option>Tomografia Endo</option></select></label></div><label>Observação / motivo<textarea name="observation" maxlength="500"></textarea></label><label>Imagens e arquivos<input type="file" name="files" multiple accept=".jpg,.jpeg,.png,.pdf,.dcm,.zip,.rar"></label><button class="gold">Enviar exame</button></form></div>'''
  return page(body)
@@ -211,7 +242,7 @@ def exam_file(fid):
  if not session.get("uid"): return redirect("/")
  f=ExamFile.query.get_or_404(fid); e=Exam.query.get_or_404(f.exam_id)
  if session.get("role")=="Clinica" and e.clinic_id!=session.get("uid"): return redirect("/dashboard")
- return send_from_directory(UPLOAD,f.stored,as_attachment=request.args.get("download")=="1",download_name=f.name)
+ return storage_response(f.stored,f.name,request.args.get("download")=="1")
 
 @app.route("/report/<int:eid>/exame-pronto",methods=["POST"])
 def upload_ready_exam(eid):
@@ -221,7 +252,7 @@ def upload_ready_exam(eid):
   if not file or not file.filename: continue
   name=secure_filename(file.filename); ext=Path(name).suffix.lower()
   if ext not in {".jpg",".jpeg",".pdf"}: continue
-  stored=uuid.uuid4().hex+ext; file.save(UPLOAD/stored)
+  stored=uuid.uuid4().hex+ext; store_upload(file,stored,file.mimetype)
   db.session.add(ExamFile(exam_id=e.id,name=name,stored=stored,kind="exame_pronto",uploaded_by=session.get("name"))); saved+=1
  db.session.commit(); flash(f"{saved} arquivo(s) do exame pronto anexado(s)." if saved else "Selecione JPG ou PDF.")
  return redirect(url_for("report",eid=e.id))
@@ -339,7 +370,13 @@ def result_pdf(eid):
  styles=getSampleStyleSheet(); navy=colors.HexColor("#06394C"); teal=colors.HexColor("#087B9B"); gold=colors.HexColor("#C99B3B")
  title=ParagraphStyle("t",parent=styles["Heading1"],alignment=TA_CENTER,textColor=navy,fontSize=16,leading=20); body=ParagraphStyle("b",parent=styles["BodyText"],fontSize=10,leading=15,textColor=colors.HexColor("#26383D"))
  story=[]
- model_path=(UPLOAD/clinic.report_model) if clinic and clinic.report_model else None
+ model_path=None
+  if clinic and clinic.report_model:
+   if object_storage_enabled():
+    if storage_exists(clinic.report_model):
+     model_path=UPLOAD/("_model_"+uuid.uuid4().hex+Path(clinic.report_model).suffix)
+     model_path.write_bytes(storage_bytes(clinic.report_model))
+   else: model_path=UPLOAD/clinic.report_model
  if has_pdf_model and (not model_path or not model_path.exists()):
   return "O modelo PDF personalizado desta clínica não está disponível. Reenvie o modelo antes de gerar o laudo.",410
  if model_path and model_path.exists() and model_path.suffix.lower() in {".jpg",".jpeg",".png"}:
