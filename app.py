@@ -43,7 +43,9 @@ def storage_delete(key):
 def storage_exists(key):
  if object_storage_enabled():
   try: r2_client().head_object(Bucket=R2_BUCKET,Key=key); return True
-  except Exception: return False
+  except Exception as exc:
+   if str(getattr(exc,'response',{}).get('Error',{}).get('Code','')) in {'404','NoSuchKey','NotFound'}: return False
+   raise
  return (UPLOAD/key).exists()
 def storage_response(key,name=None,download=False):
  if object_storage_enabled():
