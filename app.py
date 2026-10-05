@@ -10,7 +10,7 @@ app=Flask(__name__)
 app.config["SECRET_KEY"]=os.getenv("SECRET_KEY","malibub-homologacao")
 app.config["SQLALCHEMY_DATABASE_URI"]=os.getenv("DATABASE_URL","sqlite:///malibub.db")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"]=False
-app.config["MAX_CONTENT_LENGTH"]=2*1024*1024*1024
+app.config["MAX_CONTENT_LENGTH"]=512*1024*1024
 AUTO_PURGE_DAYS=int(os.getenv("AUTO_PURGE_DAYS","90"))
 app.config["SESSION_COOKIE_HTTPONLY"]=True
 app.config["SESSION_COOKIE_SAMESITE"]="Lax"
@@ -42,6 +42,8 @@ def security_headers(response):
  response.headers["X-Frame-Options"]="SAMEORIGIN"
  response.headers["Referrer-Policy"]="strict-origin-when-cross-origin"
  response.headers["Permissions-Policy"]="camera=(), microphone=(), geolocation=()"
+ response.headers["Content-Security-Policy"]="default-src 'self'; img-src 'self' data:; frame-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; form-action 'self'; base-uri 'self'; frame-ancestors 'self'"
+ response.headers["Cache-Control"]="no-store"
  if request.is_secure: response.headers["Strict-Transport-Security"]="max-age=31536000; includeSubDomains"
  return response
 
