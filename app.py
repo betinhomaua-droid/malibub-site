@@ -223,6 +223,7 @@ def report_model_file():
 @app.route("/new",methods=["GET","POST"])
 def new():
  if session.get("role")!="Clinica": return redirect("/dashboard")
+ allowed_ext={".jpg",".jpeg",".png",".pdf",".dcm",".zip",".rar"}
  if request.method=="POST":
   if not any(f and f.filename for f in request.files.getlist("files")):
    flash("Anexe ao menos um arquivo do exame antes de enviar.")
