@@ -409,7 +409,13 @@ def report(eid):
    flash("Informe um valor de laudo válido.")
    return redirect(url_for("report",eid=e.id))
   e.report=report_text; e.status="Liberado"; e.released_at=datetime.utcnow(); e.signed_by=session.get("name") or "Dra. Marina"; e.signed_at=datetime.utcnow()
-  db.session.flush()\n  check=result_pdf(e.id)\n  if getattr(check,"status_code",200) >= 400:\n   db.session.rollback(); flash("PDF final indisponível. O exame não foi liberado."); return redirect(url_for("report",eid=e.id))\n  existing_revenue=Finance.query.filter_by(description=f"Laudo {e.protocol}",kind="Entrada").first()
+  db.session.flush()
+  check=result_pdf(e.id)
+  if getattr(check,"status_code",200) >= 400:
+   db.session.rollback()
+   flash("PDF final indisponível. O exame não foi liberado nem faturado.")
+   return redirect(url_for("report",eid=e.id))
+  existing_revenue=Finance.query.filter_by(description=f"Laudo {e.protocol}",kind="Entrada").first()
   if not existing_revenue:
    db.session.add(Finance(description=f"Laudo {e.protocol}",kind="Entrada",amount=amount))
   db.session.commit(); return redirect("/dashboard")
