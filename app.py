@@ -13,6 +13,7 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"]=False
 app.config["MAX_CONTENT_LENGTH"]=200*1024*1024
 app.config["SESSION_COOKIE_HTTPONLY"]=True
 app.config["SESSION_COOKIE_SAMESITE"]="Lax"
+app.config["SESSION_COOKIE_SECURE"]=os.getenv("APP_ENV","production")=="production"
 db=SQLAlchemy(app)
 UPLOAD=Path(app.instance_path)/"uploads"; UPLOAD.mkdir(parents=True,exist_ok=True)
 
@@ -44,6 +45,8 @@ CSS="""*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;backgr
 @media(max-width:900px){.login-approved{grid-template-columns:1fr}.login-visual{min-height:42vh;padding:28px 8%}.login-copy h1{font-size:30px}.login-copy p{font-size:16px}.login-panel{padding:38px 22px 70px}.login-footer{font-size:10px}.shell,.workspace,.grid,.cards{grid-template-columns:1fr}.shell aside{position:relative}}"""
 
 def page(body,title="MALIBUB"):
+ msgs="".join(f\'<div class="notice">{m}</div>\' for m in __import__("flask").get_flashed_messages())
+ body=msgs+body
  nav=""
  if session.get("uid"):
   nav=f'''<aside><div class="brand">MALIBUB<span>Imaginologia</span><small>PRECISÃO • CONFIANÇA • AGILIDADE</small></div><a href="/dashboard">Painel</a>{'<a href="/new">Novo Exame</a>' if session.get('role')=='Clinica' else ''}{'<a href="/finance">Financeiro</a>' if session.get('role')=='Radiologista' else ''}<a href="/logout">Sair</a></aside>'''
@@ -121,12 +124,19 @@ def report_model_file():
   eid=request.args.get("exam",type=int); e=Exam.query.get_or_404(eid); uid=e.clinic_id
  u=User.query.get_or_404(uid)
  if not u.report_model: return redirect("/dashboard")
+ path=UPLOAD/u.report_model
+ if not path.exists():
+  flash("O modelo de laudo não está disponível no armazenamento atual. Envie o modelo novamente.")
+  return redirect("/modelo-laudo" if session.get("role")=="Clinica" else "/dashboard")
  return send_from_directory(UPLOAD,u.report_model,download_name=u.report_model_name,as_attachment=False)
 
 @app.route("/new",methods=["GET","POST"])
 def new():
  if session.get("role")!="Clinica": return redirect("/dashboard")
  if request.method=="POST":
+  if not any(f and f.filename for f in request.files.getlist("files")):
+   flash("Anexe ao menos um arquivo do exame antes de enviar.")
+   return redirect("/new")
   e=Exam(protocol="MB"+datetime.now().strftime("%y%m%d%H%M%S"),patient=request.form["patient"],sex=request.form["sex"],birth=request.form["birth"],dentist=request.form["dentist"],exam_date=request.form["exam_date"],exam_type=request.form["exam_type"],observation=request.form.get("observation","")[:500],clinic_id=session["uid"],status="Aguardando laudo",due_at=datetime.utcnow()+timedelta(hours=24)); db.session.add(e); db.session.commit()
   for f in request.files.getlist("files"):
    if f and f.filename:
@@ -160,6 +170,9 @@ def report(eid):
  if session.get("role")!="Radiologista": return redirect("/")
  e=Exam.query.get_or_404(eid); files=ExamFile.query.filter_by(exam_id=e.id).filter((ExamFile.kind=="entrada") | (ExamFile.kind==None)).all(); ready_files=ExamFile.query.filter_by(exam_id=e.id,kind="exame_pronto").all()
  if request.method=="POST":
+  if not ready_files:
+   flash("Anexe o exame pronto/template antes de finalizar e liberar.")
+   return redirect(url_for("report",eid=e.id))
   e.report=request.form["report"]; e.status="Liberado"; e.released_at=datetime.utcnow(); e.signed_by=session.get("name") or "Dra. Marina"; e.signed_at=datetime.utcnow(); db.session.add(Finance(description=f"Laudo {e.protocol}",kind="Entrada",amount=float(request.form.get("amount") or 0))); db.session.commit(); return redirect("/dashboard")
  imgs="".join((f"<div class='exam-file'><div class='filebar'><b>{f.name}</b><a class='btn' href='/exam-file/{f.id}' target='_blank'>Abrir</a><a class='btn gold' href='/exam-file/{f.id}?download=1'>Baixar</a></div>" + (f"<img src='/exam-file/{f.id}' alt='{f.name}'>" if f.name.lower().endswith(('.jpg','.jpeg','.png','.webp')) else (f"<iframe src='/exam-file/{f.id}' title='{f.name}'></iframe>" if f.name.lower().endswith('.pdf') else "<div class='notice'>Pré-visualização indisponível para este formato. Use Abrir ou Baixar.</div>")) + "</div>") for f in files)
  ready_html="".join((f"<div class='exam-file'><div class='filebar'><b>{f.name}</b><a class='btn' href='/exam-file/{f.id}' target='_blank'>Abrir</a><a class='btn gold' href='/exam-file/{f.id}?download=1'>Baixar</a></div>" + (f"<img src='/exam-file/{f.id}'>" if f.name.lower().endswith(('.jpg','.jpeg')) else f"<iframe src='/exam-file/{f.id}'></iframe>") + "</div>") for f in ready_files)
@@ -186,6 +199,8 @@ def result_pdf(eid):
  title=ParagraphStyle("t",parent=styles["Heading1"],alignment=TA_CENTER,textColor=navy,fontSize=16,leading=20); body=ParagraphStyle("b",parent=styles["BodyText"],fontSize=10,leading=15,textColor=colors.HexColor("#26383D"))
  story=[]
  model_path=(UPLOAD/clinic.report_model) if clinic and clinic.report_model else None
+ if has_pdf_model and (not model_path or not model_path.exists()):
+  return "O modelo PDF personalizado desta clínica não está disponível. Reenvie o modelo antes de gerar o laudo.",410
  if model_path and model_path.exists() and model_path.suffix.lower() in {".jpg",".jpeg",".png"}:
   from reportlab.platypus import Image
   try:
