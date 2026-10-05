@@ -10,7 +10,7 @@ app=Flask(__name__)
 app.config["SECRET_KEY"]=os.getenv("SECRET_KEY","malibub-homologacao")
 app.config["SQLALCHEMY_DATABASE_URI"]=os.getenv("DATABASE_URL","sqlite:///malibub.db")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"]=False
-app.config["MAX_CONTENT_LENGTH"]=200*1024*1024
+app.config["MAX_CONTENT_LENGTH"]=2*1024*1024*1024
 app.config["SESSION_COOKIE_HTTPONLY"]=True
 app.config["SESSION_COOKIE_SAMESITE"]="Lax"
 app.config["SESSION_COOKIE_SECURE"]=os.getenv("APP_ENV","production")=="production"
@@ -29,6 +29,14 @@ def security_headers(response):
 @app.errorhandler(413)
 def too_large(error):
  return page("<h1>Arquivo muito grande</h1><div class='card'>O envio ultrapassou o limite permitido. Divida o exame em arquivos menores antes de reenviar.</div>","Arquivo muito grande"),413
+
+@app.route("/health")
+def health():
+ try:
+  db.session.execute(db.text("SELECT 1"))
+  return {"status":"ok","database":"ok"},200
+ except Exception:
+  return {"status":"error","database":"unavailable"},503
 
 @app.route("/assets/<path:filename>")
 def assets(filename):
