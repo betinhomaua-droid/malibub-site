@@ -590,11 +590,21 @@ def result(eid):
 def finance():
  if session.get("role")!="Radiologista": return redirect("/")
  if request.method=="POST":
-  category=request.form.get("category","Outros").strip()
-  cost_class=request.form.get("cost_class","").strip()
-  description=request.form["description"].strip()
+  category=request.form.get("category","Outros").strip()[:60]
+  cost_class=request.form.get("cost_class","").strip()[:30]
+  description=request.form.get("description","").strip()[:120]
+  kind=request.form.get("kind","").strip()
+  if kind not in {"Entrada","Saída"}:
+   flash("Tipo de lançamento inválido."); return redirect("/finance")
+  if not description:
+   flash("Informe uma descrição."); return redirect("/finance")
+  try:
+   amount=float(request.form.get("amount") or 0)
+   if amount < 0: raise ValueError
+  except (TypeError,ValueError):
+   flash("Informe um valor financeiro válido."); return redirect("/finance")
   label=" · ".join(x for x in (category,cost_class,description) if x)
-  db.session.add(Finance(description=label,kind=request.form["kind"],amount=float(request.form["amount"] or 0))); db.session.commit()
+  db.session.add(Finance(description=label[:200],kind=kind,amount=amount)); db.session.commit()
   return redirect("/finance")
  month=request.args.get("month","").strip()
  q=Finance.query
