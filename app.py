@@ -315,11 +315,32 @@ def new():
   if invalid:
    flash("Formato não permitido: "+", ".join(invalid)+". Use JPG, JPEG, PNG, PDF, DCM, ZIP ou RAR.")
    return redirect("/new")
-  e=Exam(protocol="MB"+datetime.now().strftime("%y%m%d%H%M%S"),patient=request.form["patient"],sex=request.form["sex"],birth=request.form["birth"],dentist=request.form["dentist"],exam_date=request.form["exam_date"],exam_type=request.form["exam_type"],observation=request.form.get("observation","")[:500],clinic_id=session["uid"],status="Aguardando laudo",due_at=datetime.utcnow()+timedelta(hours=24)); db.session.add(e); db.session.commit()
-  for f in incoming:
-   name=secure_filename(f.filename)
-   stored=uuid.uuid4().hex+"_"+name; store_upload(f,stored,f.mimetype); db.session.add(ExamFile(exam_id=e.id,name=name,stored=stored))
-  db.session.commit(); return redirect("/dashboard")
+  patient=request.form.get("patient","").strip()[:120]
+  dentist=request.form.get("dentist","").strip()[:120]
+  sex=request.form.get("sex","Não informado").strip()
+  exam_type=request.form.get("exam_type","").strip()[:80]
+  if not patient or not dentist or not exam_type:
+   flash("Preencha os dados obrigatórios do exame.")
+   return redirect("/new")
+  e=Exam(protocol="MB"+datetime.now().strftime("%y%m%d%H%M%S"),patient=patient,sex=sex,birth=request.form.get("birth",""),dentist=dentist,exam_date=request.form.get("exam_date",""),exam_type=exam_type,observation=request.form.get("observation","").strip()[:500],clinic_id=session["uid"],status="Aguardando laudo",due_at=datetime.utcnow()+timedelta(hours=24))
+  db.session.add(e); db.session.flush()
+  uploaded=[]
+  try:
+   for f in incoming:
+    name=secure_filename(f.filename)
+    stored=uuid.uuid4().hex+"_"+name
+    store_upload(f,stored,f.mimetype)
+    uploaded.append(stored)
+    db.session.add(ExamFile(exam_id=e.id,name=name,stored=stored))
+   db.session.commit()
+  except Exception:
+   db.session.rollback()
+   for stored in uploaded:
+    try: storage_delete(stored)
+    except Exception: pass
+   flash("Não foi possível concluir o envio. Nenhum exame incompleto foi criado; tente novamente.")
+   return redirect("/new")
+  return redirect("/dashboard")
  body=f'''<h1>Novo Exame</h1><div class="card"><form method="post" enctype="multipart/form-data">{csrf_field()}<div class="grid"><label>Nome do paciente<input name="patient" required></label><label>Sexo<select name="sex"><option>Feminino</option><option>Masculino</option><option>Não informado</option></select></label><label>Data de nascimento<input type="date" name="birth" required></label><label>Dentista solicitante<input name="dentist" required></label><label>Data do exame<input type="date" name="exam_date" required></label><label>Tipo de exame<select name="exam_type"><option>Tomografia computadorizada</option><option>Panorâmica</option><option>Documentação</option><option>Tomografia Endo</option></select></label></div><label>Observação / motivo<textarea name="observation" maxlength="500"></textarea></label><label>Imagens e arquivos<input type="file" name="files" multiple accept=".jpg,.jpeg,.png,.pdf,.dcm,.zip,.rar"></label><button class="gold">Enviar exame</button></form></div>'''
  return page(body)
 
