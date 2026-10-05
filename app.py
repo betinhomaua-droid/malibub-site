@@ -438,7 +438,7 @@ def result_pdf(eid):
    while line_index<len(report_lines) and y>min_y:
     cv.drawString(left,y,report_lines[line_index][:max_chars]); line_index+=1; y-=4.4*mm
    cv.setFont("Helvetica",7.5); cv.setFillColor(colors.HexColor("#52666E"))
-   cv.drawCentredString(width/2,10*mm,f"Assinado digitalmente por {e.signed_by or 'Dra. Marina'}")
+   cv.drawCentredString(width/2,10*mm,f"Assinado eletronicamente por {e.signed_by or 'Dra. Marina'}")
    cv.drawCentredString(width/2,6.5*mm,f"Data: {signed} · Protocolo {e.protocol or ''}")
    cv.save(); overlay.seek(0); first.merge_page(PdfReader(overlay).pages[0]); final_writer.add_page(first)
    # Mantém eventuais páginas originais seguintes.
@@ -454,7 +454,7 @@ def result_pdf(eid):
     while line_index<len(report_lines) and y>25*mm:
      cv.drawString(22*mm,y,report_lines[line_index][:max_chars]); line_index+=1; y-=4.4*mm
     cv.setFont("Helvetica",7.5); cv.setFillColor(colors.HexColor("#52666E"))
-    cv.drawCentredString(width/2,10*mm,f"Assinado digitalmente por {e.signed_by or 'Dra. Marina'}")
+    cv.drawCentredString(width/2,10*mm,f"Assinado eletronicamente por {e.signed_by or 'Dra. Marina'}")
     cv.drawCentredString(width/2,6.5*mm,f"Data: {signed} · Protocolo {e.protocol or ''}")
     cv.save(); extra.seek(0); final_writer.add_page(PdfReader(extra).pages[0])
    merged=io.BytesIO(); final_writer.write(merged); merged.seek(0); buf=merged
