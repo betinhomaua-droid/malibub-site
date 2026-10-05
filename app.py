@@ -156,7 +156,7 @@ def page(body,title="MALIBUB"):
  body=msgs+body
  nav=""
  if session.get("uid"):
-  nav=f'''<aside><div class="brand">MALIBUB<span>Imaginologia</span><small>PRECISÃO • CONFIANÇA • AGILIDADE</small></div><a href="/dashboard">Painel</a>{'<a href="/new">Novo Exame</a>' if session.get('role')=='Clinica' else ''}{'<a href="/finance">Financeiro</a>' if session.get('role')=='Radiologista' else ''}<a href="/minha-conta">Minha conta</a><a href="/logout">Sair</a></aside>'''
+  nav=f'''<aside><div class="brand">MALIBUB<span>Imaginologia</span><small>PRECISÃO • CONFIANÇA • AGILIDADE</small></div><a href="/dashboard">Painel</a>{'<a href="/new">Novo Exame</a>' if session.get('role')=='Clinica' else ''}{'<a href="/finance">Financeiro</a>' if session.get('role')=='Radiologista' else ''}<a href="/minha-conta">Minha conta</a><form method="post" action="/logout" style="margin:0">{csrf_field()}<button type="submit" style="width:100%;text-align:left;background:none;border:0;color:inherit;padding:12px 14px;cursor:pointer;font:inherit">Sair</button></form></aside>'''
   return f'<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title><style>{CSS}</style><div class="shell">{nav}<main>{body}</main></div></html>'
  return f'<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title><style>{CSS}</style>{body}</html>'
 
@@ -596,7 +596,8 @@ def my_account():
  body=f"""<h1>Minha conta</h1><div class='card'><form method='post'>{csrf_field()}<label>E-mail de acesso<input type='email' name='email' value='{html_escape(u.email)}' required></label><label>Senha atual<input type='password' name='current_password' required></label><label>Nova senha (opcional)<input type='password' name='new_password' minlength='10'></label><button class='gold'>Salvar alterações</button></form></div>"""
  return page(body)
 
-@app.route("/logout")
-def logout(): session.clear(); return redirect("/")
+@app.route("/logout",methods=["POST"])
+def logout():
+ session.clear(); return redirect("/")
 
 if __name__=="__main__": app.run(host="0.0.0.0",port=int(os.getenv("PORT","5000")))
