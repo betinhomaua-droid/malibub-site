@@ -146,26 +146,32 @@ def page(body,title="MALIBUB"):
   return f'<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title><style>{CSS}</style><div class="shell">{nav}<main>{body}</main></div></html>'
  return f'<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title><style>{CSS}</style>{body}</html>'
 
+_initialized=False
 @app.before_request
 def init():
+ global _initialized
+ if _initialized: return
  db.create_all()
- try:
-  if db.engine.dialect.name!="sqlite": raise RuntimeError("sqlite migration skipped")
-  cols=[r[1] for r in db.session.execute(db.text("PRAGMA table_info(exam)")).fetchall()]
-  if "signed_by" not in cols: db.session.execute(db.text("ALTER TABLE exam ADD COLUMN signed_by VARCHAR(120)"))
-  if "signed_at" not in cols: db.session.execute(db.text("ALTER TABLE exam ADD COLUMN signed_at DATETIME"))
-  db.session.commit()
- except Exception: db.session.rollback()
+ if db.engine.dialect.name=="sqlite":
+  try:
+   cols=[r[1] for r in db.session.execute(db.text("PRAGMA table_info(exam)")).fetchall()]
+   if "signed_by" not in cols: db.session.execute(db.text("ALTER TABLE exam ADD COLUMN signed_by VARCHAR(120)"))
+   if "signed_at" not in cols: db.session.execute(db.text("ALTER TABLE exam ADD COLUMN signed_at DATETIME"))
+   db.session.commit()
+  except Exception:
+   db.session.rollback()
  if os.getenv("BOOTSTRAP_DEMO_USERS","false").lower()=="true" and not User.query.first():
   db.session.add(User(name="Clínica Demo",email="clinica@malibub.com",password=generate_password_hash("Malibub2026"),role="Clinica"))
   db.session.add(User(name="Dra. Marina",email="radiologista@malibub.com",password=generate_password_hash("Malibub2026"),role="Radiologista")); db.session.commit()
+ _initialized=True
 
 @app.route("/",methods=["GET","POST"])
 def login():
  if request.method=="POST":
   u=User.query.filter_by(email=request.form["email"].lower()).first()
   if u and check_password_hash(u.password,request.form["password"]):
-   session.update(uid=u.id,role=u.role,name=u.name); return redirect("/dashboard")
+   session.clear(); session.permanent=True
+   session.update(uid=u.id,role=u.role,name=u.name,_csrf_token=secrets.token_urlsafe(32)); return redirect("/dashboard")
   flash("E-mail ou senha inválidos.")
  msgs="".join(f'<div class="login-flash">{m}</div>' for m in __import__("flask").get_flashed_messages())
  body=f'''<div class="login-approved">
