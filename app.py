@@ -303,10 +303,20 @@ def report(eid):
   if not ready_files:
    flash("Anexe o exame pronto/template antes de finalizar e liberar.")
    return redirect(url_for("report",eid=e.id))
-  e.report=request.form["report"]; e.status="Liberado"; e.released_at=datetime.utcnow(); e.signed_by=session.get("name") or "Dra. Marina"; e.signed_at=datetime.utcnow()
+  report_text=request.form.get("report","").strip()
+  if not report_text:
+   flash("Digite o laudo antes de finalizar.")
+   return redirect(url_for("report",eid=e.id))
+  try:
+   amount=float(request.form.get("amount") or 0)
+   if amount < 0: raise ValueError
+  except (TypeError,ValueError):
+   flash("Informe um valor de laudo válido.")
+   return redirect(url_for("report",eid=e.id))
+  e.report=report_text; e.status="Liberado"; e.released_at=datetime.utcnow(); e.signed_by=session.get("name") or "Dra. Marina"; e.signed_at=datetime.utcnow()
   existing_revenue=Finance.query.filter_by(description=f"Laudo {e.protocol}",kind="Entrada").first()
   if not existing_revenue:
-   db.session.add(Finance(description=f"Laudo {e.protocol}",kind="Entrada",amount=float(request.form.get("amount") or 0)))
+   db.session.add(Finance(description=f"Laudo {e.protocol}",kind="Entrada",amount=amount))
   db.session.commit(); return redirect("/dashboard")
  imgs="".join((f"<div class='exam-file'><div class='filebar'><b>{html_escape(f.name)}</b><a class='btn' href='/exam-file/{f.id}' target='_blank'>Abrir</a><a class='btn gold' href='/exam-file/{f.id}?download=1'>Baixar</a></div>" + (f"<img src='/exam-file/{f.id}' alt='{html_escape(f.name)}'>" if f.name.lower().endswith(('.jpg','.jpeg','.png','.webp')) else (f"<iframe src='/exam-file/{f.id}' title='{html_escape(f.name)}'></iframe>" if f.name.lower().endswith('.pdf') else "<div class='notice'>Pré-visualização indisponível para este formato. Use Abrir ou Baixar.</div>")) + "</div>") for f in files)
  ready_html="".join((f"<div class='exam-file'><div class='filebar'><b>{html_escape(f.name)}</b><a class='btn' href='/exam-file/{f.id}' target='_blank'>Abrir</a><a class='btn gold' href='/exam-file/{f.id}?download=1'>Baixar</a></div>" + (f"<img src='/exam-file/{f.id}'>" if f.name.lower().endswith(('.jpg','.jpeg')) else f"<iframe src='/exam-file/{f.id}'></iframe>") + "</div>") for f in ready_files)
