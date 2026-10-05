@@ -87,7 +87,7 @@ def csrf_protect():
 def security_headers(response):
  response.headers["X-Content-Type-Options"]="nosniff"
  response.headers["X-Frame-Options"]="SAMEORIGIN"
- response.headers["Referrer-Policy"]="strict-origin-when-cross-origin"
+ response.headers["Referrer-Policy"]="no-referrer"
  response.headers["Permissions-Policy"]="camera=(), microphone=(), geolocation=()"
  response.headers["Content-Security-Policy"]="default-src 'self'; img-src 'self' data:; frame-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; form-action 'self'; base-uri 'self'; frame-ancestors 'self'"
  response.headers["Cache-Control"]="no-store"
