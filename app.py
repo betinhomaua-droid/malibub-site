@@ -2,7 +2,7 @@ from flask import Flask, request, redirect, url_for, session, flash, render_temp
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import os, uuid, io
 
@@ -16,6 +16,19 @@ app.config["SESSION_COOKIE_SAMESITE"]="Lax"
 app.config["SESSION_COOKIE_SECURE"]=os.getenv("APP_ENV","production")=="production"
 db=SQLAlchemy(app)
 UPLOAD=Path(app.instance_path)/"uploads"; UPLOAD.mkdir(parents=True,exist_ok=True)
+
+@app.after_request
+def security_headers(response):
+ response.headers["X-Content-Type-Options"]="nosniff"
+ response.headers["X-Frame-Options"]="SAMEORIGIN"
+ response.headers["Referrer-Policy"]="strict-origin-when-cross-origin"
+ response.headers["Permissions-Policy"]="camera=(), microphone=(), geolocation=()"
+ if request.is_secure: response.headers["Strict-Transport-Security"]="max-age=31536000; includeSubDomains"
+ return response
+
+@app.errorhandler(413)
+def too_large(error):
+ return page("<h1>Arquivo muito grande</h1><div class='card'>O envio ultrapassou o limite permitido. Divida o exame em arquivos menores antes de reenviar.</div>","Arquivo muito grande"),413
 
 @app.route("/assets/<path:filename>")
 def assets(filename):
@@ -49,7 +62,7 @@ def page(body,title="MALIBUB"):
  body=msgs+body
  nav=""
  if session.get("uid"):
-  nav=f'''<aside><div class="brand">MALIBUB<span>Imaginologia</span><small>PRECISÃO • CONFIANÇA • AGILIDADE</small></div><a href="/dashboard">Painel</a>{'<a href="/new">Novo Exame</a>' if session.get('role')=='Clinica' else ''}{'<a href="/finance">Financeiro</a>' if session.get('role')=='Radiologista' else ''}<a href="/logout">Sair</a></aside>'''
+  nav=f'''<aside><div class="brand">MALIBUB<span>Imaginologia</span><small>PRECISÃO • CONFIANÇA • AGILIDADE</small></div><a href="/dashboard">Painel</a>{'<a href="/new">Novo Exame</a>' if session.get('role')=='Clinica' else ''}{'<a href="/finance">Financeiro</a>' if session.get('role')=='Radiologista' else ''}<a href="/minha-conta">Minha conta</a><a href="/logout">Sair</a></aside>'''
   return f'<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title><style>{CSS}</style><div class="shell">{nav}<main>{body}</main></div></html>'
  return f'<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title><style>{CSS}</style>{body}</html>'
 
@@ -263,6 +276,23 @@ def finance():
  entries=Finance.query.order_by(Finance.date.desc()).all(); ent=sum(x.amount for x in entries if x.kind=="Entrada"); sai=sum(x.amount for x in entries if x.kind=="Saída")
  rows="".join(f"<tr><td>{x.date.strftime('%d/%m/%Y')}</td><td>{x.description}</td><td>{x.kind}</td><td>R$ {x.amount:.2f}</td></tr>" for x in entries)
  body=f'''<h1>Financeiro</h1><div class="cards"><div class="card">Entradas<b>R$ {ent:.2f}</b></div><div class="card">Saídas<b>R$ {sai:.2f}</b></div><div class="card">Saldo<b>R$ {ent-sai:.2f}</b></div></div><div class="card"><h2>Novo lançamento</h2><form method="post"><div class="grid"><label>Descrição<input name="description" required></label><label>Tipo<select name="kind"><option>Entrada</option><option>Saída</option></select></label><label>Valor<input type="number" step="0.01" name="amount" required></label></div><button>Adicionar</button></form></div><div class="card"><table><tr><th>Data</th><th>Descrição</th><th>Tipo</th><th>Valor</th></tr>{rows}</table></div>'''
+ return page(body)
+
+@app.route("/minha-conta",methods=["GET","POST"])
+def my_account():
+ if not session.get("uid"): return redirect("/")
+ u=User.query.get_or_404(session["uid"])
+ if request.method=="POST":
+  email=request.form.get("email","").strip().lower(); current=request.form.get("current_password",""); new=request.form.get("new_password","")
+  if not check_password_hash(u.password,current): flash("Senha atual incorreta."); return redirect("/minha-conta")
+  if email and email!=u.email:
+   if User.query.filter_by(email=email).first(): flash("Este e-mail já está em uso."); return redirect("/minha-conta")
+   u.email=email
+  if new:
+   if len(new)<10: flash("A nova senha deve ter pelo menos 10 caracteres."); return redirect("/minha-conta")
+   u.password=generate_password_hash(new)
+  db.session.commit(); flash("Dados de acesso atualizados."); return redirect("/minha-conta")
+ body=f"""<h1>Minha conta</h1><div class='card'><form method='post'><label>E-mail de acesso<input type='email' name='email' value='{u.email}' required></label><label>Senha atual<input type='password' name='current_password' required></label><label>Nova senha (opcional)<input type='password' name='new_password' minlength='10'></label><button class='gold'>Salvar alterações</button></form></div>"""
  return page(body)
 
 @app.route("/logout")
