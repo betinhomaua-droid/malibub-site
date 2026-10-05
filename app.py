@@ -4,6 +4,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from markupsafe import escape as html_escape
 from datetime import datetime, timedelta, timezone
+from collections import defaultdict, deque
+import time
 from pathlib import Path
 import os, uuid, io, secrets
 import boto3
@@ -179,15 +181,41 @@ def init():
   db.session.add(User(name="Dra. Marina",email="radiologista@malibub.com",password=generate_password_hash("Malibub2026"),role="Radiologista")); db.session.commit()
  _initialized=True
 
+LOGIN_ATTEMPTS=defaultdict(deque)
+LOGIN_LIMIT=5
+LOGIN_WINDOW=15*60
+
+def login_client_key():
+ forwarded=request.headers.get("X-Forwarded-For","")
+ ip=(forwarded.split(",")[0].strip() if forwarded else request.remote_addr) or "unknown"
+ return ip[:64]
+
+def login_rate_limited(key):
+ now=time.monotonic(); attempts=LOGIN_ATTEMPTS[key]
+ while attempts and now-attempts[0]>LOGIN_WINDOW: attempts.popleft()
+ return len(attempts)>=LOGIN_LIMIT
+
+def record_login_failure(key):
+ LOGIN_ATTEMPTS[key].append(time.monotonic())
+
+def clear_login_failures(key):
+ LOGIN_ATTEMPTS.pop(key,None)
+
 @app.route("/",methods=["GET","POST"])
 def login():
  if request.method=="POST":
+  client_key=login_client_key()
+  if login_rate_limited(client_key):
+   flash("Muitas tentativas de acesso. Aguarde alguns minutos e tente novamente.")
+   return redirect("/")
   email=request.form.get("email","").strip().lower()[:120]
   password=request.form.get("password","")[:256]
   u=User.query.filter_by(email=email).first()
   if u and password and check_password_hash(u.password,password):
+   clear_login_failures(client_key)
    session.clear(); session.permanent=True
    session.update(uid=u.id,role=u.role,name=u.name,_csrf_token=secrets.token_urlsafe(32)); return redirect("/dashboard")
+  record_login_failure(client_key)
   flash("E-mail ou senha inválidos.")
  msgs="".join(f'<div class="login-flash">{html_escape(m)}</div>' for m in __import__("flask").get_flashed_messages())
  body=f'''<div class="login-approved">
