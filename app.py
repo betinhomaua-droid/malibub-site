@@ -288,6 +288,12 @@ def preview_report_pdf(eid):
   response.headers["Content-Disposition"]=f'inline; filename="{e.protocol}_previa.pdf"'
  return response
 
+def br_date(value):
+ if not value: return ""
+ raw=str(value).strip()
+ try: return datetime.strptime(raw,"%Y-%m-%d").strftime("%d/%m/%Y")
+ except ValueError: return raw
+
 @app.route("/result/<int:eid>/pdf")
 def result_pdf(eid):
  if not session.get("uid"): return redirect("/")
