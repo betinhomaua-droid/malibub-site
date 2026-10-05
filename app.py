@@ -293,9 +293,7 @@ def result_pdf(eid):
    Spacer(1,3*mm),
    Paragraph("<b>Técnica:</b> Estudo realizado por aquisição volumétrica cone beam da região solicitada, em cortes axiais de 0,12 mm de espessura, paralelos ao rebordo alveolar e sem contraste. Realizadas reformatações panorâmicas e transversais com 2,0mm de distância entre os cortes (pode ser alterado para se obter melhor imagem) e reconstruções em 3D.",normal),
    Spacer(1,4*mm),
-   Paragraph("<b>Descrição do exame:</b>",bold),
-   Paragraph("- Ausência dos dentes",normal),
-   Paragraph("- Reabsorção óssea do rebordo alveolar do tipo horizontal.",normal)
+   Paragraph("<b>Descrição do exame:</b>",bold)
   ]
   for raw in (e.report or "").splitlines():
    story_tmj.append(Paragraph(escape(raw) if raw.strip() else "&nbsp;",normal))
