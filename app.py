@@ -263,22 +263,50 @@ def result_pdf(eid):
  if not has_pdf_model:
   doc.build(story)
   buf.seek(0)
- # Quando a clínica cadastrou um PDF timbrado, preserve o PDF original inteiro
- # e acrescente somente a confirmação da assinatura no rodapé.
+ # Quando a clínica cadastrou um PDF timbrado, preserve o modelo visual
+ # e escreva o laudo digitado pela radiologista na área útil configurada.
  if model_path and model_path.exists() and model_path.suffix.lower()==".pdf":
   try:
    from pypdf import PdfReader, PdfWriter
    from reportlab.pdfgen import canvas
+   from reportlab.pdfbase.pdfmetrics import stringWidth
    base_reader=PdfReader(str(model_path)); final_writer=PdfWriter()
-   for base_page in base_reader.pages:
+   report_lines=[]
+   max_chars=105
+   for raw in (e.report or "").splitlines():
+    words=raw.split(); line=""
+    if not words: report_lines.append(""); continue
+    for word in words:
+     test=(line+" "+word).strip()
+     if len(test)>max_chars and line:
+      report_lines.append(line); line=word
+     else: line=test
+    report_lines.append(line)
+   line_index=0
+   top_mm=float(clinic.report_top_mm or 72); bottom_mm=float(clinic.report_bottom_mm or 42)
+   for page_no,base_page in enumerate(base_reader.pages):
     width=float(base_page.mediabox.width); height=float(base_page.mediabox.height)
-    footer_buf=io.BytesIO(); cv=canvas.Canvas(footer_buf,pagesize=(width,height))
+    overlay_buf=io.BytesIO(); cv=canvas.Canvas(overlay_buf,pagesize=(width,height))
+    left=22*mm; right=22*mm; y=height-top_mm*mm; min_y=bottom_mm*mm+10*mm
+    cv.setFont("Helvetica",9.2); cv.setFillColor(colors.HexColor("#111111"))
+    while line_index<len(report_lines) and y>min_y:
+     cv.drawString(left,y,report_lines[line_index][:max_chars]); line_index+=1; y-=4.6*mm
     cv.setFont("Helvetica",7.5); cv.setFillColor(colors.HexColor("#52666E"))
     cv.drawCentredString(width/2,10*mm,f"Assinado digitalmente por {e.signed_by or 'Dra. Marina'}")
     cv.drawCentredString(width/2,6.5*mm,f"Data: {signed} · Protocolo {e.protocol or ''}")
-    cv.save(); footer_buf.seek(0)
-    footer_page=PdfReader(footer_buf).pages[0]
-    base_page.merge_page(footer_page); final_writer.add_page(base_page)
+    cv.save(); overlay_buf.seek(0)
+    overlay_page=PdfReader(overlay_buf).pages[0]
+    base_page.merge_page(overlay_page); final_writer.add_page(base_page)
+   # Se o texto exceder as páginas do modelo, acrescente páginas limpas para não perder conteúdo.
+   while line_index<len(report_lines):
+    extra_buf=io.BytesIO(); cv=canvas.Canvas(extra_buf,pagesize=A4)
+    width,height=A4; y=height-25*mm; cv.setFont("Helvetica",9.2); cv.setFillColor(colors.HexColor("#111111"))
+    while line_index<len(report_lines) and y>25*mm:
+     cv.drawString(22*mm,y,report_lines[line_index][:max_chars]); line_index+=1; y-=4.6*mm
+    cv.setFont("Helvetica",7.5); cv.setFillColor(colors.HexColor("#52666E"))
+    cv.drawCentredString(width/2,10*mm,f"Assinado digitalmente por {e.signed_by or 'Dra. Marina'}")
+    cv.drawCentredString(width/2,6.5*mm,f"Data: {signed} · Protocolo {e.protocol or ''}")
+    cv.save(); extra_buf.seek(0); final_writer.add_page(PdfReader(extra_buf).pages[0])
    merged=io.BytesIO(); final_writer.write(merged); merged.seek(0); buf=merged
   except Exception:
    return "Não foi possível gerar o PDF personalizado. Verifique o modelo de laudo cadastrado.",500
