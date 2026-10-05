@@ -228,15 +228,18 @@ def new():
  if session.get("role")!="Clinica": return redirect("/dashboard")
  allowed_ext={".jpg",".jpeg",".png",".pdf",".dcm",".zip",".rar"}
  if request.method=="POST":
-  if not any(f and f.filename for f in request.files.getlist("files")):
+  incoming=[f for f in request.files.getlist("files") if f and f.filename]
+  if not incoming:
    flash("Anexe ao menos um arquivo do exame antes de enviar.")
    return redirect("/new")
+  invalid=[secure_filename(f.filename) for f in incoming if Path(secure_filename(f.filename)).suffix.lower() not in allowed_ext]
+  if invalid:
+   flash("Formato não permitido: "+", ".join(invalid)+". Use JPG, JPEG, PNG, PDF, DCM, ZIP ou RAR.")
+   return redirect("/new")
   e=Exam(protocol="MB"+datetime.now().strftime("%y%m%d%H%M%S"),patient=request.form["patient"],sex=request.form["sex"],birth=request.form["birth"],dentist=request.form["dentist"],exam_date=request.form["exam_date"],exam_type=request.form["exam_type"],observation=request.form.get("observation","")[:500],clinic_id=session["uid"],status="Aguardando laudo",due_at=datetime.utcnow()+timedelta(hours=24)); db.session.add(e); db.session.commit()
-  for f in request.files.getlist("files"):
-   if f and f.filename:
-    name=secure_filename(f.filename); ext=Path(name).suffix.lower()
-    if ext not in allowed_ext: continue
-    stored=uuid.uuid4().hex+"_"+name; store_upload(f,stored,f.mimetype); db.session.add(ExamFile(exam_id=e.id,name=name,stored=stored))
+  for f in incoming:
+   name=secure_filename(f.filename)
+   stored=uuid.uuid4().hex+"_"+name; store_upload(f,stored,f.mimetype); db.session.add(ExamFile(exam_id=e.id,name=name,stored=stored))
   db.session.commit(); return redirect("/dashboard")
  body=f'''<h1>Novo Exame</h1><div class="card"><form method="post" enctype="multipart/form-data">{csrf_field()}<div class="grid"><label>Nome do paciente<input name="patient" required></label><label>Sexo<select name="sex"><option>Feminino</option><option>Masculino</option><option>Não informado</option></select></label><label>Data de nascimento<input type="date" name="birth" required></label><label>Dentista solicitante<input name="dentist" required></label><label>Data do exame<input type="date" name="exam_date" required></label><label>Tipo de exame<select name="exam_type"><option>Tomografia computadorizada</option><option>Panorâmica</option><option>Documentação</option><option>Tomografia Endo</option></select></label></div><label>Observação / motivo<textarea name="observation" maxlength="500"></textarea></label><label>Imagens e arquivos<input type="file" name="files" multiple accept=".jpg,.jpeg,.png,.pdf,.dcm,.zip,.rar"></label><button class="gold">Enviar exame</button></form></div>'''
  return page(body)
