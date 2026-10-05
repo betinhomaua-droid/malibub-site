@@ -511,16 +511,21 @@ def finance():
  fixed=sum(x.amount for x in entries if x.kind=="Saída" and " · Fixo · " in (" · "+(x.description or "")+" · "))
  variable=sum(x.amount for x in entries if x.kind=="Saída" and " · Variável · " in (" · "+(x.description or "")+" · "))
  infra=sum(x.amount for x in entries if x.kind=="Saída" and any((x.description or "").startswith(t+" ·") for t in infra_terms))
- released=Exam.query.filter_by(status="Liberado").count()
- ticket=(ent/released) if released else 0
- contribution=(ticket-(variable/released)) if released else ticket
+ exam_q=Exam.query.filter_by(status="Liberado")
+ if month:
+  exam_q=exam_q.filter(Exam.released_at>=datetime.combine(first,datetime.min.time()),Exam.released_at<datetime.combine(last,datetime.min.time()))
+ released=exam_q.count()
+ report_revenue=sum(x.amount for x in entries if x.kind=="Entrada" and ((x.description or "").startswith("Laudo ") or (x.description or "").startswith("Laudos ·")))
+ ticket=(report_revenue/released) if released else 0
+ variable_per_report=(variable/released) if released else 0
+ contribution=ticket-variable_per_report
  break_even=(fixed/contribution) if contribution>0 else 0
  margem=(saldo/ent*100) if ent else 0
  health="POSITIVA" if saldo>0 else ("EQUILIBRADA" if saldo==0 else "NEGATIVA")
  rows="".join(f"<tr><td>{x.date.strftime('%d/%m/%Y')}</td><td>{html_escape(x.description)}</td><td>{html_escape(x.kind)}</td><td>R$ {x.amount:.2f}</td></tr>" for x in entries)
  body=f'''<h1>Financeiro MALIBUB</h1><p class="muted">Acompanhe receitas, custos da plataforma e saúde financeira.</p>
  <form method="get" class="card"><label>Período mensal<input type="month" name="month" value="{html_escape(month)}"></label><button type="submit">Filtrar</button><a class="btn" href="/finance">Todo o período</a></form>
- <div class="cards"><div class="card">Entradas<b>R$ {ent:.2f}</b></div><div class="card">Saídas<b>R$ {sai:.2f}</b></div><div class="card">Saldo<b>R$ {saldo:.2f}</b></div><div class="card">Infraestrutura<b>R$ {infra:.2f}</b></div><div class="card">Custos fixos<b>R$ {fixed:.2f}</b></div><div class="card">Custos variáveis<b>R$ {variable:.2f}</b></div><div class="card">Margem<b>{margem:.1f}%</b></div><div class="card">Saúde financeira<b>{health}</b></div><div class="card">Laudos liberados<b>{released}</b></div><div class="card">Ticket médio<b>R$ {ticket:.2f}</b></div><div class="card">Ponto de equilíbrio<b>{break_even:.1f} laudos</b></div></div>
+ <div class="cards"><div class="card">Entradas<b>R$ {ent:.2f}</b></div><div class="card">Saídas<b>R$ {sai:.2f}</b></div><div class="card">Saldo<b>R$ {saldo:.2f}</b></div><div class="card">Infraestrutura<b>R$ {infra:.2f}</b></div><div class="card">Custos fixos<b>R$ {fixed:.2f}</b></div><div class="card">Custos variáveis<b>R$ {variable:.2f}</b></div><div class="card">Margem<b>{margem:.1f}%</b></div><div class="card">Saúde financeira<b>{health}</b></div><div class="card">Laudos liberados<b>{released}</b></div><div class="card">Receita de laudos<b>R$ {report_revenue:.2f}</b></div><div class="card">Ticket médio<b>R$ {ticket:.2f}</b></div><div class="card">Ponto de equilíbrio<b>{break_even:.1f} laudos</b></div></div>
  <div class="card"><h2>Novo lançamento</h2><form method="post">{csrf_field()}<div class="grid"><label>Categoria<select name="category"><option>Laudos</option><option>Registro</option><option>Hospedagem</option><option>Armazenamento</option><option>Domínio</option><option>Infraestrutura</option><option>Marketing</option><option>Impostos</option><option>Outros</option></select></label><label>Classificação do custo<select name="cost_class"><option value="">Não se aplica</option><option>Fixo</option><option>Variável</option></select></label><label>Descrição<input name="description" placeholder="Ex.: renovação anual, mensalidade, consumo R2" required></label><label>Tipo<select name="kind"><option>Entrada</option><option>Saída</option></select></label><label>Valor (R$)<input type="number" min="0" step="0.01" name="amount" required></label></div><button class="gold">Adicionar lançamento</button></form></div>
  <div class="card"><h2>Movimentações</h2><table><tr><th>Data</th><th>Categoria / descrição</th><th>Tipo</th><th>Valor</th></tr>{rows or '<tr><td colspan="4">Nenhum lançamento neste período.</td></tr>'}</table></div>'''
  return page(body)
