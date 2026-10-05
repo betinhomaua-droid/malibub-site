@@ -474,7 +474,7 @@ def finance():
   db.session.add(Finance(description=request.form["description"],kind=request.form["kind"],amount=float(request.form["amount"] or 0))); db.session.commit()
  entries=Finance.query.order_by(Finance.date.desc()).all(); ent=sum(x.amount for x in entries if x.kind=="Entrada"); sai=sum(x.amount for x in entries if x.kind=="Saída")
  rows="".join(f"<tr><td>{x.date.strftime('%d/%m/%Y')}</td><td>{x.description}</td><td>{x.kind}</td><td>R$ {x.amount:.2f}</td></tr>" for x in entries)
- body=f'''<h1>Financeiro</h1><div class="cards"><div class="card">Entradas<b>R$ {ent:.2f}</b></div><div class="card">Saídas<b>R$ {sai:.2f}</b></div><div class="card">Saldo<b>R$ {ent-sai:.2f}</b></div></div><div class="card"><h2>Novo lançamento</h2><form method="post">{csrf_field()}{csrf_field()}<div class="grid"><label>Descrição<input name="description" required></label><label>Tipo<select name="kind"><option>Entrada</option><option>Saída</option></select></label><label>Valor<input type="number" step="0.01" name="amount" required></label></div><button>Adicionar</button></form></div><div class="card"><table><tr><th>Data</th><th>Descrição</th><th>Tipo</th><th>Valor</th></tr>{rows}</table></div>'''
+ body=f'''<h1>Financeiro</h1><div class="cards"><div class="card">Entradas<b>R$ {ent:.2f}</b></div><div class="card">Saídas<b>R$ {sai:.2f}</b></div><div class="card">Saldo<b>R$ {ent-sai:.2f}</b></div></div><div class="card"><h2>Novo lançamento</h2><form method="post">{csrf_field()}<div class="grid"><label>Descrição<input name="description" required></label><label>Tipo<select name="kind"><option>Entrada</option><option>Saída</option></select></label><label>Valor<input type="number" step="0.01" name="amount" required></label></div><button>Adicionar</button></form></div><div class="card"><table><tr><th>Data</th><th>Descrição</th><th>Tipo</th><th>Valor</th></tr>{rows}</table></div>'''
  return page(body)
 
 @app.route("/minha-conta",methods=["GET","POST"])
@@ -491,7 +491,7 @@ def my_account():
    if len(new)<10: flash("A nova senha deve ter pelo menos 10 caracteres."); return redirect("/minha-conta")
    u.password=generate_password_hash(new)
   db.session.commit(); flash("Dados de acesso atualizados."); return redirect("/minha-conta")
- body=f"""<h1>Minha conta</h1><div class='card'><form method='post'>{csrf_field()}{csrf_field()}><label>E-mail de acesso<input type='email' name='email' value='{u.email}' required></label><label>Senha atual<input type='password' name='current_password' required></label><label>Nova senha (opcional)<input type='password' name='new_password' minlength='10'></label><button class='gold'>Salvar alterações</button></form></div>"""
+ body=f"""<h1>Minha conta</h1><div class='card'><form method='post'>{csrf_field()}<label>E-mail de acesso<input type='email' name='email' value='{u.email}' required></label><label>Senha atual<input type='password' name='current_password' required></label><label>Nova senha (opcional)<input type='password' name='new_password' minlength='10'></label><button class='gold'>Salvar alterações</button></form></div>"""
  return page(body)
 
 @app.route("/logout")
