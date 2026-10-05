@@ -237,6 +237,8 @@ def report_model_file():
   eid=request.args.get("exam",type=int)
   if not eid: return redirect("/dashboard")
   e=Exam.query.get_or_404(eid); uid=e.clinic_id
+ elif session.get("role")!="Clinica":
+  return redirect("/")
  u=User.query.get_or_404(uid)
  if not u.report_model: return redirect("/dashboard")
  if not storage_exists(u.report_model):
