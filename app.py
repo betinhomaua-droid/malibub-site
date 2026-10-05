@@ -290,6 +290,27 @@ def admin_users():
  body=f"""<h1>Administração</h1><div class='card'><h2>Cadastrar clínica</h2><form method='post'>{csrf_field()}<label>Nome da clínica<input name='name' maxlength='100' required></label><label>E-mail de acesso<input type='email' name='email' maxlength='120' required></label><label>Senha inicial<input type='password' name='password' minlength='10' maxlength='256' required></label><button class='gold' type='submit'>Criar acesso</button></form></div><div class='card'><h2>Clínicas cadastradas</h2><table><tr><th>Clínica</th><th>E-mail</th><th>Status</th><th>Ação</th></tr>{rows or '<tr><td colspan=4>Nenhuma clínica cadastrada.</td></tr>'}</table></div>"""
  return page(body)
 
+@app.route("/admin/usuarios/<int:uid>/editar",methods=["GET","POST"])
+def admin_user_edit(uid):
+ if session.get("role")!="Radiologista": return redirect("/")
+ u=User.query.get_or_404(uid)
+ if u.role!="Clinica": return redirect("/admin/usuarios")
+ if request.method=="POST":
+  name=request.form.get("name","").strip()[:100]
+  email=request.form.get("email","").strip().lower()[:120]
+  password=request.form.get("password","")[:256]
+  if not name or not email:
+   flash("Nome e e-mail são obrigatórios."); return redirect(url_for("admin_user_edit",uid=u.id))
+  if User.query.filter(User.email==email,User.id!=u.id).first():
+   flash("Este e-mail já está cadastrado."); return redirect(url_for("admin_user_edit",uid=u.id))
+  if password and len(password)<10:
+   flash("A nova senha deve ter pelo menos 10 caracteres."); return redirect(url_for("admin_user_edit",uid=u.id))
+  u.name=name; u.email=email
+  if password: u.password=generate_password_hash(password)
+  db.session.commit(); flash("Cadastro da clínica atualizado."); return redirect("/admin/usuarios")
+ body=f"""<h1>Editar clínica</h1><div class='card'><form method='post'>{csrf_field()}<label>Nome da clínica<input name='name' maxlength='100' value='{html_escape(u.name)}' required></label><label>E-mail de acesso<input type='email' name='email' maxlength='120' value='{html_escape(u.email)}' required></label><label>Nova senha (opcional)<input type='password' name='password' minlength='10' maxlength='256'></label><button class='gold' type='submit'>Salvar alterações</button></form></div>"""
+ return page(body)
+
 @app.route("/admin/usuarios/<int:uid>/status",methods=["POST"])
 def admin_user_status(uid):
  if session.get("role")!="Radiologista": return redirect("/")
