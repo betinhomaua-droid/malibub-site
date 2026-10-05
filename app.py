@@ -221,7 +221,9 @@ def report_model_file():
  if not session.get("uid"): return redirect("/")
  uid=session.get("uid")
  if session.get("role")=="Radiologista":
-  eid=request.args.get("exam",type=int); e=Exam.query.get_or_404(eid); uid=e.clinic_id
+  eid=request.args.get("exam",type=int)
+  if not eid: return redirect("/dashboard")
+  e=Exam.query.get_or_404(eid); uid=e.clinic_id
  u=User.query.get_or_404(uid)
  if not u.report_model: return redirect("/dashboard")
  if not storage_exists(u.report_model):
@@ -256,6 +258,9 @@ def exam_file(fid):
  f=ExamFile.query.get_or_404(fid); e=Exam.query.get_or_404(f.exam_id)
  if session.get("role")=="Clinica" and e.clinic_id!=session.get("uid"): return redirect("/dashboard")
  if session.get("role") not in {"Clinica","Radiologista"}: return redirect("/")
+ if not storage_exists(f.stored):
+  flash("Arquivo não encontrado no armazenamento privado.")
+  return redirect("/dashboard")
  return storage_response(f.stored,f.name,request.args.get("download")=="1")
 
 @app.route("/report/<int:eid>/exame-pronto",methods=["POST"])
