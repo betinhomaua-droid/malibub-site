@@ -1,4 +1,4 @@
-from flask import Flask, request, redirect, url_for, session, flash, render_template_string, send_from_directory, send_file
+from flask import Flask, request, redirect, url_for, session, flash, render_template_string, send_from_directory, send_file, Response, stream_with_context
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -56,15 +56,22 @@ def storage_exists(key):
  return (UPLOAD/key).exists()
 def storage_response(key,name=None,download=False):
  if object_storage_enabled():
+  obj=r2_client().get_object(Bucket=R2_BUCKET,Key=key)
+  body=obj["Body"]
+  safe_name=secure_filename(name or Path(key).name) or "arquivo"
   disposition="attachment" if download else "inline"
-  params={"Bucket":R2_BUCKET,"Key":key}
-  if name:
-   safe_name=secure_filename(name) or "arquivo"
-   params["ResponseContentDisposition"]=f'{disposition}; filename="{safe_name}"'
-  url=r2_client().generate_presigned_url("get_object",Params=params,ExpiresIn=180)
-  response=redirect(url)
+  def generate():
+   try:
+    while True:
+     chunk=body.read(1024*1024)
+     if not chunk: break
+     yield chunk
+   finally:
+    body.close()
+  response=Response(stream_with_context(generate()),content_type=obj.get("ContentType") or "application/octet-stream")
+  response.headers["Content-Disposition"]=f'{disposition}; filename="{safe_name}"'
+  if obj.get("ContentLength") is not None: response.headers["Content-Length"]=str(obj["ContentLength"])
   response.headers["Cache-Control"]="no-store, private"
-  response.headers["Referrer-Policy"]="no-referrer"
   return response
  return send_from_directory(UPLOAD,key,as_attachment=download,download_name=name or Path(key).name)
 
