@@ -263,56 +263,52 @@ def result_pdf(eid):
  if not has_pdf_model:
   doc.build(story)
   buf.seek(0)
- # Modelo PDF da clínica: o texto digitado em "Laudo radiológico" entra
- # imediatamente após o texto padrão já existente em "Descrição do exame".
- # O conteúdo original é preservado e páginas adicionais repetem o cabeçalho do modelo.
+ # Modelo PDF da clínica: o texto do campo "Laudo radiológico" deve ocupar
+ # uma área própria logo após a descrição fixa, sem sobrepor o restante do modelo.
+ # Para modelos que já contêm texto fixo abaixo da descrição (ex.: TMJ), o sistema
+ # cria uma folha de continuação com o mesmo cabeçalho quando necessário.
  if model_path and model_path.exists() and model_path.suffix.lower()==".pdf":
   try:
    from pypdf import PdfReader, PdfWriter
    from reportlab.pdfgen import canvas
    base_reader=PdfReader(str(model_path)); final_writer=PdfWriter()
-   report_lines=[]
-   max_chars=105
+   report_lines=[]; max_chars=92
    for raw in (e.report or "").splitlines():
     words=raw.split(); line=""
     if not words: report_lines.append(""); continue
     for word in words:
      test=(line+" "+word).strip()
-     if len(test)>max_chars and line:
-      report_lines.append(line); line=word
+     if len(test)>max_chars and line: report_lines.append(line); line=word
      else: line=test
     report_lines.append(line)
-   # TMJ: a clínica pode ajustar este ponto pelo campo de margem superior.
-   # O padrão 116 mm posiciona o laudo após as linhas fixas da "Descrição do exame".
-   top_mm=float(clinic.report_top_mm or 116)
-   if top_mm < 95: top_mm=116
-   bottom_mm=max(float(clinic.report_bottom_mm or 42),35)
+   # Primeira página TMJ: somente o espaço livre entre a descrição fixa e o texto técnico seguinte.
+   first=base_reader.pages[0]; width=float(first.mediabox.width); height=float(first.mediabox.height)
+   overlay=io.BytesIO(); cv=canvas.Canvas(overlay,pagesize=(width,height))
+   left=22*mm; y=height-119*mm; min_y=height-139*mm
+   cv.setFont("Helvetica",9); cv.setFillColor(colors.HexColor("#111111"))
    line_index=0
-   base_pages=list(base_reader.pages)
-   for page_no,base_page in enumerate(base_pages):
-    width=float(base_page.mediabox.width); height=float(base_page.mediabox.height)
-    overlay_buf=io.BytesIO(); cv=canvas.Canvas(overlay_buf,pagesize=(width,height))
-    left=22*mm; y=height-top_mm*mm if page_no==0 else height-55*mm; min_y=bottom_mm*mm+12*mm
-    cv.setFont("Helvetica",9.2); cv.setFillColor(colors.HexColor("#111111"))
-    while line_index<len(report_lines) and y>min_y:
-     cv.drawString(left,y,report_lines[line_index][:max_chars]); line_index+=1; y-=4.6*mm
-    cv.setFont("Helvetica",7.5); cv.setFillColor(colors.HexColor("#52666E"))
-    cv.drawCentredString(width/2,10*mm,f"Assinado digitalmente por {e.signed_by or 'Dra. Marina'}")
-    cv.drawCentredString(width/2,6.5*mm,f"Data: {signed} · Protocolo {e.protocol or ''}")
-    cv.save(); overlay_buf.seek(0); base_page.merge_page(PdfReader(overlay_buf).pages[0]); final_writer.add_page(base_page)
-   # Se não couber, crie nova página reutilizando a primeira página do modelo
-   # para manter o cabeçalho/identidade visual da própria clínica.
+   while line_index<len(report_lines) and y>min_y:
+    cv.drawString(left,y,report_lines[line_index][:max_chars]); line_index+=1; y-=4.4*mm
+   cv.setFont("Helvetica",7.5); cv.setFillColor(colors.HexColor("#52666E"))
+   cv.drawCentredString(width/2,10*mm,f"Assinado digitalmente por {e.signed_by or 'Dra. Marina'}")
+   cv.drawCentredString(width/2,6.5*mm,f"Data: {signed} · Protocolo {e.protocol or ''}")
+   cv.save(); overlay.seek(0); first.merge_page(PdfReader(overlay).pages[0]); final_writer.add_page(first)
+   # Mantém eventuais páginas originais seguintes.
+   for original_page in list(base_reader.pages)[1:]: final_writer.add_page(original_page)
+   # Continuação: página limpa com cabeçalho textual da clínica, sem repetir os parágrafos fixos.
    while line_index<len(report_lines):
-    template_reader=PdfReader(str(model_path)); extra_page=template_reader.pages[0]
-    width=float(extra_page.mediabox.width); height=float(extra_page.mediabox.height)
-    overlay_buf=io.BytesIO(); cv=canvas.Canvas(overlay_buf,pagesize=(width,height))
-    y=height-55*mm; min_y=35*mm+12*mm; cv.setFont("Helvetica",9.2); cv.setFillColor(colors.HexColor("#111111"))
-    while line_index<len(report_lines) and y>min_y:
-     cv.drawString(22*mm,y,report_lines[line_index][:max_chars]); line_index+=1; y-=4.6*mm
+    extra=io.BytesIO(); cv=canvas.Canvas(extra,pagesize=A4); width,height=A4
+    cv.setFont("Helvetica-Bold",11); cv.setFillColor(colors.HexColor("#111111"))
+    cv.drawCentredString(width/2,height-20*mm,"LAUDO RADIOLÓGICO — CONTINUAÇÃO")
+    cv.setFont("Helvetica",8); cv.drawString(22*mm,height-27*mm,f"Paciente: {e.patient}")
+    cv.line(22*mm,height-31*mm,width-22*mm,height-31*mm)
+    y=height-40*mm; cv.setFont("Helvetica",9)
+    while line_index<len(report_lines) and y>25*mm:
+     cv.drawString(22*mm,y,report_lines[line_index][:max_chars]); line_index+=1; y-=4.4*mm
     cv.setFont("Helvetica",7.5); cv.setFillColor(colors.HexColor("#52666E"))
     cv.drawCentredString(width/2,10*mm,f"Assinado digitalmente por {e.signed_by or 'Dra. Marina'}")
     cv.drawCentredString(width/2,6.5*mm,f"Data: {signed} · Protocolo {e.protocol or ''}")
-    cv.save(); overlay_buf.seek(0); extra_page.merge_page(PdfReader(overlay_buf).pages[0]); final_writer.add_page(extra_page)
+    cv.save(); extra.seek(0); final_writer.add_page(PdfReader(extra).pages[0])
    merged=io.BytesIO(); final_writer.write(merged); merged.seek(0); buf=merged
   except Exception:
    return "Não foi possível gerar o PDF personalizado. Verifique o modelo de laudo cadastrado.",500
