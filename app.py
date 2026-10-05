@@ -252,7 +252,7 @@ def login():
   email=request.form.get("email","").strip().lower()[:120]
   password=request.form.get("password","")[:256]
   u=User.query.filter_by(email=email).first()
-  if u and password and check_password_hash(u.password,password):
+  if u and u.active is not False and password and check_password_hash(u.password,password):
    clear_login_failures(client_key)
    session.clear(); session.permanent=True
    session.update(uid=u.id,role=u.role,name=u.name,_csrf_token=secrets.token_urlsafe(32)); return redirect("/dashboard")
@@ -286,9 +286,21 @@ def admin_users():
   flash("Clínica cadastrada com acesso ativo.")
   return redirect("/admin/usuarios")
  clinics=User.query.filter_by(role="Clinica").order_by(User.name).all()
- rows="".join(f"<tr><td>{html_escape(u.name)}</td><td>{html_escape(u.email)}</td><td>{'Ativo' if u.active is not False else 'Inativo'}</td></tr>" for u in clinics)
- body=f"""<h1>Administração</h1><div class='card'><h2>Cadastrar clínica</h2><form method='post'>{csrf_field()}<label>Nome da clínica<input name='name' maxlength='100' required></label><label>E-mail de acesso<input type='email' name='email' maxlength='120' required></label><label>Senha inicial<input type='password' name='password' minlength='10' maxlength='256' required></label><button class='gold' type='submit'>Criar acesso</button></form></div><div class='card'><h2>Clínicas cadastradas</h2><table><tr><th>Clínica</th><th>E-mail</th><th>Status</th></tr>{rows or '<tr><td colspan=3>Nenhuma clínica cadastrada.</td></tr>'}</table></div>"""
+ rows="".join(f"<tr><td>{html_escape(u.name)}</td><td>{html_escape(u.email)}</td><td>{'Ativo' if u.active is not False else 'Inativo'}</td><td><form method='post' action='/admin/usuarios/{u.id}/status' style='margin:0'>{csrf_field()}<button type='submit'>{'Desativar' if u.active is not False else 'Ativar'}</button></form></td></tr>" for u in clinics)
+ body=f"""<h1>Administração</h1><div class='card'><h2>Cadastrar clínica</h2><form method='post'>{csrf_field()}<label>Nome da clínica<input name='name' maxlength='100' required></label><label>E-mail de acesso<input type='email' name='email' maxlength='120' required></label><label>Senha inicial<input type='password' name='password' minlength='10' maxlength='256' required></label><button class='gold' type='submit'>Criar acesso</button></form></div><div class='card'><h2>Clínicas cadastradas</h2><table><tr><th>Clínica</th><th>E-mail</th><th>Status</th><th>Ação</th></tr>{rows or '<tr><td colspan=4>Nenhuma clínica cadastrada.</td></tr>'}</table></div>"""
  return page(body)
+
+@app.route("/admin/usuarios/<int:uid>/status",methods=["POST"])
+def admin_user_status(uid):
+ if session.get("role")!="Radiologista": return redirect("/")
+ u=User.query.get_or_404(uid)
+ if u.role!="Clinica":
+  flash("Somente acessos de clínicas podem ser alterados aqui.")
+  return redirect("/admin/usuarios")
+ u.active=not (u.active is not False)
+ db.session.commit()
+ flash("Acesso da clínica ativado." if u.active else "Acesso da clínica desativado.")
+ return redirect("/admin/usuarios")
 
 @app.route("/dashboard")
 def dashboard():
