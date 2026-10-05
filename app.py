@@ -11,6 +11,7 @@ app.config["SECRET_KEY"]=os.getenv("SECRET_KEY","malibub-homologacao")
 app.config["SQLALCHEMY_DATABASE_URI"]=os.getenv("DATABASE_URL","sqlite:///malibub.db")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"]=False
 app.config["MAX_CONTENT_LENGTH"]=2*1024*1024*1024
+AUTO_PURGE_DAYS=int(os.getenv("AUTO_PURGE_DAYS","90"))
 app.config["SESSION_COOKIE_HTTPONLY"]=True
 app.config["SESSION_COOKIE_SAMESITE"]="Lax"
 app.config["SESSION_COOKIE_SECURE"]=os.getenv("APP_ENV","production")=="production"
@@ -29,6 +30,25 @@ def security_headers(response):
 @app.errorhandler(413)
 def too_large(error):
  return page("<h1>Arquivo muito grande</h1><div class='card'>O envio ultrapassou o limite permitido. Divida o exame em arquivos menores antes de reenviar.</div>","Arquivo muito grande"),413
+
+def cleanup_expired_files():
+ cutoff=datetime.utcnow()-timedelta(days=AUTO_PURGE_DAYS)
+ deleted=0
+ for item in ExamFile.query.all():
+  exam=Exam.query.get(item.exam_id)
+  created=getattr(exam,"created_at",None)
+  if created and created < cutoff:
+   path=UPLOAD/item.stored
+   if path.exists():
+    try: path.unlink()
+    except OSError: pass
+   db.session.delete(item); deleted+=1
+ db.session.commit()
+ return deleted
+
+@app.cli.command("cleanup-expired-files")
+def cleanup_expired_files_command():
+ print(f"{cleanup_expired_files()} arquivo(s) removido(s) pela política de retenção.")
 
 @app.route("/health")
 def health():
