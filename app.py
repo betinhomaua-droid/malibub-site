@@ -45,7 +45,7 @@ CSS="""*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;backgr
 @media(max-width:900px){.login-approved{grid-template-columns:1fr}.login-visual{min-height:42vh;padding:28px 8%}.login-copy h1{font-size:30px}.login-copy p{font-size:16px}.login-panel{padding:38px 22px 70px}.login-footer{font-size:10px}.shell,.workspace,.grid,.cards{grid-template-columns:1fr}.shell aside{position:relative}}"""
 
 def page(body,title="MALIBUB"):
- msgs="".join(f\'<div class="notice">{m}</div>\' for m in __import__("flask").get_flashed_messages())
+ msgs="".join(f'<div class="notice">{m}</div>' for m in __import__("flask").get_flashed_messages())
  body=msgs+body
  nav=""
  if session.get("uid"):
