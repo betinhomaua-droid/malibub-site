@@ -103,6 +103,15 @@ def security_headers(response):
  if request.is_secure: response.headers["Strict-Transport-Security"]="max-age=31536000; includeSubDomains"
  return response
 
+@app.errorhandler(404)
+def not_found(error):
+ return page("<h1>Página não encontrada</h1><div class='card'>O endereço solicitado não existe ou não está mais disponível.</div>","Página não encontrada"),404
+
+@app.errorhandler(500)
+def internal_error(error):
+ db.session.rollback()
+ return page("<h1>Não foi possível concluir</h1><div class='card'>Ocorreu um erro interno. Tente novamente. Se o problema persistir, entre em contato com o suporte da MALIBUB.</div>","Erro interno"),500
+
 @app.errorhandler(413)
 def too_large(error):
  return page("<h1>Arquivo muito grande</h1><div class='card'>O envio ultrapassou o limite permitido. Divida o exame em arquivos menores antes de reenviar.</div>","Arquivo muito grande"),413
