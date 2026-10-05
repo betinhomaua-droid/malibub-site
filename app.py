@@ -617,6 +617,17 @@ def result_pdf(eid):
  styles=getSampleStyleSheet(); navy=colors.HexColor("#06394C"); teal=colors.HexColor("#087B9B"); gold=colors.HexColor("#C99B3B")
  title=ParagraphStyle("t",parent=styles["Heading1"],alignment=TA_CENTER,textColor=navy,fontSize=16,leading=20); body=ParagraphStyle("b",parent=styles["BodyText"],fontSize=10,leading=15,textColor=colors.HexColor("#26383D"))
  story=[]
+ # Quando a clínica não utiliza papel timbrado/modelo próprio, a logomarca
+ # cadastrada passa a compor o cabeçalho do PDF padrão.
+ if clinic and clinic.logo and not has_pdf_model:
+  try:
+   from reportlab.platypus import Image
+   logo_bytes=storage_bytes(clinic.logo)
+   logo_img=Image(io.BytesIO(logo_bytes))
+   logo_img._restrictSize(48*mm,22*mm)
+   story += [logo_img,Spacer(1,3*mm),Paragraph(escape(clinic.name or ""),ParagraphStyle("clinicbrand",parent=styles["Normal"],alignment=TA_CENTER,fontSize=9,textColor=teal)),Spacer(1,4*mm)]
+  except Exception:
+   story=[]
  model_path=None
  temp_model_path=None
  if clinic and clinic.report_model:
