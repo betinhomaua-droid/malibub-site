@@ -128,6 +128,7 @@ def health():
 
 @app.route("/health/storage")
 def health_storage():
+ if request.headers.get("X-Health-Check")!="storage": return {"status":"not_found"},404
  if not object_storage_enabled():
   return {"status":"error","storage":"not_configured"},503
  probe=f"health/{uuid.uuid4().hex}.txt"
