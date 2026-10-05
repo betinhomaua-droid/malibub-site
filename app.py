@@ -165,7 +165,7 @@ def assets(filename):
  return send_from_directory(Path(app.root_path)/"assets", filename)
 
 class User(db.Model):
- id=db.Column(db.Integer,primary_key=True); name=db.Column(db.String(100)); email=db.Column(db.String(120),unique=True); password=db.Column(db.String(255)); role=db.Column(db.String(30)); report_model=db.Column(db.String(255)); report_model_name=db.Column(db.String(255)); report_top_mm=db.Column(db.Integer,default=72); report_bottom_mm=db.Column(db.Integer,default=42)
+ id=db.Column(db.Integer,primary_key=True); name=db.Column(db.String(100)); email=db.Column(db.String(120),unique=True); password=db.Column(db.String(255)); role=db.Column(db.String(30)); active=db.Column(db.Boolean,default=True); report_model=db.Column(db.String(255)); report_model_name=db.Column(db.String(255)); report_top_mm=db.Column(db.Integer,default=72); report_bottom_mm=db.Column(db.Integer,default=42)
 class Exam(db.Model):
  id=db.Column(db.Integer,primary_key=True); protocol=db.Column(db.String(30),unique=True); patient=db.Column(db.String(120)); sex=db.Column(db.String(20)); birth=db.Column(db.String(20)); dentist=db.Column(db.String(120)); exam_date=db.Column(db.String(20)); exam_type=db.Column(db.String(100)); observation=db.Column(db.String(500)); status=db.Column(db.String(50),default="Enviado"); clinic_id=db.Column(db.Integer); due_at=db.Column(db.DateTime); report=db.Column(db.Text,default=""); released_at=db.Column(db.DateTime); signed_by=db.Column(db.String(120)); signed_at=db.Column(db.DateTime); created_at=db.Column(db.DateTime,default=datetime.utcnow)
 class ExamFile(db.Model):
@@ -192,7 +192,7 @@ def page(body,title="MALIBUB"):
  body=msgs+body
  nav=""
  if session.get("uid"):
-  nav=f'''<aside><div class="brand">MALIBUB<span>Imaginologia</span><small>PRECISÃO • CONFIANÇA • AGILIDADE</small></div><a href="/dashboard">Painel</a>{'<a href="/new">Novo Exame</a>' if session.get('role')=='Clinica' else ''}{'<a href="/finance">Financeiro</a>' if session.get('role')=='Radiologista' else ''}<a href="/minha-conta">Minha conta</a><form method="post" action="/logout" style="margin:0">{csrf_field()}<button type="submit" style="width:100%;text-align:left;background:none;border:0;color:inherit;padding:12px 14px;cursor:pointer;font:inherit">Sair</button></form></aside>'''
+  nav=f'''<aside><div class="brand">MALIBUB<span>Imaginologia</span><small>PRECISÃO • CONFIANÇA • AGILIDADE</small></div><a href="/dashboard">Painel</a>{'<a href="/new">Novo Exame</a>' if session.get('role')=='Clinica' else ''}{'<a href="/finance">Financeiro</a><a href="/admin/usuarios">Administração</a>' if session.get('role')=='Radiologista' else ''}<a href="/minha-conta">Minha conta</a><form method="post" action="/logout" style="margin:0">{csrf_field()}<button type="submit" style="width:100%;text-align:left;background:none;border:0;color:inherit;padding:12px 14px;cursor:pointer;font:inherit">Sair</button></form></aside>'''
   return f'<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title><style>{CSS}</style><div class="shell">{nav}<main>{body}</main></div></html>'
  return f'<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title><style>{CSS}</style>{body}</html>'
 
@@ -260,6 +260,28 @@ def login():
  <button class="submit" type="submit">Entrar</button></form><div class="foot">Acesso exclusivo para clínicas e radiologista.</div></div></section>
 <div class="login-footer">© 2026 Malibub Radiologia &nbsp; Todos os Direitos Reservados</div></div>'''
  return page(body,"Entrar · MALIBUB")
+
+@app.route("/admin/usuarios",methods=["GET","POST"])
+def admin_users():
+ if session.get("role")!="Radiologista": return redirect("/")
+ if request.method=="POST":
+  name=request.form.get("name","").strip()[:100]
+  email=request.form.get("email","").strip().lower()[:120]
+  password=request.form.get("password","")[:256]
+  if not name or not email or len(password)<10:
+   flash("Informe nome, e-mail e senha inicial com pelo menos 10 caracteres.")
+   return redirect("/admin/usuarios")
+  if User.query.filter_by(email=email).first():
+   flash("Este e-mail já está cadastrado.")
+   return redirect("/admin/usuarios")
+  db.session.add(User(name=name,email=email,password=generate_password_hash(password),role="Clinica",active=True))
+  db.session.commit()
+  flash("Clínica cadastrada com acesso ativo.")
+  return redirect("/admin/usuarios")
+ clinics=User.query.filter_by(role="Clinica").order_by(User.name).all()
+ rows="".join(f"<tr><td>{html_escape(u.name)}</td><td>{html_escape(u.email)}</td><td>{'Ativo' if u.active is not False else 'Inativo'}</td></tr>" for u in clinics)
+ body=f"""<h1>Administração</h1><div class='card'><h2>Cadastrar clínica</h2><form method='post'>{csrf_field()}<label>Nome da clínica<input name='name' maxlength='100' required></label><label>E-mail de acesso<input type='email' name='email' maxlength='120' required></label><label>Senha inicial<input type='password' name='password' minlength='10' maxlength='256' required></label><button class='gold' type='submit'>Criar acesso</button></form></div><div class='card'><h2>Clínicas cadastradas</h2><table><tr><th>Clínica</th><th>E-mail</th><th>Status</th></tr>{rows or '<tr><td colspan=3>Nenhuma clínica cadastrada.</td></tr>'}</table></div>"""
+ return page(body)
 
 @app.route("/dashboard")
 def dashboard():
