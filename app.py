@@ -182,8 +182,8 @@ def init():
 @app.route("/",methods=["GET","POST"])
 def login():
  if request.method=="POST":
-  u=User.query.filter_by(email=request.form["email"].lower()).first()
-  if u and check_password_hash(u.password,request.form["password"]):
+  email=request.form.get("email","").strip().lower()[:120]\n  password=request.form.get("password","")[:256]\n  u=User.query.filter_by(email=email).first()
+  if u and password and check_password_hash(u.password,password):
    session.clear(); session.permanent=True
    session.update(uid=u.id,role=u.role,name=u.name,_csrf_token=secrets.token_urlsafe(32)); return redirect("/dashboard")
   flash("E-mail ou senha inválidos.")
