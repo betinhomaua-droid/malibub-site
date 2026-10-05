@@ -149,12 +149,12 @@ def report_model():
   file=request.files.get("report_model")
   if file and file.filename:
    name=secure_filename(file.filename); ext=Path(name).suffix.lower()
-   if ext not in {".pdf",".jpg",".jpeg",".png"}: flash("Use PDF, JPG ou PNG."); return redirect("/modelo-laudo")
+   if ext not in {".pdf",".docx",".jpg",".jpeg",".png"}: flash("Use PDF, DOCX, JPG ou PNG."); return redirect("/modelo-laudo")
    stored="modelo_"+str(u.id)+"_"+uuid.uuid4().hex+ext; file.save(UPLOAD/stored)
    u.report_model=stored; u.report_model_name=name; db.session.commit(); flash("Modelo personalizado da clínica salvo.")
   return redirect("/modelo-laudo")
  current=(f"<p><b>Modelo atual:</b> {u.report_model_name}</p><a class='btn' href='/modelo-laudo/arquivo' target='_blank'>Visualizar modelo</a>" if u.report_model else "<div class='notice'>Nenhum modelo personalizado cadastrado.</div>")
- body=f"""<h1>Modelo de laudo da clínica</h1><div class='card'><p>Envie a página/modelo personalizado que deverá servir de referência para os laudos desta clínica.</p>{current}<form method='post' enctype='multipart/form-data'><label>Modelo personalizado (PDF, JPG ou PNG)<input type='file' name='report_model' accept='.pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png'></label><div class='grid'><label>Margem superior do conteúdo (mm)<input type='number' name='report_top_mm' min='20' max='120' value='{u.report_top_mm or 72}'></label><label>Margem inferior (mm)<input type='number' name='report_bottom_mm' min='15' max='100' value='{u.report_bottom_mm or 42}'></label></div><p class='muted'>Ajuste estes valores quando o papel timbrado tiver cabeçalho ou rodapé maiores.</p><button class='gold' type='submit'>Salvar modelo e posicionamento</button></form></div>"""
+ body=f"""<h1>Modelo de laudo da clínica</h1><div class='card'><p>Envie a página/modelo personalizado que deverá servir de referência para os laudos desta clínica.</p>{current}<form method='post' enctype='multipart/form-data'><label>Modelo personalizado (PDF, DOCX, JPG ou PNG)<input type='file' name='report_model' accept='.pdf,.docx,.jpg,.jpeg,.png,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png'></label><div class='grid'><label>Margem superior do conteúdo (mm)<input type='number' name='report_top_mm' min='20' max='120' value='{u.report_top_mm or 72}'></label><label>Margem inferior (mm)<input type='number' name='report_bottom_mm' min='15' max='100' value='{u.report_bottom_mm or 42}'></label></div><p class='muted'>Ajuste estes valores quando o papel timbrado tiver cabeçalho ou rodapé maiores.</p><button class='gold' type='submit'>Salvar modelo e posicionamento</button></form></div>"""
  return page(body)
 
 @app.route("/modelo-laudo/arquivo")
@@ -234,7 +234,71 @@ def result_pdf(eid):
  from reportlab.lib.enums import TA_CENTER
  from reportlab.lib.units import mm
  from xml.sax.saxutils import escape
- buf=io.BytesIO(); clinic=User.query.get(e.clinic_id); has_pdf_model=bool(clinic and clinic.report_model and Path(clinic.report_model).suffix.lower()==".pdf")
+ buf=io.BytesIO(); clinic=User.query.get(e.clinic_id)
+ model_name=(clinic.report_model_name or "").lower() if clinic else ""
+ is_tmj_model=("laudotmj" in model_name or "tmj" in model_name)
+ has_pdf_model=bool(clinic and clinic.report_model and Path(clinic.report_model).suffix.lower()==".pdf")
+ # O modelo TMJ é reconstruído como documento fluido: o texto digitado no laudo
+ # passa a fazer parte do fluxo do documento, empurrando o conteúdo seguinte e
+ # criando novas páginas automaticamente, em vez de ser desenhado por cima do PDF.
+ if is_tmj_model:
+  from reportlab.platypus import BaseDocTemplate, PageTemplate, Frame, Paragraph, Spacer, KeepTogether
+  from reportlab.lib.styles import ParagraphStyle
+  from reportlab.lib.enums import TA_CENTER
+  from reportlab.lib.units import mm
+  from reportlab.lib import colors
+  from xml.sax.saxutils import escape
+  signed=e.signed_at.strftime("%d/%m/%Y %H:%M") if e.signed_at else (e.released_at.strftime("%d/%m/%Y %H:%M") if e.released_at else "")
+  W,H=A4
+  def tmj_header_footer(canv,docobj):
+   canv.saveState()
+   canv.setFont("Helvetica-Bold",8.5)
+   canv.drawString(22*mm,H-17*mm,f"Nome do paciente: {e.patient or ''}")
+   canv.setFont("Helvetica",8.5)
+   canv.drawString(22*mm,H-24*mm,f"Data de nasc.: {e.birth or ''}")
+   canv.drawString(85*mm,H-24*mm,f"Data do exame: {e.exam_date or ''}")
+   canv.drawString(22*mm,H-31*mm,f"Indicação clínica: {e.observation or ''}")
+   canv.drawString(22*mm,H-38*mm,f"Dentista solicitante: {e.dentist or ''}")
+   canv.setFont("Helvetica-Bold",7.5); canv.setFillColor(colors.HexColor("#52666E"))
+   canv.drawCentredString(W/2,10*mm,f"Assinado digitalmente por {e.signed_by or 'Dra. Marina'}")
+   canv.drawCentredString(W/2,6.5*mm,f"Data: {signed} · Protocolo {e.protocol or ''}")
+   canv.restoreState()
+  frame=Frame(22*mm,18*mm,W-44*mm,H-65*mm,leftPadding=0,rightPadding=0,topPadding=0,bottomPadding=0,id="tmj_body")
+  tdoc=BaseDocTemplate(buf,pagesize=A4,leftMargin=22*mm,rightMargin=22*mm,topMargin=47*mm,bottomMargin=18*mm,title=f"{e.protocol} - Laudo TMJ",author="MALIBUB")
+  tdoc.addPageTemplates(PageTemplate(id="TMJ",frames=[frame],onPage=tmj_header_footer))
+  normal=ParagraphStyle("tmjn",fontName="Helvetica",fontSize=9.2,leading=14,spaceAfter=4,textColor=colors.black)
+  bold=ParagraphStyle("tmjb",parent=normal,fontName="Helvetica-Bold")
+  center=ParagraphStyle("tmjc",parent=bold,alignment=TA_CENTER,fontSize=10,leading=13,spaceAfter=9)
+  italic=ParagraphStyle("tmji",parent=normal,fontName="Helvetica-Oblique",spaceBefore=5,spaceAfter=7)
+  story_tmj=[
+   Paragraph("<u>TOMOGRAFIA COMPUTADORIZADA POR FEIXE CÔNICO DA MANDÍBULA</u>",center),
+   Spacer(1,3*mm),
+   Paragraph("<b>Técnica:</b> Estudo realizado por aquisição volumétrica cone beam da região solicitada, em cortes axiais de 0,12 mm de espessura, paralelos ao rebordo alveolar e sem contraste. Realizadas reformatações panorâmicas e transversais com 2,0mm de distância entre os cortes (pode ser alterado para se obter melhor imagem) e reconstruções em 3D.",normal),
+   Spacer(1,4*mm),
+   Paragraph("<b>Descrição do exame:</b>",bold),
+   Paragraph("- Ausência dos dentes",normal),
+   Paragraph("- Reabsorção óssea do rebordo alveolar do tipo horizontal.",normal)
+  ]
+  for raw in (e.report or "").splitlines():
+   story_tmj.append(Paragraph(escape(raw) if raw.strip() else "&nbsp;",normal))
+  story_tmj += [
+   Spacer(1,5*mm),
+   Paragraph("Este relatório foi baseado em imagens axiais, tangenciais, interseccionais (transaxiais ou parassagitais) de acordo com volume obtido.",normal),
+   Paragraph("As impressões encontram-se em escala 1:1 podendo as mensurações serem realizadas diretamente nas imagens.",normal),
+   Paragraph("Os cortes transversais apresentam numerações no canto superior esquerdo e equivalem aos números constantes na parte superior da imagem panorâmica. Utilizando-se a escala milimetrada presente no lado direito dos cortes transversais, obtém-se o valor real da região desejada.",normal),
+   Paragraph("<b>As mensurações são sugestivas devendo ficar a critério clínico a escolha do local, tamanho e angulação dos implantes.</b>",normal),
+   Spacer(1,3*mm),
+   Paragraph("É inerente a todo exame tomográfico, especialmente o de alta definição como este recebido, que estruturas metálicas de coroas protéticas, restaurações, núcleos e também de obturações endodônticas presentes nas regiões analisadas, formem imagens em forma de raios, prejudicando a avaliação das mesmas.",normal),
+   Paragraph("“Há dados do paciente que somente o profissional solicitante do exame possui, confirmando ou não a interpretação das imagens pelo radiologista”",italic),
+   Spacer(1,3*mm),
+   Paragraph("<b>Revisado por:</b>",bold),
+   Spacer(1,9*mm),
+   Paragraph("<b>Dra. MARINA BUB</b>",ParagraphStyle("tmjs",parent=bold,alignment=TA_CENTER)),
+   Paragraph("CROSP 113752",ParagraphStyle("tmjcro",parent=normal,alignment=TA_CENTER))
+  ]
+  tdoc.build(story_tmj)
+  buf.seek(0)
+  return send_file(buf,mimetype="application/pdf",as_attachment=True,download_name=f"{e.protocol}_laudo.pdf")
  doc=SimpleDocTemplate(buf,pagesize=A4,rightMargin=22*mm,leftMargin=22*mm,topMargin=((clinic.report_top_mm or 72)*mm if has_pdf_model else 16*mm),bottomMargin=((clinic.report_bottom_mm or 42)*mm if has_pdf_model else 18*mm),title=f"{e.protocol} - Laudo MALIBUB",author="MALIBUB Imaginologia Odontológica")
  styles=getSampleStyleSheet(); navy=colors.HexColor("#06394C"); teal=colors.HexColor("#087B9B"); gold=colors.HexColor("#C99B3B")
  title=ParagraphStyle("t",parent=styles["Heading1"],alignment=TA_CENTER,textColor=navy,fontSize=16,leading=20); body=ParagraphStyle("b",parent=styles["BodyText"],fontSize=10,leading=15,textColor=colors.HexColor("#26383D"))
