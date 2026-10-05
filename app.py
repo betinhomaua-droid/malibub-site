@@ -358,14 +358,33 @@ def exam_file(fid):
 @app.route("/report/<int:eid>/exame-pronto",methods=["POST"])
 def upload_ready_exam(eid):
  if session.get("role")!="Radiologista": return redirect("/")
- e=Exam.query.get_or_404(eid); saved=0
- for file in request.files.getlist("finished_files"):
-  if not file or not file.filename: continue
-  name=secure_filename(file.filename); ext=Path(name).suffix.lower()
-  if ext not in {".jpg",".jpeg",".pdf"}: continue
-  stored=uuid.uuid4().hex+ext; store_upload(file,stored,file.mimetype)
-  db.session.add(ExamFile(exam_id=e.id,name=name,stored=stored,kind="exame_pronto",uploaded_by=session.get("name"))); saved+=1
- db.session.commit(); flash(f"{saved} arquivo(s) do exame pronto anexado(s)." if saved else "Selecione JPG ou PDF.")
+ e=Exam.query.get_or_404(eid)
+ incoming=[file for file in request.files.getlist("finished_files") if file and file.filename]
+ invalid=[secure_filename(file.filename) for file in incoming if Path(secure_filename(file.filename)).suffix.lower() not in {".jpg",".jpeg",".pdf"}]
+ if not incoming:
+  flash("Selecione JPG, JPEG ou PDF.")
+  return redirect(url_for("report",eid=e.id))
+ if invalid:
+  flash("Formato não permitido: "+", ".join(invalid)+". Use JPG, JPEG ou PDF.")
+  return redirect(url_for("report",eid=e.id))
+ uploaded=[]
+ try:
+  for file in incoming:
+   name=secure_filename(file.filename)
+   ext=Path(name).suffix.lower()
+   stored=uuid.uuid4().hex+ext
+   store_upload(file,stored,file.mimetype)
+   uploaded.append(stored)
+   db.session.add(ExamFile(exam_id=e.id,name=name,stored=stored,kind="exame_pronto",uploaded_by=session.get("name")))
+  db.session.commit()
+ except Exception:
+  db.session.rollback()
+  for stored in uploaded:
+   try: storage_delete(stored)
+   except Exception: pass
+  flash("Não foi possível anexar o exame pronto. Nenhum arquivo parcial foi mantido; tente novamente.")
+  return redirect(url_for("report",eid=e.id))
+ flash(f"{len(uploaded)} arquivo(s) do exame pronto anexado(s).")
  return redirect(url_for("report",eid=e.id))
 
 @app.route("/report/<int:eid>",methods=["GET","POST"])
