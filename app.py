@@ -371,12 +371,12 @@ def result_pdf(eid):
  title=ParagraphStyle("t",parent=styles["Heading1"],alignment=TA_CENTER,textColor=navy,fontSize=16,leading=20); body=ParagraphStyle("b",parent=styles["BodyText"],fontSize=10,leading=15,textColor=colors.HexColor("#26383D"))
  story=[]
  model_path=None
-  if clinic and clinic.report_model:
-   if object_storage_enabled():
-    if storage_exists(clinic.report_model):
-     model_path=UPLOAD/("_model_"+uuid.uuid4().hex+Path(clinic.report_model).suffix)
-     model_path.write_bytes(storage_bytes(clinic.report_model))
-   else: model_path=UPLOAD/clinic.report_model
+ if clinic and clinic.report_model:
+  if object_storage_enabled():
+   if storage_exists(clinic.report_model):
+    model_path=UPLOAD/("_model_"+uuid.uuid4().hex+Path(clinic.report_model).suffix)
+    model_path.write_bytes(storage_bytes(clinic.report_model))
+  else: model_path=UPLOAD/clinic.report_model
  if has_pdf_model and (not model_path or not model_path.exists()):
   return "O modelo PDF personalizado desta clínica não está disponível. Reenvie o modelo antes de gerar o laudo.",410
  if model_path and model_path.exists() and model_path.suffix.lower() in {".jpg",".jpeg",".png"}:
