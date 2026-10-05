@@ -322,8 +322,8 @@ def result_pdf(eid):
    canv.setFont("Helvetica-Bold",8.5)
    canv.drawString(22*mm,H-17*mm,f"Nome do paciente: {e.patient or ''}")
    canv.setFont("Helvetica",8.5)
-   canv.drawString(22*mm,H-24*mm,f"Data de nasc.: {e.birth or ''}")
-   canv.drawString(85*mm,H-24*mm,f"Data do exame: {e.exam_date or ''}")
+   canv.drawString(22*mm,H-24*mm,f"Data de nasc.: {br_date(e.birth)}")
+   canv.drawString(85*mm,H-24*mm,f"Data do exame: {br_date(e.exam_date)}")
    canv.drawString(22*mm,H-31*mm,f"Indicação clínica: {e.observation or ''}")
    canv.drawString(22*mm,H-38*mm,f"Dentista solicitante: {e.dentist or ''}")
    canv.setFont("Helvetica-Bold",7.5); canv.setFillColor(colors.HexColor("#52666E"))
@@ -384,7 +384,7 @@ def result_pdf(eid):
   except Exception: pass
  if not story and not has_pdf_model: story=[Paragraph("MALIBUB",title),Paragraph("Imaginologia Odontológica",ParagraphStyle("s",parent=styles["Normal"],alignment=TA_CENTER,textColor=teal,fontSize=10)),Spacer(1,6*mm)]
  if not has_pdf_model:
-  data=[["Protocolo",escape(e.protocol or "")],["Paciente",escape(e.patient or "")],["Exame",escape(e.exam_type or "")],["Dentista solicitante",escape(e.dentist or "")],["Data do exame",escape(e.exam_date or "")]]
+  data=[["Protocolo",escape(e.protocol or "")],["Paciente",escape(e.patient or "")],["Exame",escape(e.exam_type or "")],["Dentista solicitante",escape(e.dentist or "")],["Data do exame",escape(br_date(e.exam_date))]]
   t=Table(data,colWidths=[42*mm,120*mm]); t.setStyle(TableStyle([("GRID",(0,0),(-1,-1),.4,colors.HexColor("#DCE8EC")),("BACKGROUND",(0,0),(0,-1),colors.HexColor("#F1F6F7")),("FONTNAME",(0,0),(0,-1),"Helvetica-Bold"),("FONTSIZE",(0,0),(-1,-1),9),("PADDING",(0,0),(-1,-1),6)])); story += [t,Spacer(1,7*mm),Paragraph("LAUDO RADIOLÓGICO",ParagraphStyle("h",parent=title,alignment=0,fontSize=12,textColor=navy)),Spacer(1,2*mm)]
  if not has_pdf_model:
   for line in (e.report or "").splitlines(): story.append(Paragraph(escape(line) or "&nbsp;",body))
