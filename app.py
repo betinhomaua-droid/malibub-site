@@ -9,14 +9,19 @@ import os, uuid, io, secrets
 import boto3
 
 app=Flask(__name__)
-app.config["SECRET_KEY"]=os.getenv("SECRET_KEY","malibub-homologacao")
-app.config["SQLALCHEMY_DATABASE_URI"]=os.getenv("DATABASE_URL","sqlite:///malibub.db")
+APP_ENV=os.getenv("APP_ENV","production")
+SECRET_KEY=os.getenv("SECRET_KEY")
+DATABASE_URL=os.getenv("DATABASE_URL")
+if APP_ENV=="production" and (not SECRET_KEY or not DATABASE_URL):
+ raise RuntimeError("Production requires SECRET_KEY and DATABASE_URL.")
+app.config["SECRET_KEY"]=SECRET_KEY or "malibub-homologacao"
+app.config["SQLALCHEMY_DATABASE_URI"]=DATABASE_URL or "sqlite:///malibub.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"]=False
 app.config["MAX_CONTENT_LENGTH"]=512*1024*1024
 AUTO_PURGE_DAYS=int(os.getenv("AUTO_PURGE_DAYS","90"))
 app.config["SESSION_COOKIE_HTTPONLY"]=True
 app.config["SESSION_COOKIE_SAMESITE"]="Lax"
-app.config["SESSION_COOKIE_SECURE"]=os.getenv("APP_ENV","production")=="production"
+app.config["SESSION_COOKIE_SECURE"]=APP_ENV=="production"
 app.config["PERMANENT_SESSION_LIFETIME"]=timedelta(hours=8)
 db=SQLAlchemy(app)
 UPLOAD=Path(app.instance_path)/"uploads"; UPLOAD.mkdir(parents=True,exist_ok=True)
