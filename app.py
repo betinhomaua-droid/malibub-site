@@ -62,6 +62,7 @@ def storage_response(key,name=None,download=False):
   url=r2_client().generate_presigned_url("get_object",Params=params,ExpiresIn=180)
   response=redirect(url)
   response.headers["Cache-Control"]="no-store, private"
+  response.headers["Referrer-Policy"]="no-referrer"
   return response
  return send_from_directory(UPLOAD,key,as_attachment=download,download_name=name or Path(key).name)
 
