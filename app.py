@@ -89,10 +89,8 @@ def cleanup_expired_files():
   exam=Exam.query.get(item.exam_id)
   created=getattr(exam,"created_at",None)
   if created and created < cutoff:
-   path=UPLOAD/item.stored
-   if path.exists():
-    try: path.unlink()
-    except OSError: pass
+   try: storage_delete(item.stored)
+   except Exception: continue
    db.session.delete(item); deleted+=1
  db.session.commit()
  return deleted
@@ -105,7 +103,8 @@ def cleanup_expired_files_command():
 def health():
  try:
   db.session.execute(db.text("SELECT 1"))
-  return {"status":"ok","database":"ok"},200
+  storage="configured" if object_storage_enabled() else "local"
+  return {"status":"ok","database":"ok","storage":storage},200
  except Exception:
   return {"status":"error","database":"unavailable"},503
 
@@ -169,7 +168,7 @@ def login():
  body=f'''<div class="login-approved">
  <section class="login-visual" aria-label="MALIBUB Imaginologia Odontológica"><span class="footer-mask" aria-hidden="true"></span></section>
  <section class="login-panel"><div class="login-card">{msgs}<h2>Acesse sua conta</h2><p class="sub">Entre para enviar ou acessar seus exames.</p>
- <form method="post">{csrf_field()}{csrf_field()}<label for="email">Email</label><input id="email" type="email" name="email" placeholder="voce@clinica.com" required autocomplete="username">
+ <form method="post">{csrf_field()}<label for="email">Email</label><input id="email" type="email" name="email" placeholder="voce@clinica.com" required autocomplete="username">
  <div class="pass-wrap"><label for="pwd">Senha</label><input id="pwd" type="password" name="password" placeholder="Sua senha" required autocomplete="current-password"><button class="eye" type="button" aria-label="Mostrar ou ocultar senha" onclick="var p=document.getElementById('pwd');p.type=p.type==='password'?'text':'password';this.textContent=p.type==='password'?'◉':'○'">◉</button></div>
  <button class="submit" type="submit">Entrar</button></form><div class="foot">Acesso exclusivo para clínicas e radiologista.</div></div></section>
 <div class="login-footer">© 2026 Malibub Radiologia &nbsp; Todos os Direitos Reservados</div></div>'''
