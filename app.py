@@ -215,8 +215,7 @@ def report_model_file():
   eid=request.args.get("exam",type=int); e=Exam.query.get_or_404(eid); uid=e.clinic_id
  u=User.query.get_or_404(uid)
  if not u.report_model: return redirect("/dashboard")
- path=UPLOAD/u.report_model
- if not path.exists():
+ if not storage_exists(u.report_model):
   flash("O modelo de laudo não está disponível no armazenamento atual. Envie o modelo novamente.")
   return redirect("/modelo-laudo" if session.get("role")=="Clinica" else "/dashboard")
  return storage_response(u.report_model,u.report_model_name,False)
