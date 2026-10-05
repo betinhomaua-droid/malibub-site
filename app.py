@@ -782,6 +782,18 @@ def finance():
  <div class="card"><h2>Movimentações</h2><table><tr><th>Data</th><th>Categoria / descrição</th><th>Tipo</th><th>Valor</th></tr>{rows or '<tr><td colspan="4">Nenhum lançamento neste período.</td></tr>'}</table></div>'''
  return page(body)
 
+@app.route("/finance/<int:fid>/excluir",methods=["POST"])
+def finance_delete(fid):
+ if session.get("role")!="Radiologista": return redirect("/")
+ item=Finance.query.get_or_404(fid)
+ if item.kind=="Entrada" and (item.description or "").startswith("Laudo "):
+  flash("Receitas automáticas de laudos não podem ser excluídas manualmente.")
+  return redirect("/finance")
+ db.session.delete(item)
+ db.session.commit()
+ flash("Lançamento financeiro excluído.")
+ return redirect("/finance")
+
 @app.route("/minha-conta",methods=["GET","POST"])
 def my_account():
  if not session.get("uid"): return redirect("/")
