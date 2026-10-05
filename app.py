@@ -46,8 +46,9 @@ def storage_exists(key):
  return (UPLOAD/key).exists()
 def storage_response(key,name=None,download=False):
  if object_storage_enabled():
-  data=storage_bytes(key)
-  return send_file(io.BytesIO(data),as_attachment=download,download_name=name or Path(key).name)
+  disposition="attachment" if download else "inline"
+  url=r2_client().generate_presigned_url("get_object",Params={"Bucket":R2_BUCKET,"Key":key,"ResponseContentDisposition":disposition},ExpiresIn=300)
+  return redirect(url)
  return send_from_directory(UPLOAD,key,as_attachment=download,download_name=name or Path(key).name)
 
 def csrf_token():
