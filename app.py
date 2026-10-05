@@ -633,7 +633,7 @@ def my_account():
  if not session.get("uid"): return redirect("/")
  u=User.query.get_or_404(session["uid"])
  if request.method=="POST":
-  email=request.form.get("email","").strip().lower(); current=request.form.get("current_password",""); new=request.form.get("new_password","")
+  email=request.form.get("email","").strip().lower()[:120]; current=request.form.get("current_password","")[:256]; new=request.form.get("new_password","")[:256]
   if not check_password_hash(u.password,current): flash("Senha atual incorreta."); return redirect("/minha-conta")
   if email and email!=u.email:
    if User.query.filter_by(email=email).first(): flash("Este e-mail já está em uso."); return redirect("/minha-conta")
