@@ -59,6 +59,28 @@ def storage_delete(key):
  else:
   p=UPLOAD/key
   if p.exists(): p.unlink()
+def purge_expired_exam_files(days=None):
+ days=int(days or AUTO_PURGE_DAYS)
+ cutoff=datetime.utcnow()-timedelta(days=days)
+ exams=Exam.query.filter(Exam.created_at < cutoff).all()
+ exam_ids=[e.id for e in exams]
+ if not exam_ids:
+  app.logger.info("retention_cleanup_complete days=%s examined=0 deleted=0 failed=0",days)
+  return {"examined":0,"deleted":0,"failed":0}
+ files=ExamFile.query.filter(ExamFile.exam_id.in_(exam_ids)).all()
+ deleted=0; failed=0
+ for item in files:
+  try:
+   if item.stored: storage_delete(item.stored)
+   db.session.delete(item)
+   db.session.commit()
+   deleted+=1
+  except Exception as exc:
+   db.session.rollback(); failed+=1
+   app.logger.error("retention_cleanup_file_failed file_id=%s error_type=%s",item.id,type(exc).__name__)
+ app.logger.info("retention_cleanup_complete days=%s examined=%s deleted=%s failed=%s",days,len(files),deleted,failed)
+ return {"examined":len(files),"deleted":deleted,"failed":failed}
+
 def storage_exists(key):
  if object_storage_enabled():
   try: r2_client().head_object(Bucket=R2_BUCKET,Key=key); return True
@@ -1211,4 +1233,13 @@ def my_account():
 def logout():
  session.clear(); return redirect("/")
 
-if __name__=="__main__": app.run(host="0.0.0.0",port=int(os.getenv("PORT","5000")))
+if __name__=="__main__":
+ import sys
+ if len(sys.argv)>1 and sys.argv[1]=="purge-expired-files":
+  with app.app_context():
+   init()
+   result=purge_expired_exam_files()
+   print(f"retention_cleanup examined={result['examined']} deleted={result['deleted']} failed={result['failed']}")
+   if result["failed"]: raise SystemExit(1)
+ else:
+  app.run(host="0.0.0.0",port=int(os.getenv("PORT","5000")))
