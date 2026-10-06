@@ -107,7 +107,7 @@ def malware_scan(fileobj,name):
   headers={"Authorization":"Bearer "+MALWARE_SCANNER_TOKEN} if MALWARE_SCANNER_TOKEN else {}
   response=requests.post(MALWARE_SCANNER_URL+"/scan",headers=headers,files={"file":(name,fileobj.stream,fileobj.mimetype or "application/octet-stream")},timeout=(5,20))
   fileobj.stream.seek(0)
-  if response.status_code!=200: return "ERRO","Scanner indisponível."
+  if response.status_code!=200:\n   app.logger.error("scanner_http_status=%s", response.status_code)\n   return "ERRO","Scanner indisponível."
   data=response.json(); status=str(data.get("status","ERRO")).upper()
   if status=="LIMPO": return "LIMPO",str(data.get("detail","Arquivo verificado."))[:255]
   if status in {"SUSPEITO","INFECTADO"}: return status,str(data.get("detail","Ameaça detectada."))[:255]
