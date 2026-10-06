@@ -841,11 +841,16 @@ def finance_production_report():
  from reportlab.lib.enums import TA_CENTER
  from reportlab.lib.units import mm
  from xml.sax.saxutils import escape
- values={}
+ values={}; billing_issues=[]
  for e in exams:
   item=Finance.query.filter_by(description=f"Laudo {e.protocol}",kind="Entrada").first()
-  values[e.protocol]=item.amount if item else 0
- total=sum(values.values())
+  if not item:
+   values[e.protocol]=None; billing_issues.append(f"{e.protocol}: lançamento financeiro ausente")
+  elif item.amount is None or item.amount<=0:
+   values[e.protocol]=item.amount or 0; billing_issues.append(f"{e.protocol}: valor zerado")
+  else:
+   values[e.protocol]=item.amount
+ total=sum(v for v in values.values() if v is not None and v>0)
  buf=io.BytesIO()
  doc=SimpleDocTemplate(buf,pagesize=A4,rightMargin=16*mm,leftMargin=16*mm,topMargin=18*mm,bottomMargin=18*mm)
  styles=getSampleStyleSheet()
@@ -853,11 +858,17 @@ def finance_production_report():
  story=[Paragraph("MALIBUB IMAGINOLOGIA ODONTOLÓGICA",title),Paragraph("Relatório de Produção por Período",styles["Heading2"]),Spacer(1,5*mm),Paragraph(f"<b>Clínica:</b> {escape(clinic.name)}",styles["BodyText"]),Paragraph(f"<b>Período:</b> {first.strftime('%d/%m/%Y')} a {(last-timedelta(days=1)).strftime('%d/%m/%Y')}",styles["BodyText"]),Paragraph(f"<b>Quantidade de laudos:</b> {len(exams)}",styles["BodyText"]),Spacer(1,5*mm)]
  data=[["Data","Protocolo","Exame","Valor"]]
  for e in exams:
-  data.append([(e.released_at or e.created_at).strftime("%d/%m/%Y"),e.protocol,e.exam_type or "-",f"R$ {values[e.protocol]:.2f}"])
- data.append(["","","TOTAL",f"R$ {total:.2f}"])
+  value=values[e.protocol]
+  value_text="PENDENTE" if value is None or value<=0 else f"R$ {value:.2f}"
+  data.append([(e.released_at or e.created_at).strftime("%d/%m/%Y"),e.protocol,e.exam_type or "-",value_text])
+ data.append(["","","TOTAL VÁLIDO",f"R$ {total:.2f}"])
  table=Table(data,colWidths=[30*mm,42*mm,75*mm,30*mm],repeatRows=1)
  table.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,0),colors.HexColor("#087b9b")),("TEXTCOLOR",(0,0),(-1,0),colors.white),("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),("FONTNAME",(2,-1),(-1,-1),"Helvetica-Bold"),("GRID",(0,0),(-1,-1),0.4,colors.HexColor("#b8cbd2")),("VALIGN",(0,0),(-1,-1),"TOP"),("ALIGN",(-1,1),(-1,-1),"RIGHT"),("PADDING",(0,0),(-1,-1),6)]))
- story.extend([table,Spacer(1,7*mm),Paragraph(f"<b>Valor total a cobrar: R$ {total:.2f}</b>",styles["Heading2"]),Paragraph(f"Emitido em {datetime.now(ZoneInfo('America/Sao_Paulo')).strftime('%d/%m/%Y %H:%M')} (horário de Brasília).",styles["BodyText"])])
+ story.extend([table,Spacer(1,7*mm)])
+ if billing_issues:
+  warning=ParagraphStyle("billing_warning",parent=styles["BodyText"],fontName="Helvetica-Bold",textColor=colors.HexColor("#9a5b00"),backColor=colors.HexColor("#fff4d6"),borderPadding=7,spaceAfter=5*mm)
+  story.append(Paragraph("<b>ATENÇÃO:</b> Este relatório possui valor(es) pendente(s) de correção e não deve ser enviado para cobrança até a regularização: "+escape("; ".join(billing_issues))+".",warning))
+ story.extend([Paragraph(f"<b>Valor total válido: R$ {total:.2f}</b>",styles["Heading2"]),Paragraph(f"Emitido em {datetime.now(ZoneInfo('America/Sao_Paulo')).strftime('%d/%m/%Y %H:%M')} (horário de Brasília).",styles["BodyText"])])
  def production_footer(canv,docobj):
   canv.saveState()
   canv.setStrokeColor(colors.HexColor("#b8cbd2")); canv.setLineWidth(0.4); canv.line(16*mm,14*mm,A4[0]-16*mm,14*mm)
