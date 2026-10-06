@@ -565,11 +565,17 @@ def upload_ready_exam(eid):
  try:
   for file in incoming:
    name=secure_filename(file.filename)
+   scan_status,scan_detail=malware_scan(file,name)
+   if scan_status in {"SUSPEITO","INFECTADO"}:
+    db.session.add(ExamFile(exam_id=e.id,name=name,stored="",kind="bloqueado",uploaded_by=session.get("name"),scan_status=scan_status,scan_detail=scan_detail))
+    continue
+   if scan_status=="ERRO" and MALWARE_SCAN_REQUIRED:
+    raise RuntimeError("malware scanner unavailable")
    ext=Path(name).suffix.lower()
    stored=uuid.uuid4().hex+ext
    store_upload(file,stored,file.mimetype)
    uploaded.append(stored)
-   db.session.add(ExamFile(exam_id=e.id,name=name,stored=stored,kind="exame_pronto",uploaded_by=session.get("name")))
+   db.session.add(ExamFile(exam_id=e.id,name=name,stored=stored,kind="exame_pronto",uploaded_by=session.get("name"),scan_status=scan_status,scan_detail=scan_detail))
   db.session.commit()
  except Exception:
   db.session.rollback()
@@ -578,7 +584,11 @@ def upload_ready_exam(eid):
    except Exception: pass
   flash("Não foi possível anexar o exame pronto. Nenhum arquivo parcial foi mantido; tente novamente.")
   return redirect(url_for("report",eid=e.id))
- flash(f"{len(uploaded)} arquivo(s) do exame pronto anexado(s).")
+ blocked_count=len(incoming)-len(uploaded)
+ if blocked_count:
+  flash(f"{blocked_count} arquivo(s) suspeito(s)/infectado(s) foram bloqueados e não disponibilizados.")
+ if uploaded:
+  flash(f"{len(uploaded)} arquivo(s) do exame pronto anexado(s) após varredura de segurança.")
  return redirect(url_for("report",eid=e.id))
 
 @app.route("/report/<int:eid>",methods=["GET","POST"])
