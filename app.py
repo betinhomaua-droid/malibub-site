@@ -279,9 +279,13 @@ def init():
    db.session.commit()
   except Exception:
    db.session.rollback()
- if os.getenv("BOOTSTRAP_DEMO_USERS","false").lower()=="true" and not User.query.first():
-  db.session.add(User(name="Clínica Demo",email="clinica@malibub.com",password=generate_password_hash("Malibub2026"),role="Clinica"))
-  db.session.add(User(name="Dra. Marina",email="radiologista@malibub.com",password=generate_password_hash("Malibub2026"),role="Radiologista")); db.session.commit()
+ # Nunca cria contas com senha conhecida em produção.
+ # Bootstrap de demonstração é permitido somente fora de produção e exige senha fornecida por variável de ambiente.
+ demo_password=os.getenv("BOOTSTRAP_DEMO_PASSWORD","")
+ if APP_ENV!="production" and os.getenv("BOOTSTRAP_DEMO_USERS","false").lower()=="true" and demo_password and len(demo_password)>=12 and not User.query.first():
+  db.session.add(User(name="Clínica Demo",email="clinica@malibub.com",password=generate_password_hash(demo_password),role="Clinica"))
+  db.session.add(User(name="Dra. Marina",email="radiologista@malibub.com",password=generate_password_hash(demo_password),role="Radiologista"))
+  db.session.commit()
  _initialized=True
 
 LOGIN_ATTEMPTS=defaultdict(deque)
