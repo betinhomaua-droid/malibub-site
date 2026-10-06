@@ -2,12 +2,17 @@ from flask import Flask, request, jsonify
 import os, subprocess, tempfile
 from pathlib import Path
 
-app=Flask(__name__)
+app=Flask(__name__)\napp.config["MAX_CONTENT_LENGTH"]=512*1024*1024
 TOKEN=os.getenv("SCANNER_TOKEN","")
 
 @app.get("/health")
 def health():
- return {"status":"ok"},200
+ try:
+  p=subprocess.run(["clamscan","--version"],capture_output=True,text=True,timeout=15)
+  if p.returncode!=0: return {"status":"error","scanner":"unavailable"},503
+  return {"status":"ok","scanner":(p.stdout or "").strip()[:160]},200
+ except Exception:
+  return {"status":"error","scanner":"unavailable"},503
 
 @app.post("/scan")
 def scan():
