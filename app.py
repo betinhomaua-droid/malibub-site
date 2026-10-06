@@ -368,19 +368,15 @@ def init():
   db.session.add(User(name="Dra. Marina",email="radiologista@malibub.com",password=generate_password_hash(demo_password),role="Radiologista"))
   db.session.commit()
  _initialized=True
-
-@app.before_request
-def retention_maintenance():
  global _last_purge_ts
- if not _initialized: return
  now_ts=time.time()
- if now_ts-_last_purge_ts < AUTO_PURGE_INTERVAL_SECONDS: return
- _last_purge_ts=now_ts
- try:
-  purge_expired_exam_files()
- except Exception as exc:
-  db.session.rollback()
-  app.logger.error("retention_cleanup_failed error_type=%s",type(exc).__name__)
+ if now_ts-_last_purge_ts >= AUTO_PURGE_INTERVAL_SECONDS:
+  _last_purge_ts=now_ts
+  try:
+   purge_expired_exam_files()
+  except Exception as exc:
+   db.session.rollback()
+   app.logger.error("retention_cleanup_failed error_type=%s",type(exc).__name__)
 
 LOGIN_ATTEMPTS=defaultdict(deque)
 LOGIN_LIMIT=5
