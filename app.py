@@ -611,6 +611,11 @@ def direct_upload_url():
  content_type=str(data.get("content_type") or "application/octet-stream")[:120]
  if not name or Path(name).suffix.lower() not in {".jpg",".jpeg",".png",".pdf",".dcm",".zip",".rar"}: return {"error":"invalid_file"},400
  key=uuid.uuid4().hex+"_"+name
+ pending=session.get("_pending_direct_uploads",{})
+ now=int(time.time())
+ pending={k:v for k,v in pending.items() if isinstance(v,dict) and now-int(v.get("created",0))<1800}
+ pending[key]={"name":name,"created":now}
+ session["_pending_direct_uploads"]=pending
  url=r2_client().generate_presigned_url("put_object",Params={"Bucket":R2_BUCKET,"Key":key,"ContentType":content_type},ExpiresIn=900)
  return {"key":key,"url":url,"content_type":content_type},200
 
@@ -620,16 +625,18 @@ def direct_upload_finalize():
  data=request.get_json(silent=True) or {}; files=data.get("files") or []
  patient=str(data.get("patient","")).strip()[:120]; dentist=str(data.get("dentist","")).strip()[:120]; exam_type=str(data.get("exam_type","")).strip()[:80]
  if not files or not patient or not dentist or not exam_type: return {"error":"required_fields"},400
- verified=[]
+ verified=[]; pending=session.get("_pending_direct_uploads",{}); now=int(time.time())
  try:
   for item in files:
-   key=str(item.get("key","")); name=secure_filename(str(item.get("name","")))
-   if not key or not name or not key.endswith("_"+name): raise ValueError("invalid upload")
+   key=str(item.get("key","")); name=secure_filename(str(item.get("name",""))); grant=pending.get(key)
+   if not key or not name or not isinstance(grant,dict) or grant.get("name")!=name or now-int(grant.get("created",0))>1800: raise ValueError("invalid upload grant")
    r2_client().head_object(Bucket=R2_BUCKET,Key=key); verified.append((key,name))
   e=Exam(protocol="MB"+datetime.now().strftime("%y%m%d%H%M%S"),patient=patient,sex=str(data.get("sex","Não informado")).strip(),birth=str(data.get("birth",""))[:20],dentist=dentist,exam_date=str(data.get("exam_date",""))[:20],exam_type=exam_type,observation=str(data.get("observation","")).strip()[:500],clinic_id=session["uid"],status="Aguardando laudo",due_at=datetime.utcnow()+timedelta(hours=24))
   db.session.add(e); db.session.flush()
   for key,name in verified: db.session.add(ExamFile(exam_id=e.id,name=name,stored=key,scan_status="NAO_VERIFICADO",scan_detail="Verificação antivírus opcional pela radiologista."))
   db.session.commit()
+  for key,_ in verified: pending.pop(key,None)
+  session["_pending_direct_uploads"]=pending
   app.logger.info("direct_upload_finalize_ok exam_id=%s file_count=%s",e.id,len(verified))
   return {"status":"ok","redirect":"/dashboard"},200
  except Exception as exc:
