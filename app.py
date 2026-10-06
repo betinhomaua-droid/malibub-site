@@ -609,7 +609,9 @@ def report(eid):
  e=Exam.query.get_or_404(eid)
  if ExamFile.query.filter(ExamFile.exam_id==e.id,ExamFile.scan_status.in_(["SUSPEITO","INFECTADO"])).first():
   flash("Exame bloqueado pela segurança. Arquivo suspeito/infectado não foi disponibilizado.")
-  return redirect("/dashboard"); files=ExamFile.query.filter_by(exam_id=e.id).filter((ExamFile.kind=="entrada") | (ExamFile.kind==None)).all(); ready_files=ExamFile.query.filter_by(exam_id=e.id,kind="exame_pronto").all()
+  return redirect("/dashboard")
+ files=ExamFile.query.filter_by(exam_id=e.id).filter((ExamFile.kind=="entrada") | (ExamFile.kind==None)).all()
+ ready_files=ExamFile.query.filter_by(exam_id=e.id,kind="exame_pronto").all()
  if request.method=="POST":
   if e.status=="Liberado":
    flash("Este laudo já foi liberado. Nenhuma nova receita foi lançada.")
