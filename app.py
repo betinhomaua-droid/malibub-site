@@ -105,17 +105,30 @@ def malware_scan(fileobj,name):
  try:
   fileobj.stream.seek(0)
   headers={"Authorization":"Bearer "+MALWARE_SCANNER_TOKEN} if MALWARE_SCANNER_TOKEN else {}
-  response=requests.post(MALWARE_SCANNER_URL+"/scan",headers=headers,files={"file":(name,fileobj.stream,fileobj.mimetype or "application/octet-stream")},timeout=(5,20))
+  response=requests.post(
+   MALWARE_SCANNER_URL+"/scan",
+   headers=headers,
+   files={"file":(name,fileobj.stream,fileobj.mimetype or "application/octet-stream")},
+   timeout=(5,20),
+  )
   fileobj.stream.seek(0)
-  if response.status_code!=200:\n   app.logger.error("scanner_http_status=%s", response.status_code)\n   return "ERRO","Scanner indisponível."
-  data=response.json(); status=str(data.get("status","ERRO")).upper()
-  if status=="LIMPO": return "LIMPO",str(data.get("detail","Arquivo verificado."))[:255]
-  if status in {"SUSPEITO","INFECTADO"}: return status,str(data.get("detail","Ameaça detectada."))[:255]
+  if response.status_code!=200:
+   app.logger.error("scanner_http_status=%s",response.status_code)
+   return "ERRO","Scanner indisponível."
+  data=response.json()
+  status=str(data.get("status","ERRO")).upper()
+  if status=="LIMPO":
+   return "LIMPO",str(data.get("detail","Arquivo verificado."))[:255]
+  if status in {"SUSPEITO","INFECTADO"}:
+   return status,str(data.get("detail","Ameaça detectada."))[:255]
+  app.logger.error("scanner_invalid_response")
   return "ERRO","Resposta inválida do scanner."
  except Exception as exc:
-  app.logger.error("scanner_connection_error=%s", type(exc).__name__)
-  try: fileobj.stream.seek(0)
-  except Exception: pass
+  app.logger.error("scanner_connection_error=%s",type(exc).__name__)
+  try:
+   fileobj.stream.seek(0)
+  except Exception:
+   pass
   return "ERRO","Falha ao consultar o scanner de malware."
 
 def csrf_token():
