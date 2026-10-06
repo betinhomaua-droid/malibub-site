@@ -460,10 +460,6 @@ def dashboard():
  rows=""
  for e in exams:
   blocked=ExamFile.query.filter(ExamFile.exam_id==e.id,ExamFile.scan_status.in_(["SUSPEITO","INFECTADO"])).first()
-  # Regra de privacidade/segurança: ocorrência de malware é exibida somente à clínica.
-  # Para a radiologista, o exame bloqueado não entra na fila e nenhum arquivo é disponibilizado.
-  if session["role"]=="Radiologista" and blocked:
-   continue
   if session["role"]=="Clinica" and blocked:
    action="<span style='display:inline-block;background:#b42318;color:white;font-weight:800;padding:9px 12px;border-radius:8px'>SUSPEITO/INFECTADO</span>"
   else:
