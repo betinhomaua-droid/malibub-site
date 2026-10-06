@@ -37,6 +37,14 @@ def object_storage_enabled():
  return all([R2_BUCKET,R2_ENDPOINT_URL,os.getenv("R2_ACCESS_KEY_ID"),os.getenv("R2_SECRET_ACCESS_KEY")])
 def r2_client():
  return boto3.client("s3",endpoint_url=R2_ENDPOINT_URL,aws_access_key_id=os.getenv("R2_ACCESS_KEY_ID"),aws_secret_access_key=os.getenv("R2_SECRET_ACCESS_KEY"),region_name="auto")
+def ensure_r2_browser_cors():
+ if not object_storage_enabled(): return False
+ try:
+  r2_client().put_bucket_cors(Bucket=R2_BUCKET,CORSConfiguration={"CORSRules":[{"AllowedOrigins":["https://portal.malibub.com.br"],"AllowedMethods":["PUT"],"AllowedHeaders":["Content-Type"],"ExposeHeaders":["ETag"],"MaxAgeSeconds":3600}]})
+  return True
+ except Exception as exc:
+  app.logger.warning("r2_cors_setup_failed error_type=%s",type(exc).__name__)
+  return False
 def store_upload(fileobj,key,content_type=None):
  if object_storage_enabled():
   extra={"ContentType":content_type} if content_type else {}
@@ -288,6 +296,7 @@ _initialized=False
 def init():
  global _initialized
  if _initialized: return
+ if object_storage_enabled(): ensure_r2_browser_cors()
  db.create_all()
  if db.engine.dialect.name=="postgresql":
   try:
