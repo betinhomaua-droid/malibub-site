@@ -173,6 +173,8 @@ class ExamFile(db.Model):
  id=db.Column(db.Integer,primary_key=True); exam_id=db.Column(db.Integer); name=db.Column(db.String(255)); stored=db.Column(db.String(255)); kind=db.Column(db.String(30),default="entrada"); uploaded_by=db.Column(db.String(100))
 class Finance(db.Model):
  id=db.Column(db.Integer,primary_key=True); date=db.Column(db.Date,default=datetime.utcnow().date); description=db.Column(db.String(200)); kind=db.Column(db.String(20)); amount=db.Column(db.Float,default=0)
+class ClinicPrice(db.Model):
+ id=db.Column(db.Integer,primary_key=True); clinic_id=db.Column(db.Integer,index=True,nullable=False); exam_type=db.Column(db.String(100),nullable=False); amount=db.Column(db.Float,nullable=False); active=db.Column(db.Boolean,default=True); __table_args__=(db.UniqueConstraint("clinic_id","exam_type",name="uq_clinic_exam_price"),)
 
 CSS="""*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#f4f8fa;color:#153847}a{text-decoration:none;color:#087b9b}.shell{display:grid;grid-template-columns:220px 1fr;min-height:100vh}aside{background:linear-gradient(180deg,#06394c,#087b9b);color:white;padding:28px 20px}aside a{color:white;display:block;margin:20px 0}.brand{font-size:25px;font-weight:800}.brand span{display:block;font-weight:400}.brand small{display:block;font-size:10px;margin-top:8px}main{padding:32px;max-width:1500px}.card{background:white;border:1px solid #dce8ec;border-radius:16px;padding:22px;margin-bottom:18px;box-shadow:0 5px 18px #0c40540d}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}input,select,textarea{width:100%;padding:11px;border:1px solid #cbdde3;border-radius:8px;margin-top:6px}label{font-weight:700}button,.btn{display:inline-block;background:#087b9b;color:white;border:0;border-radius:8px;padding:11px 16px;margin:8px 5px 5px 0}.gold{background:#c99b3b}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px;border-bottom:1px solid #e5edef}.badge{background:#e6f4f7;padding:5px 9px;border-radius:12px}.workspace{display:grid;grid-template-columns:1fr 1fr;gap:18px}.viewer{max-height:650px;overflow:auto}.viewer img{width:100%;height:auto;display:block;margin:10px 0 18px;border-radius:8px}.viewer iframe{width:100%;height:560px;border:1px solid #dce8ec;border-radius:8px;margin:10px 0 18px}.exam-file{margin-bottom:18px}.filebar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.filebar b{margin-right:auto}.editor textarea{min-height:430px}.muted{color:#657f89}.notice{padding:12px;background:#fff7df;border-left:4px solid #c99b3b;margin:12px 0}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.cards .card b{display:block;font-size:28px;color:#087b9b}
 .login-approved{min-height:100vh;display:grid;grid-template-columns:52.5% 47.5%;gap:0;background:#020b14;color:white;overflow:hidden}
@@ -289,7 +291,7 @@ def admin_users():
   flash("Clínica cadastrada com acesso ativo.")
   return redirect("/admin/usuarios")
  clinics=User.query.filter_by(role="Clinica").order_by(User.name).all()
- rows="".join(f"<tr><td>{html_escape(u.name)}</td><td>{html_escape(u.email)}</td><td>{'Ativo' if u.active is not False else 'Inativo'}</td><td><a class='btn' href='/admin/usuarios/{u.id}/editar'>Editar</a> <form method='post' action='/admin/usuarios/{u.id}/status' style='display:inline-block;margin:0'>{csrf_field()}<button type='submit'>{'Desativar' if u.active is not False else 'Ativar'}</button></form></td></tr>" for u in clinics)
+ rows="".join(f"<tr><td>{html_escape(u.name)}</td><td>{html_escape(u.email)}</td><td>{'Ativo' if u.active is not False else 'Inativo'}</td><td><a class='btn' href='/admin/usuarios/{u.id}/editar'>Editar</a> <a class='btn' href='/admin/usuarios/{u.id}/precos'>Preços</a> <form method='post' action='/admin/usuarios/{u.id}/status' style='display:inline-block;margin:0'>{csrf_field()}<button type='submit'>{'Desativar' if u.active is not False else 'Ativar'}</button></form></td></tr>" for u in clinics)
  body=f"""<h1>Administração</h1><div class='card'><h2>Cadastrar clínica</h2><form method='post'>{csrf_field()}<label>Nome da clínica<input name='name' maxlength='100' required></label><label>E-mail de acesso<input type='email' name='email' maxlength='120' required></label><label>Senha inicial<input type='password' name='password' minlength='10' maxlength='256' required></label><button class='gold' type='submit'>Criar acesso</button></form></div><div class='card'><h2>Clínicas cadastradas</h2><table><tr><th>Clínica</th><th>E-mail</th><th>Status</th><th>Ação</th></tr>{rows or '<tr><td colspan=4>Nenhuma clínica cadastrada.</td></tr>'}</table></div>"""
  return page(body)
 
@@ -312,6 +314,29 @@ def admin_user_edit(uid):
   if password: u.password=generate_password_hash(password)
   db.session.commit(); flash("Cadastro da clínica atualizado."); return redirect("/admin/usuarios")
  body=f"""<h1>Editar clínica</h1><div class='card'><form method='post'>{csrf_field()}<label>Nome da clínica<input name='name' maxlength='100' value='{html_escape(u.name)}' required></label><label>E-mail de acesso<input type='email' name='email' maxlength='120' value='{html_escape(u.email)}' required></label><label>Nova senha (opcional)<input type='password' name='password' minlength='10' maxlength='256'></label><button class='gold' type='submit'>Salvar alterações</button></form></div>"""
+ return page(body)
+
+@app.route("/admin/usuarios/<int:uid>/precos",methods=["GET","POST"])
+def admin_clinic_prices(uid):
+ if session.get("role")!="Radiologista": return redirect("/")
+ u=User.query.get_or_404(uid)
+ if u.role!="Clinica": return redirect("/admin/usuarios")
+ if request.method=="POST":
+  exam_type=request.form.get("exam_type","").strip()[:100]
+  try:
+   amount=float(request.form.get("amount","").strip())
+   if amount<=0: raise ValueError
+  except (TypeError,ValueError):
+   flash("Informe um valor maior que R$ 0,00."); return redirect(url_for("admin_clinic_prices",uid=u.id))
+  if not exam_type:
+   flash("Informe o tipo de exame."); return redirect(url_for("admin_clinic_prices",uid=u.id))
+  item=ClinicPrice.query.filter_by(clinic_id=u.id,exam_type=exam_type).first()
+  if item: item.amount=amount; item.active=True
+  else: db.session.add(ClinicPrice(clinic_id=u.id,exam_type=exam_type,amount=amount,active=True))
+  db.session.commit(); flash("Preço da clínica salvo."); return redirect(url_for("admin_clinic_prices",uid=u.id))
+ prices=ClinicPrice.query.filter_by(clinic_id=u.id).order_by(ClinicPrice.exam_type).all()
+ rows="".join("<tr><td>"+html_escape(x.exam_type)+"</td><td>R$ "+format(x.amount,".2f")+"</td></tr>" for x in prices)
+ body=f"""<h1>Tabela de preços — {html_escape(u.name)}</h1><div class='card'><p class='muted'>Cadastre o valor contratado por tipo de exame. O sistema usará este preço automaticamente ao laudar.</p><form method='post'>{csrf_field()}<label>Tipo de exame<input name='exam_type' maxlength='100' placeholder='Ex.: Panorâmica' required></label><label>Valor contratado (R$)<input type='number' name='amount' min='0.01' step='0.01' required></label><button class='gold' type='submit'>Salvar preço</button></form></div><div class='card'><h2>Preços cadastrados</h2><table><tr><th>Tipo de exame</th><th>Valor</th></tr>{rows or '<tr><td colspan=2>Nenhum preço cadastrado.</td></tr>'}</table></div>"""
  return page(body)
 
 @app.route("/admin/usuarios/<int:uid>/status",methods=["POST"])
