@@ -112,7 +112,8 @@ def malware_scan(fileobj,name):
   if status=="LIMPO": return "LIMPO",str(data.get("detail","Arquivo verificado."))[:255]
   if status in {"SUSPEITO","INFECTADO"}: return status,str(data.get("detail","Ameaça detectada."))[:255]
   return "ERRO","Resposta inválida do scanner."
- except Exception:
+ except Exception as exc:
+  app.logger.error("scanner_connection_error=%s", type(exc).__name__)
   try: fileobj.stream.seek(0)
   except Exception: pass
   return "ERRO","Falha ao consultar o scanner de malware."
