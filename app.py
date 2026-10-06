@@ -777,7 +777,12 @@ def finance():
  health="POSITIVA" if saldo>0 else ("EQUILIBRADA" if saldo==0 else "NEGATIVA")
  clinics=User.query.filter_by(role="Clinica").order_by(User.name).all()
  clinic_options="".join("<option value='"+str(u.id)+"'>"+str(html_escape(u.name))+"</option>" for u in clinics)
- rows=''
+ rows_parts=[]
+ for x in entries:
+  protected=x.kind=="Entrada" and ((x.description or "").startswith("Laudo ") or (x.description or "").startswith("Laudos ·"))
+  action="" if protected else "<form method='post' action='/finance/"+str(x.id)+"/excluir' style='margin:0' onsubmit=\"return confirm('Excluir este lançamento?')\">"+csrf_field()+"<button type='submit'>Excluir</button></form>"
+  rows_parts.append("<tr><td>"+x.date.strftime("%d/%m/%Y")+"</td><td>"+str(html_escape(x.description or ""))+"</td><td>"+str(html_escape(x.kind or ""))+"</td><td>R$ "+format(x.amount,".2f")+"</td><td>"+action+"</td></tr>")
+ rows="".join(rows_parts)
  body=f'''<h1>Financeiro MALIBUB</h1><p class="muted">Acompanhe receitas, custos da plataforma e saúde financeira.</p>
  <form method="get" class="card"><label>Período mensal<input type="month" name="month" value="{html_escape(month)}"></label><button type="submit">Filtrar</button><a class="btn" href="/finance">Todo o período</a></form>
  <div class="cards"><div class="card">Entradas<b>R$ {ent:.2f}</b></div><div class="card">Saídas<b>R$ {sai:.2f}</b></div><div class="card">Saldo<b>R$ {saldo:.2f}</b></div><div class="card">Infraestrutura<b>R$ {infra:.2f}</b></div><div class="card">Custos fixos<b>R$ {fixed:.2f}</b></div><div class="card">Custos variáveis<b>R$ {variable:.2f}</b></div><div class="card">Margem<b>{margem:.1f}%</b></div><div class="card">Saúde financeira<b>{health}</b></div><div class="card">Laudos liberados<b>{released}</b></div><div class="card">Receita de laudos<b>R$ {report_revenue:.2f}</b></div><div class="card">Ticket médio<b>R$ {ticket:.2f}</b></div><div class="card">Ponto de equilíbrio<b>{break_even:.1f} laudos</b></div></div>
