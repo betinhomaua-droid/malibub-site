@@ -251,6 +251,8 @@ def init():
    db.session.execute(db.text("ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE"))
    db.session.execute(db.text("ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS logo VARCHAR(255)"))
    db.session.execute(db.text("ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS logo_name VARCHAR(255)"))
+   db.session.execute(db.text("ALTER TABLE exam_file ADD COLUMN IF NOT EXISTS scan_status VARCHAR(20) DEFAULT 'PENDENTE'"))
+   db.session.execute(db.text("ALTER TABLE exam_file ADD COLUMN IF NOT EXISTS scan_detail VARCHAR(255)"))
    db.session.execute(db.text("UPDATE \"user\" SET active=TRUE WHERE active IS NULL"))
    db.session.commit()
   except Exception:
@@ -503,10 +505,16 @@ def new():
   try:
    for f in incoming:
     name=secure_filename(f.filename)
+    scan_status,scan_detail=malware_scan(f,name)
+    if scan_status in {"SUSPEITO","INFECTADO"}:
+     db.session.add(ExamFile(exam_id=e.id,name=name,stored="",kind="bloqueado",uploaded_by=session.get("name"),scan_status=scan_status,scan_detail=scan_detail))
+     continue
+    if scan_status=="ERRO" and MALWARE_SCAN_REQUIRED:
+     raise RuntimeError("malware scanner unavailable")
     stored=uuid.uuid4().hex+"_"+name
     store_upload(f,stored,f.mimetype)
     uploaded.append(stored)
-    db.session.add(ExamFile(exam_id=e.id,name=name,stored=stored))
+    db.session.add(ExamFile(exam_id=e.id,name=name,stored=stored,scan_status=scan_status,scan_detail=scan_detail))
    db.session.commit()
   except Exception:
    db.session.rollback()
@@ -525,6 +533,9 @@ def exam_file(fid):
  f=ExamFile.query.get_or_404(fid); e=Exam.query.get_or_404(f.exam_id)
  if session.get("role")=="Clinica" and e.clinic_id!=session.get("uid"): return redirect("/dashboard")
  if session.get("role") not in {"Clinica","Radiologista"}: return redirect("/")
+ if f.scan_status in {"SUSPEITO","INFECTADO"} or not f.stored:
+  flash("Arquivo bloqueado pela varredura de segurança.")
+  return redirect("/dashboard")
  if not storage_exists(f.stored):
   flash("Arquivo não encontrado no armazenamento privado.")
   return redirect("/dashboard")
