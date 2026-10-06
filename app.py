@@ -8,7 +8,7 @@ from collections import defaultdict, deque
 from zoneinfo import ZoneInfo
 import time
 from pathlib import Path
-import os, uuid, io, secrets
+import os, uuid, io, secrets, zipfile
 import boto3
 
 app=Flask(__name__)
@@ -75,6 +75,25 @@ def storage_response(key,name=None,download=False):
   response.headers["Cache-Control"]="no-store, private"
   return response
  return send_from_directory(UPLOAD,key,as_attachment=download,download_name=name or Path(key).name)
+
+def validate_zip_upload(fileobj):
+ pos=fileobj.stream.tell()
+ try:
+  with zipfile.ZipFile(fileobj.stream) as archive:
+   members=archive.infolist()
+   if len(members)>2000: return False,"ZIP com quantidade excessiva de arquivos."
+   total=sum(x.file_size for x in members)
+   compressed=sum(max(x.compress_size,1) for x in members)
+   if total>1024*1024*1024: return False,"ZIP descompactado ultrapassa o limite de segurança."
+   if total>50*1024*1024 and total/compressed>100: return False,"ZIP bloqueado por taxa de compactação anormal."
+   for x in members:
+    p=Path(x.filename)
+    if p.is_absolute() or ".." in p.parts: return False,"ZIP contém caminho de arquivo inseguro."
+  return True,""
+ except zipfile.BadZipFile:
+  return False,"Arquivo ZIP inválido ou corrompido."
+ finally:
+  fileobj.stream.seek(pos)
 
 def csrf_token():
  token=session.get("_csrf_token")
@@ -438,6 +457,13 @@ def new():
   if invalid:
    flash("Formato não permitido: "+", ".join(invalid)+". Use JPG, JPEG, PNG, PDF, DCM, ZIP ou RAR.")
    return redirect("/new")
+  for f in incoming:
+   name=secure_filename(f.filename)
+   if Path(name).suffix.lower()==".zip":
+    ok,message=validate_zip_upload(f)
+    if not ok:
+     flash(message)
+     return redirect("/new")
   patient=request.form.get("patient","").strip()[:120]
   dentist=request.form.get("dentist","").strip()[:120]
   sex=request.form.get("sex","Não informado").strip()
