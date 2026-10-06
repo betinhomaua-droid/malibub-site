@@ -687,41 +687,40 @@ def new():
    flash("Não foi possível concluir o envio. Nenhum exame incompleto foi criado; tente novamente.")
    return redirect("/new")
   return redirect("/dashboard")
- body=f'''<h1>Novo Exame</h1><div class="card"><form id="exam-form" method="post" enctype="multipart/form-data">{csrf_field()}<div class="grid"><label>Nome do paciente<input name="patient" required></label><label>Sexo<select name="sex"><option>Feminino</option><option>Masculino</option><option>Não informado</option></select></label><label>Data de nascimento<input type="date" name="birth" required></label><label>Dentista solicitante<input name="dentist" required></label><label>Data do exame<input type="date" name="exam_date" required></label><label>Tipo de exame<select name="exam_type"><option>Tomografia computadorizada</option><option>Panorâmica</option><option>Documentação</option><option>Tomografia Endo</option></select></label></div><label>Observação / motivo<textarea name="observation" maxlength="500"></textarea></label><label>Imagens e arquivos<input id="exam-files" type="file" name="files" multiple accept=".jpg,.jpeg,.png,.pdf,.dcm,.zip,.rar"></label><div id="upload-progress" class="notice" style="display:none"></div><button id="send-exam" class="gold">Enviar exame</button></form></div>
+ body=f'''<h1>Novo Exame</h1><div class="card"><form id="exam-form" method="post" enctype="multipart/form-data">{csrf_field()}<div class="grid"><label>Nome do paciente<input name="patient" required></label><label>Sexo<select name="sex"><option>Feminino</option><option>Masculino</option><option>Não informado</option></select></label><label>Data de nascimento<input type="date" name="birth" required></label><label>Dentista solicitante<input name="dentist" required></label><label>Data do exame<input type="date" name="exam_date" required></label><label>Tipo de exame<select name="exam_type"><option>Tomografia computadorizada</option><option>Panorâmica</option><option>Documentação</option><option>Tomografia Endo</option></select></label></div><label>Observação / motivo<textarea name="observation" maxlength="500"></textarea></label>
+<div class="card" style="margin-top:18px"><h3>Arquivos do exame</h3><p class="muted">Adicione imagens, DICOM, PDF, ZIP ou RAR. Você pode combinar vários arquivos no mesmo exame.</p>
+<input id="exam-files" type="file" multiple accept=".jpg,.jpeg,.png,.pdf,.dcm,.zip,.rar" style="display:none">
+<input id="exam-folder" type="file" multiple webkitdirectory directory style="display:none">
+<div style="display:flex;gap:10px;flex-wrap:wrap"><button type="button" class="blue" id="pick-files">Selecionar arquivos</button><button type="button" class="blue" id="pick-folder">Selecionar pasta</button><button type="button" class="blue" id="pick-more">Adicionar mais arquivos</button></div>
+<div id="file-summary" class="notice" style="display:none;margin-top:12px"></div><div id="file-list" style="margin-top:10px"></div></div>
+<div id="upload-progress" class="notice" style="display:none"></div><button id="send-exam" class="gold">Enviar exame</button></form></div>
 <script>
 (function(){{
- const form=document.getElementById("exam-form"), input=document.getElementById("exam-files"), box=document.getElementById("upload-progress"), btn=document.getElementById("send-exam");
+ const form=document.getElementById("exam-form"), input=document.getElementById("exam-files"), folder=document.getElementById("exam-folder"), list=document.getElementById("file-list"), summary=document.getElementById("file-summary"), box=document.getElementById("upload-progress"), btn=document.getElementById("send-exam");
  if(!form||!input) return;
- const csrf=form.querySelector("[name=_csrf_token]").value;
+ const csrf=form.querySelector("[name=_csrf_token]").value, selected=[];
+ const allowed=/\.(jpg|jpeg|png|pdf|dcm|zip|rar)$/i;
+ function fmt(n){{if(n<1024)return n+" B";if(n<1048576)return (n/1024).toFixed(1)+" KB";if(n<1073741824)return (n/1048576).toFixed(1)+" MB";return (n/1073741824).toFixed(2)+" GB";}}
+ function add(files){{Array.from(files).forEach(file=>{{if(!allowed.test(file.name))return;const key=file.name+"|"+file.size+"|"+file.lastModified;if(!selected.some(x=>x.key===key))selected.push({{key:key,file:file}});}});render();}}
+ function render(){{const total=selected.reduce((s,x)=>s+x.file.size,0);summary.style.display=selected.length?"block":"none";summary.textContent=selected.length+" arquivo(s) selecionado(s) • "+fmt(total);list.innerHTML="";selected.forEach((x,i)=>{{const row=document.createElement("div");row.style.cssText="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #e5e7eb";const name=document.createElement("span");name.textContent=x.file.name+" — "+fmt(x.file.size);const rm=document.createElement("button");rm.type="button";rm.className="blue";rm.textContent="Remover";rm.onclick=()=>{{selected.splice(i,1);render();}};row.append(name,rm);list.appendChild(row);}});}}
+ document.getElementById("pick-files").onclick=()=>input.click();document.getElementById("pick-more").onclick=()=>input.click();document.getElementById("pick-folder").onclick=()=>folder.click();
+ input.onchange=()=>{{add(input.files);input.value="";}};folder.onchange=()=>{{add(folder.files);folder.value="";}};
  form.addEventListener("submit",async function(ev){{
-  if(!window.fetch||!input.files.length) return;
-  ev.preventDefault(); btn.disabled=true; box.style.display="block";
+  if(!window.fetch||!selected.length){{if(!selected.length){{ev.preventDefault();box.style.display="block";box.textContent="Adicione ao menos um arquivo do exame.";}}return;}}
+  ev.preventDefault();btn.disabled=true;box.style.display="block";
   try{{
    const uploaded=[];
-   for(let i=0;i<input.files.length;i++){{
-    const file=input.files[i];
-    box.textContent="Enviando arquivo "+(i+1)+" de "+input.files.length+"...";
-    const a=await fetch("/new/direct-upload-url",{{method:"POST",headers:{{"Content-Type":"application/json","X-CSRF-Token":csrf}},body:JSON.stringify({{name:file.name,content_type:file.type||"application/octet-stream"}})}});
-    if(!a.ok) throw new Error("auth");
-    const s=await a.json();
-    const p=await fetch(s.url,{{method:"PUT",headers:{{"Content-Type":s.content_type}},body:file}});
-    if(!p.ok) throw new Error("put");
-    uploaded.push({{key:s.key,name:file.name}});
+   for(let i=0;i<selected.length;i++){{
+    const file=selected[i].file;box.textContent="Enviando arquivo "+(i+1)+" de "+selected.length+" • "+fmt(file.size);
+    const a=await fetch("/new/direct-upload-url",{{method:"POST",headers:{{"Content-Type":"application/json","X-CSRF-Token":csrf}},body:JSON.stringify({{name:file.name,content_type:file.type||"application/octet-stream"}})}});if(!a.ok)throw new Error("auth");const s=await a.json();
+    const p=await fetch(s.url,{{method:"PUT",headers:{{"Content-Type":s.content_type}},body:file}});if(!p.ok)throw new Error("put");uploaded.push({{key:s.key,name:file.name}});
    }}
-   box.textContent="Finalizando envio...";
-   const fd=new FormData(form), payload={{files:uploaded}};
-   ["patient","sex","birth","dentist","exam_date","exam_type","observation"].forEach(k=>payload[k]=fd.get(k)||"");
-   const d=await fetch("/new/direct-finalize",{{method:"POST",headers:{{"Content-Type":"application/json","X-CSRF-Token":csrf}},body:JSON.stringify(payload)}});
-   if(!d.ok) throw new Error("finalize");
-   const r=await d.json(); location.href=r.redirect||"/dashboard";
-  }}catch(e){{
-   box.textContent="Usando modo compatível de envio...";
-   btn.disabled=false; form.submit();
-  }}
+   box.textContent="Finalizando envio...";const fd=new FormData(form),payload={{files:uploaded}};["patient","sex","birth","dentist","exam_date","exam_type","observation"].forEach(k=>payload[k]=fd.get(k)||"");
+   const d=await fetch("/new/direct-finalize",{{method:"POST",headers:{{"Content-Type":"application/json","X-CSRF-Token":csrf}},body:JSON.stringify(payload)}});if(!d.ok)throw new Error("finalize");const r=await d.json();location.href=r.redirect||"/dashboard";
+  }}catch(e){{box.textContent="O envio direto não pôde ser concluído. Tente novamente.";btn.disabled=false;}}
  }});
 }})();
-</script>'''
- return page(body)
+</script>''' return page(body)
 
 @app.post("/exam-file/<int:fid>/scan")
 def scan_exam_file(fid):
