@@ -859,27 +859,24 @@ def result_pdf(eid):
   def tmj_header_footer(canv,docobj):
    canv.saveState()
    navy=colors.HexColor("#06394C"); teal=colors.HexColor("#087B9B"); gold=colors.HexColor("#C99B3B")
-   # Cabeçalho institucional repetido em todas as páginas.
-   canv.setFillColor(navy); canv.setFont("Helvetica-Bold",15)
-   canv.drawString(22*mm,H-15*mm,"MALIBUB")
-   canv.setFillColor(teal); canv.setFont("Helvetica",8.5)
-   canv.drawString(22*mm,H-20*mm,"Imaginologia Odontológica")
+   # Cabeçalho clínico discreto; a marca MALIBUB fica no fechamento do documento.
    if clinic and clinic.name:
     canv.setFillColor(colors.HexColor("#52666E")); canv.setFont("Helvetica",7.5)
     canv.drawRightString(W-22*mm,H-17*mm,str(clinic.name)[:70])
-   canv.setStrokeColor(gold); canv.setLineWidth(1)
-   canv.line(22*mm,H-24*mm,W-22*mm,H-24*mm)
    canv.setFillColor(colors.black); canv.setFont("Helvetica-Bold",8.5)
-   canv.drawString(22*mm,H-31*mm,f"Nome do paciente: {e.patient or ''}")
+   canv.drawString(22*mm,H-24*mm,f"Nome do paciente: {e.patient or ''}")
    canv.setFont("Helvetica",8.5)
-   canv.drawString(22*mm,H-38*mm,f"Data de nasc.: {br_date(e.birth)}")
-   canv.drawString(85*mm,H-38*mm,f"Data do exame: {br_date(e.exam_date)}")
-   canv.drawString(22*mm,H-45*mm,f"Indicação clínica: {e.observation or ''}")
-   canv.drawString(22*mm,H-52*mm,f"Dentista solicitante: {e.dentist or ''}")
+   canv.drawString(22*mm,H-31*mm,f"Data de nasc.: {br_date(e.birth)}")
+   canv.drawString(85*mm,H-31*mm,f"Data do exame: {br_date(e.exam_date)}")
+   canv.drawString(22*mm,H-38*mm,f"Indicação clínica: {e.observation or ''}")
+   canv.drawString(22*mm,H-45*mm,f"Dentista solicitante: {e.dentist or ''}")
    canv.setStrokeColor(colors.HexColor("#DCE8EC")); canv.setLineWidth(.5)
-   canv.line(22*mm,H-56*mm,W-22*mm,H-56*mm)
-   canv.setFont("Helvetica-Bold",7.5); canv.setFillColor(colors.HexColor("#52666E"))
-   canv.drawCentredString(W/2,10*mm,f"Assinado eletronicamente por {e.signed_by or 'Dra. Marina'}")
+   canv.line(22*mm,H-49*mm,W-22*mm,H-49*mm)
+   canv.setFillColor(navy); canv.setFont("Helvetica-Bold",7.5)
+   canv.drawString(22*mm,10*mm,"MALIBUB Imaginologia Odontológica")
+   canv.setFillColor(colors.HexColor("#52666E")); canv.setFont("Helvetica-Bold",7.5)
+   canv.drawCentredString(W/2,10*mm,"Assinado eletronicamente por Marina Bub · CROSP 113752")
+   canv.setFont("Helvetica",7)
    canv.drawCentredString(W/2,6.5*mm,f"Data: {signed} · Protocolo {e.protocol or ''}")
    canv.setFillColor(colors.HexColor("#7B8C93")); canv.setFont("Helvetica",6.5)
    canv.drawRightString(W-22*mm,6.5*mm,f"Página {docobj.page}")
@@ -909,11 +906,7 @@ def result_pdf(eid):
    Spacer(1,3*mm),
    Paragraph("É inerente a todo exame tomográfico, especialmente o de alta definição como este recebido, que estruturas metálicas de coroas protéticas, restaurações, núcleos e também de obturações endodônticas presentes nas regiões analisadas, formem imagens em forma de raios, prejudicando a avaliação das mesmas.",normal),
    Paragraph("“Há dados do paciente que somente o profissional solicitante do exame possui, confirmando ou não a interpretação das imagens pelo radiologista”",italic),
-   Spacer(1,3*mm),
-   Paragraph("<b>Revisado por:</b>",bold),
-   Spacer(1,9*mm),
-   Paragraph("<b>Dra. MARINA BUB</b>",ParagraphStyle("tmjs",parent=bold,alignment=TA_CENTER)),
-   Paragraph("CROSP 113752",ParagraphStyle("tmjcro",parent=normal,alignment=TA_CENTER))
+   Spacer(1,3*mm)
   ]
   tdoc.build(story_tmj)
   buf.seek(0)
