@@ -1080,7 +1080,10 @@ def finance():
  rows_parts=[]
  for x in entries:
   protected=x.kind=="Entrada" and ((x.description or "").startswith("Laudo ") or (x.description or "").startswith("Laudos ·"))
-  action="" if protected else "<form method='post' action='/finance/"+str(x.id)+"/excluir' style='margin:0' onsubmit=\"return confirm('Excluir este lançamento?')\">"+csrf_field()+"<button type='submit'>Excluir</button></form>"
+  if protected:
+   action="<form method='post' action='/finance/"+str(x.id)+"/corrigir-valor' style='margin:0;display:flex;gap:6px;align-items:center'>"+csrf_field()+"<input type='number' name='amount' min='0.01' step='0.01' value='"+format(x.amount or 0,'.2f')+"' required style='width:110px;margin:0'><button type='submit' class='gold' style='margin:0'>Corrigir valor</button></form>"
+  else:
+   action="<form method='post' action='/finance/"+str(x.id)+"/excluir' style='margin:0' onsubmit=\"return confirm('Excluir este lançamento?')\">"+csrf_field()+"<button type='submit'>Excluir</button></form>"
   rows_parts.append("<tr><td>"+x.date.strftime("%d/%m/%Y")+"</td><td>"+str(html_escape(x.description or ""))+"</td><td>"+str(html_escape(x.kind or ""))+"</td><td>R$ "+format(x.amount,".2f")+"</td><td>"+action+"</td></tr>")
  rows="".join(rows_parts)
  body=f'''<h1>Financeiro MALIBUB</h1><p class="muted">Acompanhe receitas, custos da plataforma e saúde financeira.</p>
@@ -1150,6 +1153,24 @@ def finance_production_report():
   canv.restoreState()
  doc.build(story,onFirstPage=production_footer,onLaterPages=production_footer); buf.seek(0)
  return send_file(buf,mimetype="application/pdf",as_attachment=True,download_name=f"MALIBUB_relatorio_{secure_filename(clinic.name)}_{month}.pdf")
+
+@app.route("/finance/<int:fid>/corrigir-valor",methods=["POST"])
+def finance_correct_value(fid):
+ if session.get("role")!="Radiologista": return redirect("/")
+ item=Finance.query.get_or_404(fid)
+ if item.kind!="Entrada" or not (item.description or "").startswith("Laudo "):
+  flash("Somente receitas automáticas de laudos podem ser corrigidas por esta ação.")
+  return redirect("/finance")
+ try:
+  amount=float(request.form.get("amount") or 0)
+  if amount<=0: raise ValueError
+ except (TypeError,ValueError):
+  flash("Informe um valor maior que R$ 0,00.")
+  return redirect("/finance")
+ item.amount=amount
+ db.session.commit()
+ flash(f"Valor de {item.description} corrigido para R$ {amount:.2f}.")
+ return redirect("/finance")
 
 @app.route("/finance/<int:fid>/excluir",methods=["POST"])
 def finance_delete(fid):
