@@ -6,4 +6,4 @@ RUN freshclam || true
 COPY scanner_app.py /app/scanner_app.py
 WORKDIR /app
 ENV PATH="/opt/scanner-venv/bin:$PATH"
-CMD freshclam || true; exec gunicorn scanner_app:app --bind 0.0.0.0:${PORT:-10000} --workers 1 --timeout 240
+CMD freshclam || true; freshclam -d -c 12 || true & exec gunicorn scanner_app:app --bind 0.0.0.0:${PORT:-10000} --workers 1 --timeout 240
