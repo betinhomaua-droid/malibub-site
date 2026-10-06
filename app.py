@@ -574,7 +574,8 @@ def new():
     uploaded.append(stored)
     db.session.add(ExamFile(exam_id=e.id,name=name,stored=stored,scan_status=scan_status,scan_detail=scan_detail))
    db.session.commit()
-  except Exception:
+  except Exception as exc:
+   app.logger.error("clinic_exam_upload_failed error_type=%s", type(exc).__name__)
    db.session.rollback()
    for stored in uploaded:
     try: storage_delete(stored)
