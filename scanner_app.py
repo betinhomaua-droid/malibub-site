@@ -12,6 +12,30 @@ def clamd_ping():
         data=s.recv(32)
     return b"PONG" in data
 
+def clamd_selftest():
+    path=None
+    try:
+        if not clamd_ping():
+            return False
+        with tempfile.NamedTemporaryFile(prefix="malibub_selftest_",suffix=".txt",delete=False) as tmp:
+            path=tmp.name
+            tmp.write(b"MALIBUB ClamAV self test")
+        p=subprocess.run(
+            ["clamdscan","--config-file=/etc/clamav/clamd.conf","--stream","--no-summary",path],
+            capture_output=True,text=True,timeout=20
+        )
+        app.logger.info("clamd_startup_selftest_exit_code=%s",p.returncode)
+        return p.returncode==0
+    except Exception as exc:
+        app.logger.error("clamd_startup_selftest_error=%s",type(exc).__name__)
+        return False
+    finally:
+        if path:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+
 @app.get("/health")
 def health():
     path=None
