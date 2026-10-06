@@ -629,7 +629,9 @@ def direct_upload_finalize():
   e=Exam(protocol="MB"+datetime.now().strftime("%y%m%d%H%M%S"),patient=patient,sex=str(data.get("sex","Não informado")).strip(),birth=str(data.get("birth",""))[:20],dentist=dentist,exam_date=str(data.get("exam_date",""))[:20],exam_type=exam_type,observation=str(data.get("observation","")).strip()[:500],clinic_id=session["uid"],status="Aguardando laudo",due_at=datetime.utcnow()+timedelta(hours=24))
   db.session.add(e); db.session.flush()
   for key,name in verified: db.session.add(ExamFile(exam_id=e.id,name=name,stored=key,scan_status="NAO_VERIFICADO",scan_detail="Verificação antivírus opcional pela radiologista."))
-  db.session.commit(); return {"status":"ok","redirect":"/dashboard"},200
+  db.session.commit()
+  app.logger.info("direct_upload_finalize_ok exam_id=%s file_count=%s",e.id,len(verified))
+  return {"status":"ok","redirect":"/dashboard"},200
  except Exception as exc:
   db.session.rollback(); app.logger.error("direct_upload_finalize_failed error_type=%s",type(exc).__name__); return {"error":"finalize_failed"},500
 
