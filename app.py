@@ -633,37 +633,37 @@ def new():
   return redirect("/dashboard")
  body=f'''<h1>Novo Exame</h1><div class="card"><form id="exam-form" method="post" enctype="multipart/form-data">{csrf_field()}<div class="grid"><label>Nome do paciente<input name="patient" required></label><label>Sexo<select name="sex"><option>Feminino</option><option>Masculino</option><option>Não informado</option></select></label><label>Data de nascimento<input type="date" name="birth" required></label><label>Dentista solicitante<input name="dentist" required></label><label>Data do exame<input type="date" name="exam_date" required></label><label>Tipo de exame<select name="exam_type"><option>Tomografia computadorizada</option><option>Panorâmica</option><option>Documentação</option><option>Tomografia Endo</option></select></label></div><label>Observação / motivo<textarea name="observation" maxlength="500"></textarea></label><label>Imagens e arquivos<input id="exam-files" type="file" name="files" multiple accept=".jpg,.jpeg,.png,.pdf,.dcm,.zip,.rar"></label><div id="upload-progress" class="notice" style="display:none"></div><button id="send-exam" class="gold">Enviar exame</button></form></div>
 <script>
-(function(){
+(function(){{
  const form=document.getElementById("exam-form"), input=document.getElementById("exam-files"), box=document.getElementById("upload-progress"), btn=document.getElementById("send-exam");
  if(!form||!input) return;
  const csrf=form.querySelector("[name=_csrf_token]").value;
- form.addEventListener("submit",async function(ev){
+ form.addEventListener("submit",async function(ev){{
   if(!window.fetch||!input.files.length) return;
   ev.preventDefault(); btn.disabled=true; box.style.display="block";
-  try{
+  try{{
    const uploaded=[];
-   for(let i=0;i<input.files.length;i++){
+   for(let i=0;i<input.files.length;i++){{
     const file=input.files[i];
     box.textContent="Enviando arquivo "+(i+1)+" de "+input.files.length+"...";
-    const a=await fetch("/new/direct-upload-url",{method:"POST",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf},body:JSON.stringify({name:file.name,content_type:file.type||"application/octet-stream"})});
+    const a=await fetch("/new/direct-upload-url",{{method:"POST",headers:{{"Content-Type":"application/json","X-CSRF-Token":csrf}},body:JSON.stringify({{name:file.name,content_type:file.type||"application/octet-stream"}})}});
     if(!a.ok) throw new Error("auth");
     const s=await a.json();
-    const p=await fetch(s.url,{method:"PUT",headers:{"Content-Type":s.content_type},body:file});
+    const p=await fetch(s.url,{{method:"PUT",headers:{{"Content-Type":s.content_type}},body:file}});
     if(!p.ok) throw new Error("put");
-    uploaded.push({key:s.key,name:file.name});
-   }
+    uploaded.push({{key:s.key,name:file.name}});
+   }}
    box.textContent="Finalizando envio...";
-   const fd=new FormData(form), payload={files:uploaded};
+   const fd=new FormData(form), payload={{files:uploaded}};
    ["patient","sex","birth","dentist","exam_date","exam_type","observation"].forEach(k=>payload[k]=fd.get(k)||"");
-   const d=await fetch("/new/direct-finalize",{method:"POST",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf},body:JSON.stringify(payload)});
+   const d=await fetch("/new/direct-finalize",{{method:"POST",headers:{{"Content-Type":"application/json","X-CSRF-Token":csrf}},body:JSON.stringify(payload)}});
    if(!d.ok) throw new Error("finalize");
    const r=await d.json(); location.href=r.redirect||"/dashboard";
-  }catch(e){
+  }}catch(e){{
    box.textContent="Usando modo compatível de envio...";
    btn.disabled=false; form.submit();
-  }
- });
-})();
+  }}
+ }});
+}})();
 </script>'''
  return page(body)
 
