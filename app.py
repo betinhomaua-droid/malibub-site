@@ -21,7 +21,7 @@ if APP_ENV=="production" and (not SECRET_KEY or not DATABASE_URL):
 app.config["SECRET_KEY"]=SECRET_KEY or "malibub-homologacao"
 app.config["SQLALCHEMY_DATABASE_URI"]=DATABASE_URL or "sqlite:///malibub.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"]=False
-app.config["MAX_CONTENT_LENGTH"]=512*1024*1024
+app.config["MAX_CONTENT_LENGTH"]=128*1024*1024
 AUTO_PURGE_DAYS=int(os.getenv("AUTO_PURGE_DAYS","90"))
 MALWARE_SCANNER_URL=os.getenv("MALWARE_SCANNER_URL","").rstrip("/")
 MALWARE_SCANNER_TOKEN=os.getenv("MALWARE_SCANNER_TOKEN","")
@@ -100,6 +100,11 @@ def validate_zip_upload(fileobj):
   fileobj.stream.seek(pos)
 
 def malware_scan(fileobj,name):
+ try:
+  pos=fileobj.stream.tell(); fileobj.stream.seek(0,2); size=fileobj.stream.tell(); fileobj.stream.seek(pos)
+  app.logger.info("malware_scan_upload_bytes=%s",size)
+ except Exception:
+  pass
  if not MALWARE_SCANNER_URL:
   return ("ERRO","Scanner de malware não configurado.") if MALWARE_SCAN_REQUIRED else ("NAO_VERIFICADO","Scanner ainda não ativado.")
  try:
