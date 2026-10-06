@@ -607,7 +607,7 @@ def direct_upload_url():
  name=secure_filename(str(data.get("name","")))
  content_type=str(data.get("content_type") or "application/octet-stream")[:120]
  if not name or Path(name).suffix.lower() not in {".jpg",".jpeg",".png",".pdf",".dcm",".zip",".rar"}: return {"error":"invalid_file"},400
- key=uuid.uuid4().hex+"_"+name
+ key="exames/"+uuid.uuid4().hex+"_"+name
  pending=session.get("_pending_direct_uploads",{})
  now=int(time.time())
  pending={k:v for k,v in pending.items() if isinstance(v,dict) and now-int(v.get("created",0))<1800}
@@ -677,7 +677,7 @@ def new():
    for f in incoming:
     name=secure_filename(f.filename)
     scan_status,scan_detail="NAO_VERIFICADO","Varredura antivírus desativada no fluxo de upload."
-    stored=uuid.uuid4().hex+"_"+name
+    stored="exames/"+uuid.uuid4().hex+"_"+name
     store_upload(f,stored,f.mimetype)
     uploaded.append(stored)
     db.session.add(ExamFile(exam_id=e.id,name=name,stored=stored,scan_status=scan_status,scan_detail=scan_detail))
@@ -796,7 +796,7 @@ def upload_ready_exam(eid):
    if scan_status=="ERRO" and MALWARE_SCAN_REQUIRED:
     raise RuntimeError("malware scanner unavailable")
    ext=Path(name).suffix.lower()
-   stored=uuid.uuid4().hex+ext
+   stored="exames/"+uuid.uuid4().hex+ext
    store_upload(file,stored,file.mimetype)
    uploaded.append(stored)
    db.session.add(ExamFile(exam_id=e.id,name=name,stored=stored,kind="exame_pronto",uploaded_by=session.get("name"),scan_status=scan_status,scan_detail=scan_detail))
