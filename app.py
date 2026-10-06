@@ -165,8 +165,11 @@ def cleanup_expired_files():
   exam=Exam.query.get(item.exam_id)
   created=getattr(exam,"created_at",None)
   if created and created < cutoff:
-   try: storage_delete(item.stored)
-   except Exception: continue
+   # Registros bloqueados por malware não possuem objeto no armazenamento.
+   # Evita tentar excluir uma chave vazia no R2 durante a rotina de retenção.
+   if item.stored:
+    try: storage_delete(item.stored)
+    except Exception: continue
    db.session.delete(item); deleted+=1
  db.session.commit()
  return deleted
