@@ -184,6 +184,17 @@ def health():
  except Exception:
   return {"status":"error","database":"unavailable"},503
 
+@app.route("/health/security")
+def health_security():
+ scanner_configured=bool(MALWARE_SCANNER_URL and MALWARE_SCANNER_TOKEN)
+ scanner_ok=False
+ if scanner_configured:
+  try:
+   r=requests.get(MALWARE_SCANNER_URL+"/health",timeout=(5,20))
+   scanner_ok=r.status_code==200 and r.json().get("status")=="ok"
+  except Exception: scanner_ok=False
+ return {"status":"ok" if scanner_configured and scanner_ok and MALWARE_SCAN_REQUIRED else "attention","malware_scan_required":MALWARE_SCAN_REQUIRED,"scanner_configured":scanner_configured,"scanner_reachable":scanner_ok,"storage_private":object_storage_enabled()},200 if scanner_configured and scanner_ok and MALWARE_SCAN_REQUIRED else 503
+
 @app.route("/health/storage")
 def health_storage():
  if request.headers.get("X-Health-Check")!="storage": return {"status":"not_found"},404
@@ -416,7 +427,7 @@ def dashboard():
   if session["role"]=="Clinica" and blocked:
    action="<span style='display:inline-block;background:#b42318;color:white;font-weight:800;padding:9px 12px;border-radius:8px'>SUSPEITO/INFECTADO</span>"
   else:
-   action=f'<a class="btn" href="/report/{e.id}">Laudar</a>' if session["role"]=="Radiologista" and e.status!="Liberado" else (f'<a class="btn" href="/result/{e.id}">Resultado</a>' if e.status=="Liberado" else "")
+   action=("<span style='display:inline-block;background:#b42318;color:white;font-weight:800;padding:9px 12px;border-radius:8px'>BLOQUEADO PELA SEGURANÇA</span>" if blocked else (f'<a class="btn" href="/report/{e.id}">Laudar</a>' if session["role"]=="Radiologista" and e.status!="Liberado" else (f'<a class="btn" href="/result/{e.id}">Resultado</a>' if e.status=="Liberado" else "")))
   rows+=f"<tr><td>{html_escape(e.protocol)}</td><td>{html_escape(e.patient)}</td><td>{html_escape(e.exam_type)}</td><td><span class='badge'>{html_escape(e.status)}</span></td><td>{action}</td></tr>"
  body=f'''<h1>Painel {'da Clínica' if session["role"]=="Clinica" else 'da Radiologista'}</h1><p>Olá, {html_escape(session["name"])}.</p>{'<a class="btn gold" href="/new">+ Novo Exame</a><a class="btn" href="/modelo-laudo">Modelo de laudo</a>' if session["role"]=="Clinica" else ''}<div class="card"><h2>Exames</h2><table><tr><th>Protocolo</th><th>Paciente</th><th>Exame</th><th>Status</th><th>Ação</th></tr>{rows or '<tr><td colspan=5>Nenhum exame.</td></tr>'}</table></div>'''
  return page(body)
@@ -511,6 +522,7 @@ def new():
     name=secure_filename(f.filename)
     scan_status,scan_detail=malware_scan(f,name)
     if scan_status in {"SUSPEITO","INFECTADO"}:
+     e.status="Bloqueado por segurança"
      db.session.add(ExamFile(exam_id=e.id,name=name,stored="",kind="bloqueado",uploaded_by=session.get("name"),scan_status=scan_status,scan_detail=scan_detail))
      continue
     if scan_status=="ERRO" and MALWARE_SCAN_REQUIRED:
@@ -594,7 +606,10 @@ def upload_ready_exam(eid):
 @app.route("/report/<int:eid>",methods=["GET","POST"])
 def report(eid):
  if session.get("role")!="Radiologista": return redirect("/")
- e=Exam.query.get_or_404(eid); files=ExamFile.query.filter_by(exam_id=e.id).filter((ExamFile.kind=="entrada") | (ExamFile.kind==None)).all(); ready_files=ExamFile.query.filter_by(exam_id=e.id,kind="exame_pronto").all()
+ e=Exam.query.get_or_404(eid)
+ if ExamFile.query.filter(ExamFile.exam_id==e.id,ExamFile.scan_status.in_(["SUSPEITO","INFECTADO"])).first():
+  flash("Exame bloqueado pela segurança. Arquivo suspeito/infectado não foi disponibilizado.")
+  return redirect("/dashboard"); files=ExamFile.query.filter_by(exam_id=e.id).filter((ExamFile.kind=="entrada") | (ExamFile.kind==None)).all(); ready_files=ExamFile.query.filter_by(exam_id=e.id,kind="exame_pronto").all()
  if request.method=="POST":
   if e.status=="Liberado":
    flash("Este laudo já foi liberado. Nenhuma nova receita foi lançada.")
