@@ -217,6 +217,7 @@ def health():
 
 @app.route("/health/security")
 def health_security():
+ if session.get("role")!="Radiologista": return {"status":"not_found"},404
  scanner_configured=bool(MALWARE_SCANNER_URL and MALWARE_SCANNER_TOKEN)
  scanner_ok=False
  if scanner_configured:
