@@ -649,7 +649,7 @@ def upload_ready_exam(eid):
 def report(eid):
  if session.get("role")!="Radiologista": return redirect("/")
  e=Exam.query.get_or_404(eid)
- if ExamFile.query.filter(ExamFile.exam_id==e.id,ExamFile.scan_status.in_(["SUSPEITO","INFECTADO"])).first():
+ if ExamFile.query.filter(ExamFile.exam_id==e.id,ExamFile.kind=="bloqueado",ExamFile.scan_status.in_(["SUSPEITO","INFECTADO"]),ExamFile.uploaded_by!=session.get("name")).first():
   flash("Exame bloqueado pela segurança. Arquivo suspeito/infectado não foi disponibilizado.")
   return redirect("/dashboard")
  files=ExamFile.query.filter_by(exam_id=e.id).filter((ExamFile.kind=="entrada") | (ExamFile.kind==None)).all()
