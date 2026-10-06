@@ -24,10 +24,10 @@ def clamd_selftest():
             ["clamdscan","--config-file=/etc/clamav/clamd.conf","--stream","--no-summary",path],
             capture_output=True,text=True,timeout=20
         )
-        app.logger.info("clamd_startup_selftest_exit_code=%s",p.returncode)
+        print(f"clamd_startup_selftest_exit_code={p.returncode}",flush=True)
         return p.returncode==0
     except Exception as exc:
-        app.logger.error("clamd_startup_selftest_error=%s",type(exc).__name__)
+        print(f"clamd_startup_selftest_error={type(exc).__name__}",flush=True)
         return False
     finally:
         if path:
@@ -39,7 +39,7 @@ def clamd_selftest():
 def startup_selftest_worker():
     time.sleep(5)
     ok=clamd_selftest()
-    app.logger.info("clamd_startup_selftest=%s","ok" if ok else "failed")
+    print("clamd_startup_selftest="+("ok" if ok else "failed"),flush=True)
 
 threading.Thread(target=startup_selftest_worker,daemon=True).start()
 
