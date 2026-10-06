@@ -7,7 +7,7 @@ app.config["MAX_CONTENT_LENGTH"]=512*1024*1024
 TOKEN=os.getenv("SCANNER_TOKEN","")
 
 def clamd_ready():
-    p=subprocess.run(["clamdscan","--version"],capture_output=True,text=True,timeout=10)
+    p=subprocess.run(["clamdscan","--config-file=/etc/clamav/clamd.conf","--version"],capture_output=True,text=True,timeout=10)
     return p.returncode==0,(p.stdout or p.stderr or "").strip()[:160]
 
 @app.get("/health")
@@ -34,7 +34,7 @@ def scan():
                 chunk=f.stream.read(1024*1024)
                 if not chunk: break
                 tmp.write(chunk)
-        p=subprocess.run(["clamdscan","--no-summary",path],capture_output=True,text=True,timeout=120)
+        p=subprocess.run(["clamdscan","--config-file=/etc/clamav/clamd.conf","--no-summary",path],capture_output=True,text=True,timeout=120)
         output=(p.stdout or p.stderr or "").strip()
         if p.returncode==0:
             return {"status":"LIMPO","detail":"ClamAV: nenhuma ameaça detectada."},200
