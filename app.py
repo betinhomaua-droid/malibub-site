@@ -38,31 +38,8 @@ def object_storage_enabled():
  return all([R2_BUCKET,R2_ENDPOINT_URL,os.getenv("R2_ACCESS_KEY_ID"),os.getenv("R2_SECRET_ACCESS_KEY")])
 def r2_client():
  return boto3.client("s3",endpoint_url=R2_ENDPOINT_URL,aws_access_key_id=os.getenv("R2_ACCESS_KEY_ID"),aws_secret_access_key=os.getenv("R2_SECRET_ACCESS_KEY"),region_name="auto")
-def ensure_r2_retention_lifecycle():
- if not object_storage_enabled(): return False
- try:
-  r2_client().put_bucket_lifecycle_configuration(
-   Bucket=R2_BUCKET,
-   LifecycleConfiguration={"Rules":[{
-    "ID":"malibub-delete-after-90-days",
-    "Status":"Enabled",
-    "Filter":{"Prefix":""},
-    "Expiration":{"Days":AUTO_PURGE_DAYS}
-   }]}
-  )
-  app.logger.info("r2_retention_lifecycle_ready days=%s",AUTO_PURGE_DAYS)
-  return True
- except Exception as exc:
-  app.logger.warning("r2_retention_lifecycle_failed error_type=%s",type(exc).__name__)
-  return False
-def ensure_r2_browser_cors():
- if not object_storage_enabled(): return False
- try:
-  r2_client().put_bucket_cors(Bucket=R2_BUCKET,CORSConfiguration={"CORSRules":[{"AllowedOrigins":["https://portal.malibub.com.br"],"AllowedMethods":["PUT"],"AllowedHeaders":["Content-Type"],"ExposeHeaders":["ETag"],"MaxAgeSeconds":3600}]})
-  return True
- except Exception as exc:
-  app.logger.warning("r2_cors_setup_failed error_type=%s",type(exc).__name__)
-  return False
+# R2 lifecycle and browser CORS are intentionally administered in Cloudflare.
+# Application credentials remain limited to object operations; do not grant bucket-admin rights here.
 def store_upload(fileobj,key,content_type=None):
  if object_storage_enabled():
   extra={"ContentType":content_type} if content_type else {}
