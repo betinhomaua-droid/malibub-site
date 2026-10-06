@@ -454,6 +454,10 @@ def new():
    flash("Anexe ao menos um arquivo do exame antes de enviar.")
    return redirect("/new")
   invalid=[secure_filename(f.filename) for f in incoming if Path(secure_filename(f.filename)).suffix.lower() not in allowed_ext]
+  empty_names=[f.filename for f in incoming if not secure_filename(f.filename)]
+  if empty_names:
+   flash("Nome de arquivo inválido. Renomeie o arquivo e tente novamente.")
+   return redirect("/new")
   if invalid:
    flash("Formato não permitido: "+", ".join(invalid)+". Use JPG, JPEG, PNG, PDF, DCM, ZIP ou RAR.")
    return redirect("/new")
@@ -510,8 +514,12 @@ def upload_ready_exam(eid):
  e=Exam.query.get_or_404(eid)
  incoming=[file for file in request.files.getlist("finished_files") if file and file.filename]
  invalid=[secure_filename(file.filename) for file in incoming if Path(secure_filename(file.filename)).suffix.lower() not in {".jpg",".jpeg",".pdf"}]
+ empty_names=[file.filename for file in incoming if not secure_filename(file.filename)]
  if not incoming:
   flash("Selecione JPG, JPEG ou PDF.")
+  return redirect(url_for("report",eid=e.id))
+ if empty_names:
+  flash("Nome de arquivo inválido. Renomeie o arquivo e tente novamente.")
   return redirect(url_for("report",eid=e.id))
  if invalid:
   flash("Formato não permitido: "+", ".join(invalid)+". Use JPG, JPEG ou PDF.")
