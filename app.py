@@ -424,10 +424,14 @@ def dashboard():
  rows=""
  for e in exams:
   blocked=ExamFile.query.filter(ExamFile.exam_id==e.id,ExamFile.scan_status.in_(["SUSPEITO","INFECTADO"])).first()
+  # Regra de privacidade/segurança: ocorrência de malware é exibida somente à clínica.
+  # Para a radiologista, o exame bloqueado não entra na fila e nenhum arquivo é disponibilizado.
+  if session["role"]=="Radiologista" and blocked:
+   continue
   if session["role"]=="Clinica" and blocked:
    action="<span style='display:inline-block;background:#b42318;color:white;font-weight:800;padding:9px 12px;border-radius:8px'>SUSPEITO/INFECTADO</span>"
   else:
-   action=("<span style='display:inline-block;background:#b42318;color:white;font-weight:800;padding:9px 12px;border-radius:8px'>BLOQUEADO PELA SEGURANÇA</span>" if blocked else (f'<a class="btn" href="/report/{e.id}">Laudar</a>' if session["role"]=="Radiologista" and e.status!="Liberado" else (f'<a class="btn" href="/result/{e.id}">Resultado</a>' if e.status=="Liberado" else "")))
+   action=(f'<a class="btn" href="/report/{e.id}">Laudar</a>' if session["role"]=="Radiologista" and e.status!="Liberado" else (f'<a class="btn" href="/result/{e.id}">Resultado</a>' if e.status=="Liberado" else ""))
   rows+=f"<tr><td>{html_escape(e.protocol)}</td><td>{html_escape(e.patient)}</td><td>{html_escape(e.exam_type)}</td><td><span class='badge'>{html_escape(e.status)}</span></td><td>{action}</td></tr>"
  body=f'''<h1>Painel {'da Clínica' if session["role"]=="Clinica" else 'da Radiologista'}</h1><p>Olá, {html_escape(session["name"])}.</p>{'<a class="btn gold" href="/new">+ Novo Exame</a><a class="btn" href="/modelo-laudo">Modelo de laudo</a>' if session["role"]=="Clinica" else ''}<div class="card"><h2>Exames</h2><table><tr><th>Protocolo</th><th>Paciente</th><th>Exame</th><th>Status</th><th>Ação</th></tr>{rows or '<tr><td colspan=5>Nenhum exame.</td></tr>'}</table></div>'''
  return page(body)
