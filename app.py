@@ -21,7 +21,6 @@ if APP_ENV=="production" and (not SECRET_KEY or not DATABASE_URL):
 app.config["SECRET_KEY"]=SECRET_KEY or "malibub-homologacao"
 app.config["SQLALCHEMY_DATABASE_URI"]=DATABASE_URL or "sqlite:///malibub.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"]=False
-app.config["MAX_CONTENT_LENGTH"]=128*1024*1024
 AUTO_PURGE_DAYS=int(os.getenv("AUTO_PURGE_DAYS","90"))
 MALWARE_SCANNER_URL=os.getenv("MALWARE_SCANNER_URL","").rstrip("/")
 MALWARE_SCANNER_TOKEN=os.getenv("MALWARE_SCANNER_TOKEN","")
@@ -547,7 +546,7 @@ def report_model_file():
 @app.route("/new",methods=["GET","POST"])
 def new():
  if session.get("role")!="Clinica": return redirect("/dashboard")
- allowed_ext={".jpg",".jpeg",".png",".pdf",".dcm",".zip"}
+ allowed_ext={".jpg",".jpeg",".png",".pdf",".dcm",".zip",".rar"}
  if request.method=="POST":
   incoming=[f for f in request.files.getlist("files") if f and f.filename]
   if not incoming:
@@ -559,7 +558,7 @@ def new():
    flash("Nome de arquivo inválido. Renomeie o arquivo e tente novamente.")
    return redirect("/new")
   if invalid:
-   flash("Formato não permitido: "+", ".join(invalid)+". Use JPG, JPEG, PNG, PDF, DCM ou ZIP.")
+   flash("Formato não permitido: "+", ".join(invalid)+". Use JPG, JPEG, PNG, PDF, DCM, ZIP ou RAR.")
    return redirect("/new")
   for f in incoming:
    name=secure_filename(f.filename)
@@ -581,13 +580,7 @@ def new():
   try:
    for f in incoming:
     name=secure_filename(f.filename)
-    scan_status,scan_detail=malware_scan(f,name)
-    if scan_status in {"SUSPEITO","INFECTADO"}:
-     e.status="Bloqueado por segurança"
-     db.session.add(ExamFile(exam_id=e.id,name=name,stored="",kind="bloqueado",uploaded_by=None,scan_status=scan_status,scan_detail=scan_detail))
-     continue
-    if scan_status=="ERRO" and MALWARE_SCAN_REQUIRED:
-     raise RuntimeError("malware scanner unavailable")
+    scan_status,scan_detail="NAO_VERIFICADO","Varredura antivírus desativada no fluxo de upload."
     stored=uuid.uuid4().hex+"_"+name
     store_upload(f,stored,f.mimetype)
     uploaded.append(stored)
