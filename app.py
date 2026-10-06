@@ -105,7 +105,7 @@ def malware_scan(fileobj,name):
  try:
   fileobj.stream.seek(0)
   headers={"Authorization":"Bearer "+MALWARE_SCANNER_TOKEN} if MALWARE_SCANNER_TOKEN else {}
-  response=requests.post(MALWARE_SCANNER_URL+"/scan",headers=headers,files={"file":(name,fileobj.stream,fileobj.mimetype or "application/octet-stream")},timeout=(10,180))
+  response=requests.post(MALWARE_SCANNER_URL+"/scan",headers=headers,files={"file":(name,fileobj.stream,fileobj.mimetype or "application/octet-stream")},timeout=(5,20))
   fileobj.stream.seek(0)
   if response.status_code!=200: return "ERRO","Scanner indisponível."
   data=response.json(); status=str(data.get("status","ERRO")).upper()
@@ -528,7 +528,7 @@ def report_model_file():
 @app.route("/new",methods=["GET","POST"])
 def new():
  if session.get("role")!="Clinica": return redirect("/dashboard")
- allowed_ext={".jpg",".jpeg",".png",".pdf",".dcm",".zip",".rar"}
+ allowed_ext={".jpg",".jpeg",".png",".pdf",".dcm",".zip"}
  if request.method=="POST":
   incoming=[f for f in request.files.getlist("files") if f and f.filename]
   if not incoming:
@@ -540,7 +540,7 @@ def new():
    flash("Nome de arquivo inválido. Renomeie o arquivo e tente novamente.")
    return redirect("/new")
   if invalid:
-   flash("Formato não permitido: "+", ".join(invalid)+". Use JPG, JPEG, PNG, PDF, DCM, ZIP ou RAR.")
+   flash("Formato não permitido: "+", ".join(invalid)+". Use JPG, JPEG, PNG, PDF, DCM ou ZIP.")
    return redirect("/new")
   for f in incoming:
    name=secure_filename(f.filename)
@@ -582,7 +582,7 @@ def new():
    flash("Não foi possível concluir o envio. Nenhum exame incompleto foi criado; tente novamente.")
    return redirect("/new")
   return redirect("/dashboard")
- body=f'''<h1>Novo Exame</h1><div class="card"><form method="post" enctype="multipart/form-data">{csrf_field()}<div class="grid"><label>Nome do paciente<input name="patient" required></label><label>Sexo<select name="sex"><option>Feminino</option><option>Masculino</option><option>Não informado</option></select></label><label>Data de nascimento<input type="date" name="birth" required></label><label>Dentista solicitante<input name="dentist" required></label><label>Data do exame<input type="date" name="exam_date" required></label><label>Tipo de exame<select name="exam_type"><option>Tomografia computadorizada</option><option>Panorâmica</option><option>Documentação</option><option>Tomografia Endo</option></select></label></div><label>Observação / motivo<textarea name="observation" maxlength="500"></textarea></label><label>Imagens e arquivos<input type="file" name="files" multiple accept=".jpg,.jpeg,.png,.pdf,.dcm,.zip,.rar"></label><button class="gold">Enviar exame</button></form></div>'''
+ body=f'''<h1>Novo Exame</h1><div class="card"><form method="post" enctype="multipart/form-data">{csrf_field()}<div class="grid"><label>Nome do paciente<input name="patient" required></label><label>Sexo<select name="sex"><option>Feminino</option><option>Masculino</option><option>Não informado</option></select></label><label>Data de nascimento<input type="date" name="birth" required></label><label>Dentista solicitante<input name="dentist" required></label><label>Data do exame<input type="date" name="exam_date" required></label><label>Tipo de exame<select name="exam_type"><option>Tomografia computadorizada</option><option>Panorâmica</option><option>Documentação</option><option>Tomografia Endo</option></select></label></div><label>Observação / motivo<textarea name="observation" maxlength="500"></textarea></label><label>Imagens e arquivos<input type="file" name="files" multiple accept=".jpg,.jpeg,.png,.pdf,.dcm,.zip"></label><button class="gold">Enviar exame</button></form></div>'''
  return page(body)
 
 @app.route("/exam-file/<int:fid>")
