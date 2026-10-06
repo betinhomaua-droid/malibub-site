@@ -14,10 +14,30 @@ def clamd_ping():
 
 @app.get("/health")
 def health():
+    path=None
     try:
-        return ({"status":"ok","engine":"clamd"},200) if clamd_ping() else ({"status":"error"},503)
-    except Exception:
-        return {"status":"error"},503
+        if not clamd_ping():
+            return {"status":"error","engine":"clamd","scan":"unavailable"},503
+        with tempfile.NamedTemporaryFile(prefix="malibub_health_",suffix=".txt",delete=False) as tmp:
+            path=tmp.name
+            tmp.write(b"MALIBUB ClamAV health check")
+        p=subprocess.run(
+            ["clamdscan","--config-file=/etc/clamav/clamd.conf","--stream","--no-summary",path],
+            capture_output=True,text=True,timeout=20
+        )
+        app.logger.info("clamd_health_scan_exit_code=%s",p.returncode)
+        if p.returncode==0:
+            return {"status":"ok","engine":"clamd","scan":"ok"},200
+        return {"status":"error","engine":"clamd","scan":"failed"},503
+    except Exception as exc:
+        app.logger.error("clamd_health_error=%s",type(exc).__name__)
+        return {"status":"error","engine":"clamd","scan":"failed"},503
+    finally:
+        if path:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
 
 @app.post("/scan")
 def scan():
