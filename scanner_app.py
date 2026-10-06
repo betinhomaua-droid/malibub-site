@@ -39,7 +39,7 @@ def scan():
                     break
                 tmp.write(chunk)
         p=subprocess.run(
-            ["clamdscan","--config-file=/etc/clamav/clamd.conf","--no-summary",path],
+            ["clamdscan","--config-file=/etc/clamav/clamd.conf","--stream","--no-summary",path],
             capture_output=True,text=True,timeout=120
         )
         app.logger.info("clamdscan_exit_code=%s",p.returncode)
