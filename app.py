@@ -335,9 +335,19 @@ def admin_clinic_prices(uid):
   else: db.session.add(ClinicPrice(clinic_id=u.id,exam_type=exam_type,amount=amount,active=True))
   db.session.commit(); flash("Preço da clínica salvo."); return redirect(url_for("admin_clinic_prices",uid=u.id))
  prices=ClinicPrice.query.filter_by(clinic_id=u.id).order_by(ClinicPrice.exam_type).all()
- rows="".join("<tr><td>"+str(html_escape(x.exam_type))+"</td><td>R$ "+format(x.amount,".2f")+"</td></tr>" for x in prices)
- body=f"""<h1>Tabela de preços — {html_escape(u.name)}</h1><div class='card'><p class='muted'>Cadastre o valor contratado por tipo de exame. O sistema usará este preço automaticamente ao laudar.</p><form method='post'>{csrf_field()}<label>Tipo de exame<input name='exam_type' maxlength='100' placeholder='Ex.: Panorâmica' required></label><label>Valor contratado (R$)<input type='number' name='amount' min='0.01' step='0.01' required></label><button class='gold' type='submit'>Salvar preço</button></form></div><div class='card'><h2>Preços cadastrados</h2><table><tr><th>Tipo de exame</th><th>Valor</th></tr>{rows or '<tr><td colspan=2>Nenhum preço cadastrado.</td></tr>'}</table></div>"""
+ rows="".join("<tr><td>"+str(html_escape(x.exam_type))+"</td><td>R$ "+format(x.amount,".2f")+"</td><td><form method='post' action='/admin/usuarios/"+str(u.id)+"/precos/"+str(x.id)+"/excluir' style='margin:0' onsubmit=\"return confirm('Excluir este preço contratado?')\">"+csrf_field()+"<button type='submit'>Excluir</button></form></td></tr>" for x in prices)
+ body=f"""<h1>Tabela de preços — {html_escape(u.name)}</h1><div class='card'><p class='muted'>Cadastre o valor contratado por tipo de exame. O sistema usará este preço automaticamente ao laudar.</p><form method='post'>{csrf_field()}<label>Tipo de exame<input name='exam_type' maxlength='100' placeholder='Ex.: Panorâmica' required></label><label>Valor contratado (R$)<input type='number' name='amount' min='0.01' step='0.01' required></label><button class='gold' type='submit'>Salvar preço</button></form></div><div class='card'><h2>Preços cadastrados</h2><table><tr><th>Tipo de exame</th><th>Valor</th><th>Ação</th></tr>{rows or '<tr><td colspan=3>Nenhum preço cadastrado.</td></tr>'}</table></div>"""
  return page(body)
+
+@app.route("/admin/usuarios/<int:uid>/precos/<int:pid>/excluir",methods=["POST"])
+def admin_clinic_price_delete(uid,pid):
+ if session.get("role")!="Radiologista": return redirect("/")
+ u=User.query.get_or_404(uid)
+ if u.role!="Clinica": return redirect("/admin/usuarios")
+ item=ClinicPrice.query.filter_by(id=pid,clinic_id=u.id).first_or_404()
+ db.session.delete(item); db.session.commit()
+ flash("Preço contratado excluído.")
+ return redirect(url_for("admin_clinic_prices",uid=u.id))
 
 @app.route("/admin/usuarios/<int:uid>/status",methods=["POST"])
 def admin_user_status(uid):
