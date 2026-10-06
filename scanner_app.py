@@ -1,5 +1,5 @@
 from flask import Flask, request
-import os, socket, subprocess, tempfile, threading, time
+import os, socket, subprocess, tempfile, threading, time, urllib.request
 from pathlib import Path
 
 app=Flask(__name__)
@@ -63,6 +63,48 @@ def health():
     except Exception as exc:
         app.logger.error("clamd_health_error=%s",type(exc).__name__)
         return {"status":"error","engine":"clamd","scan":"failed"},503
+    finally:
+        if path:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+
+@app.post("/scan-url")
+def scan_url():
+    if not TOKEN or request.headers.get("Authorization","")!="Bearer "+TOKEN:
+        return {"status":"unauthorized"},401
+    data=request.get_json(silent=True) or {}
+    url=str(data.get("url",""))
+    if not url.startswith("https://"):
+        return {"status":"error","detail":"URL privada inválida."},400
+    path=None
+    try:
+        if not clamd_ping():
+            return {"status":"error","detail":"Motor antivírus indisponível."},503
+        with tempfile.NamedTemporaryFile(prefix="malibub_remote_",delete=False) as tmp:
+            path=tmp.name
+            with urllib.request.urlopen(url,timeout=60) as src:
+                while True:
+                    chunk=src.read(1024*1024)
+                    if not chunk:
+                        break
+                    tmp.write(chunk)
+        p=subprocess.run(
+            ["clamdscan","--config-file=/etc/clamav/clamd.conf","--stream","--no-summary",path],
+            capture_output=True,text=True,timeout=600
+        )
+        print(f"clamdscan_remote_exit_code={p.returncode}",flush=True)
+        output=(p.stdout or p.stderr or "").strip()
+        if p.returncode==0:
+            return {"status":"LIMPO","detail":"ClamAV: nenhuma ameaça detectada."},200
+        if p.returncode==1:
+            signature=output.rsplit(":",1)[-1].replace("FOUND","").strip()[:180]
+            return {"status":"INFECTADO","detail":"ClamAV detectou ameaça: "+signature},200
+        return {"status":"error","detail":"ClamAV não conseguiu concluir a análise."},503
+    except Exception as exc:
+        print(f"scanner_remote_error={type(exc).__name__}",flush=True)
+        return {"status":"error","detail":"Falha ao analisar arquivo privado."},503
     finally:
         if path:
             try:
