@@ -566,6 +566,7 @@ def direct_upload_url():
  pending[key]={"name":name,"created":now}
  session["_pending_direct_uploads"]=pending
  url=r2_client().generate_presigned_url("put_object",Params={"Bucket":R2_BUCKET,"Key":key,"ContentType":content_type},ExpiresIn=900)
+ app.logger.warning("DIRECT_UPLOAD_URL_OK")
  return {"key":key,"url":url,"content_type":content_type},200
 
 @app.post("/new/direct-finalize")
@@ -586,7 +587,7 @@ def direct_upload_finalize():
   db.session.commit()
   for key,_ in verified: pending.pop(key,None)
   session["_pending_direct_uploads"]=pending
-  app.logger.info("direct_upload_finalize_ok exam_id=%s file_count=%s",e.id,len(verified))
+  app.logger.warning("DIRECT_UPLOAD_FINALIZE_OK file_count=%s",len(verified))
   return {"status":"ok","redirect":"/dashboard"},200
  except Exception as exc:
   db.session.rollback(); app.logger.error("direct_upload_finalize_failed error_type=%s",type(exc).__name__); return {"error":"finalize_failed"},500
