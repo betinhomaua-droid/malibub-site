@@ -703,7 +703,7 @@ def new():
  const form=document.getElementById("exam-form"), input=document.getElementById("exam-files"), folder=document.getElementById("exam-folder"), list=document.getElementById("file-list"), summary=document.getElementById("file-summary"), box=document.getElementById("upload-progress"), btn=document.getElementById("send-exam");
  if(!form||!input) return;
  const csrf=form.querySelector("[name=_csrf_token]").value, selected=[];
- const allowed=/\.(jpg|jpeg|png|pdf|dcm|zip|rar)$/i;
+ const allowed=/[.](jpg|jpeg|png|pdf|dcm|zip|rar)$/i;
  function fmt(n){{if(n<1024)return n+" B";if(n<1048576)return (n/1024).toFixed(1)+" KB";if(n<1073741824)return (n/1048576).toFixed(1)+" MB";return (n/1073741824).toFixed(2)+" GB";}}
  function add(files){{Array.from(files).forEach(file=>{{if(!allowed.test(file.name))return;const key=file.name+"|"+file.size+"|"+file.lastModified;if(!selected.some(x=>x.key===key))selected.push({{key:key,file:file}});}});render();}}
  function render(){{const total=selected.reduce((s,x)=>s+x.file.size,0);summary.style.display=selected.length?"block":"none";summary.textContent=selected.length+" arquivo(s) selecionado(s) • "+fmt(total);list.innerHTML="";selected.forEach((x,i)=>{{const row=document.createElement("div");row.style.cssText="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #e5e7eb";const name=document.createElement("span");name.textContent=x.file.name+" — "+fmt(x.file.size);const rm=document.createElement("button");rm.type="button";rm.className="blue";rm.textContent="Remover";rm.onclick=()=>{{selected.splice(i,1);render();}};row.append(name,rm);list.appendChild(row);}});}}
