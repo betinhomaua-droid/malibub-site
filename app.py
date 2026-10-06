@@ -22,6 +22,7 @@ app.config["SECRET_KEY"]=SECRET_KEY or "malibub-homologacao"
 app.config["SQLALCHEMY_DATABASE_URI"]=DATABASE_URL or "sqlite:///malibub.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"]=False
 AUTO_PURGE_DAYS=int(os.getenv("AUTO_PURGE_DAYS","90"))
+AUTO_PURGE_INTERVAL_SECONDS=int(os.getenv("AUTO_PURGE_INTERVAL_SECONDS","86400"))
 MALWARE_SCANNER_URL=os.getenv("MALWARE_SCANNER_URL","").rstrip("/")
 MALWARE_SCANNER_TOKEN=os.getenv("MALWARE_SCANNER_TOKEN","")
 MALWARE_SCAN_REQUIRED=os.getenv("MALWARE_SCAN_REQUIRED","false").lower()=="true"
@@ -331,6 +332,7 @@ def page(body,title="MALIBUB"):
  return f'<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title><style>{CSS}</style>{body}</html>'
 
 _initialized=False
+_last_purge_ts=0.0
 @app.before_request
 def init():
  global _initialized
@@ -366,6 +368,19 @@ def init():
   db.session.add(User(name="Dra. Marina",email="radiologista@malibub.com",password=generate_password_hash(demo_password),role="Radiologista"))
   db.session.commit()
  _initialized=True
+
+@app.before_request
+def retention_maintenance():
+ global _last_purge_ts
+ if not _initialized: return
+ now_ts=time.time()
+ if now_ts-_last_purge_ts < AUTO_PURGE_INTERVAL_SECONDS: return
+ _last_purge_ts=now_ts
+ try:
+  purge_expired_exam_files()
+ except Exception as exc:
+  db.session.rollback()
+  app.logger.error("retention_cleanup_failed error_type=%s",type(exc).__name__)
 
 LOGIN_ATTEMPTS=defaultdict(deque)
 LOGIN_LIMIT=5
