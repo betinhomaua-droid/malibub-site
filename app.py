@@ -201,36 +201,10 @@ def internal_error(error):
 def too_large(error):
  return page("<h1>Arquivo muito grande</h1><div class='card'>O envio ultrapassou o limite permitido. Divida o exame em arquivos menores antes de reenviar.</div>","Arquivo muito grande"),413
 
-def cleanup_expired_files():
- cutoff=datetime.utcnow()-timedelta(days=AUTO_PURGE_DAYS)
- deleted=0
- for item in ExamFile.query.all():
-  exam=Exam.query.get(item.exam_id)
-  created=getattr(exam,"created_at",None)
-  if created and created < cutoff:
-   # Registros bloqueados por malware não possuem objeto no armazenamento.
-   # Evita tentar excluir uma chave vazia no R2 durante a rotina de retenção.
-   if item.stored:
-    try: storage_delete(item.stored)
-    except Exception: continue
-   db.session.delete(item); deleted+=1
- db.session.commit()
- return deleted
-
 @app.cli.command("cleanup-expired-files")
 def cleanup_expired_files_command():
- print(f"{cleanup_expired_files()} arquivo(s) removido(s) pela política de retenção.")
-
-_last_retention_cleanup=None
-@app.before_request
-def automatic_retention_cleanup():
- global _last_retention_cleanup
- now=datetime.utcnow()
- if _last_retention_cleanup and now-_last_retention_cleanup < timedelta(hours=24): return
- try:
-  cleanup_expired_files(); _last_retention_cleanup=now
- except Exception:
-  db.session.rollback()
+ result=purge_expired_exam_files()
+ print(f"retention_cleanup examined={result['examined']} deleted={result['deleted']} failed={result['failed']}")
 
 @app.route("/health")
 def health():
