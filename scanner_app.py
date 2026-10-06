@@ -1,5 +1,5 @@
 from flask import Flask, request
-import os, socket, subprocess, tempfile
+import os, socket, subprocess, tempfile, threading, time
 from pathlib import Path
 
 app=Flask(__name__)
@@ -35,6 +35,13 @@ def clamd_selftest():
                 os.unlink(path)
             except OSError:
                 pass
+
+def startup_selftest_worker():
+    time.sleep(5)
+    ok=clamd_selftest()
+    app.logger.info("clamd_startup_selftest=%s","ok" if ok else "failed")
+
+threading.Thread(target=startup_selftest_worker,daemon=True).start()
 
 @app.get("/health")
 def health():
