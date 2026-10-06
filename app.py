@@ -109,7 +109,7 @@ def malware_scan(fileobj,name):
    MALWARE_SCANNER_URL+"/scan",
    headers=headers,
    files={"file":(name,fileobj.stream,fileobj.mimetype or "application/octet-stream")},
-   timeout=(5,20),
+   timeout=(5,150),
   )
   fileobj.stream.seek(0)
   if response.status_code!=200:
