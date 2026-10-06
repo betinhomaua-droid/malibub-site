@@ -539,6 +539,37 @@ def report_model_file():
   return redirect("/modelo-laudo" if session.get("role")=="Clinica" else "/dashboard")
  return storage_response(u.report_model,u.report_model_name,False)
 
+@app.post("/new/direct-upload-url")
+def direct_upload_url():
+ if session.get("role")!="Clinica": return {"error":"unauthorized"},403
+ if not object_storage_enabled(): return {"error":"storage_unavailable"},503
+ data=request.get_json(silent=True) or {}
+ name=secure_filename(str(data.get("name","")))
+ content_type=str(data.get("content_type") or "application/octet-stream")[:120]
+ if not name or Path(name).suffix.lower() not in {".jpg",".jpeg",".png",".pdf",".dcm",".zip",".rar"}: return {"error":"invalid_file"},400
+ key=uuid.uuid4().hex+"_"+name
+ url=r2_client().generate_presigned_url("put_object",Params={"Bucket":R2_BUCKET,"Key":key,"ContentType":content_type},ExpiresIn=900)
+ return {"key":key,"url":url,"content_type":content_type},200
+
+@app.post("/new/direct-finalize")
+def direct_upload_finalize():
+ if session.get("role")!="Clinica": return {"error":"unauthorized"},403
+ data=request.get_json(silent=True) or {}; files=data.get("files") or []
+ patient=str(data.get("patient","")).strip()[:120]; dentist=str(data.get("dentist","")).strip()[:120]; exam_type=str(data.get("exam_type","")).strip()[:80]
+ if not files or not patient or not dentist or not exam_type: return {"error":"required_fields"},400
+ verified=[]
+ try:
+  for item in files:
+   key=str(item.get("key","")); name=secure_filename(str(item.get("name","")))
+   if not key or not name or not key.endswith("_"+name): raise ValueError("invalid upload")
+   r2_client().head_object(Bucket=R2_BUCKET,Key=key); verified.append((key,name))
+  e=Exam(protocol="MB"+datetime.now().strftime("%y%m%d%H%M%S"),patient=patient,sex=str(data.get("sex","Não informado")).strip(),birth=str(data.get("birth",""))[:20],dentist=dentist,exam_date=str(data.get("exam_date",""))[:20],exam_type=exam_type,observation=str(data.get("observation","")).strip()[:500],clinic_id=session["uid"],status="Aguardando laudo",due_at=datetime.utcnow()+timedelta(hours=24))
+  db.session.add(e); db.session.flush()
+  for key,name in verified: db.session.add(ExamFile(exam_id=e.id,name=name,stored=key,scan_status="NAO_VERIFICADO",scan_detail="Verificação antivírus opcional pela radiologista."))
+  db.session.commit(); return {"status":"ok","redirect":"/dashboard"},200
+ except Exception as exc:
+  db.session.rollback(); app.logger.error("direct_upload_finalize_failed error_type=%s",type(exc).__name__); return {"error":"finalize_failed"},500
+
 @app.route("/new",methods=["GET","POST"])
 def new():
  if session.get("role")!="Clinica": return redirect("/dashboard")
