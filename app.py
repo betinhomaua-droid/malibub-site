@@ -774,7 +774,7 @@ def finance():
  break_even=(fixed/contribution) if contribution>0 else 0
  margem=(saldo/ent*100) if ent else 0
  health="POSITIVA" if saldo>0 else ("EQUILIBRADA" if saldo==0 else "NEGATIVA")
- rows="".join(f"<tr><td>{x.date.strftime('%d/%m/%Y')}</td><td>{html_escape(x.description)}</td><td>{html_escape(x.kind)}</td><td>R$ {x.amount:.2f}</td><td>{'' if (x.kind=='Entrada' and (x.description or '').startswith('Laudo ')) else f\"<form method='post' action='/finance/{x.id}/excluir' style='margin:0'>{csrf_field()}<button type='submit'>Excluir</button></form>\"}</td></tr>" for x in entries)
+ rows=''
  body=f'''<h1>Financeiro MALIBUB</h1><p class="muted">Acompanhe receitas, custos da plataforma e saúde financeira.</p>
  <form method="get" class="card"><label>Período mensal<input type="month" name="month" value="{html_escape(month)}"></label><button type="submit">Filtrar</button><a class="btn" href="/finance">Todo o período</a></form>
  <div class="cards"><div class="card">Entradas<b>R$ {ent:.2f}</b></div><div class="card">Saídas<b>R$ {sai:.2f}</b></div><div class="card">Saldo<b>R$ {saldo:.2f}</b></div><div class="card">Infraestrutura<b>R$ {infra:.2f}</b></div><div class="card">Custos fixos<b>R$ {fixed:.2f}</b></div><div class="card">Custos variáveis<b>R$ {variable:.2f}</b></div><div class="card">Margem<b>{margem:.1f}%</b></div><div class="card">Saúde financeira<b>{health}</b></div><div class="card">Laudos liberados<b>{released}</b></div><div class="card">Receita de laudos<b>R$ {report_revenue:.2f}</b></div><div class="card">Ticket médio<b>R$ {ticket:.2f}</b></div><div class="card">Ponto de equilíbrio<b>{break_even:.1f} laudos</b></div></div>
