@@ -37,6 +37,23 @@ def object_storage_enabled():
  return all([R2_BUCKET,R2_ENDPOINT_URL,os.getenv("R2_ACCESS_KEY_ID"),os.getenv("R2_SECRET_ACCESS_KEY")])
 def r2_client():
  return boto3.client("s3",endpoint_url=R2_ENDPOINT_URL,aws_access_key_id=os.getenv("R2_ACCESS_KEY_ID"),aws_secret_access_key=os.getenv("R2_SECRET_ACCESS_KEY"),region_name="auto")
+def ensure_r2_retention_lifecycle():
+ if not object_storage_enabled(): return False
+ try:
+  r2_client().put_bucket_lifecycle_configuration(
+   Bucket=R2_BUCKET,
+   LifecycleConfiguration={"Rules":[{
+    "ID":"malibub-delete-after-90-days",
+    "Status":"Enabled",
+    "Filter":{"Prefix":""},
+    "Expiration":{"Days":AUTO_PURGE_DAYS}
+   }]}
+  )
+  app.logger.info("r2_retention_lifecycle_ready days=%s",AUTO_PURGE_DAYS)
+  return True
+ except Exception as exc:
+  app.logger.warning("r2_retention_lifecycle_failed error_type=%s",type(exc).__name__)
+  return False
 def ensure_r2_browser_cors():
  if not object_storage_enabled(): return False
  try:
@@ -318,7 +335,9 @@ _initialized=False
 def init():
  global _initialized
  if _initialized: return
- if object_storage_enabled(): ensure_r2_browser_cors()
+ if object_storage_enabled():
+  ensure_r2_browser_cors()
+  ensure_r2_retention_lifecycle()
  db.create_all()
  if db.engine.dialect.name=="postgresql":
   try:
