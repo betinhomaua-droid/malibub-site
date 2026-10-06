@@ -720,7 +720,8 @@ def new():
   }}catch(e){{box.textContent="O envio direto não pôde ser concluído. Tente novamente.";btn.disabled=false;}}
  }});
 }})();
-</script>''' return page(body)
+</script>'''
+ return page(body)
 
 @app.post("/exam-file/<int:fid>/scan")
 def scan_exam_file(fid):
