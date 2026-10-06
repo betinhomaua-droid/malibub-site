@@ -5,6 +5,7 @@ from werkzeug.utils import secure_filename
 from markupsafe import escape as html_escape
 from datetime import datetime, timedelta, timezone
 from collections import defaultdict, deque
+from zoneinfo import ZoneInfo
 import time
 from pathlib import Path
 import os, uuid, io, secrets
@@ -824,8 +825,14 @@ def finance_production_report():
  data.append(["","","TOTAL",f"R$ {total:.2f}"])
  table=Table(data,colWidths=[30*mm,42*mm,75*mm,30*mm],repeatRows=1)
  table.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,0),colors.HexColor("#087b9b")),("TEXTCOLOR",(0,0),(-1,0),colors.white),("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),("FONTNAME",(2,-1),(-1,-1),"Helvetica-Bold"),("GRID",(0,0),(-1,-1),0.4,colors.HexColor("#b8cbd2")),("VALIGN",(0,0),(-1,-1),"TOP"),("ALIGN",(-1,1),(-1,-1),"RIGHT"),("PADDING",(0,0),(-1,-1),6)]))
- story.extend([table,Spacer(1,7*mm),Paragraph(f"<b>Valor total a cobrar: R$ {total:.2f}</b>",styles["Heading2"]),Paragraph(f"Emitido em {datetime.now().strftime('%d/%m/%Y %H:%M')}.",styles["BodyText"]),Spacer(1,8*mm),Paragraph("MALIBUB Imaginologia Odontológica · Relatório de produção para conferência e cobrança.",styles["BodyText"])])
- doc.build(story); buf.seek(0)
+ story.extend([table,Spacer(1,7*mm),Paragraph(f"<b>Valor total a cobrar: R$ {total:.2f}</b>",styles["Heading2"]),Paragraph(f"Emitido em {datetime.now(ZoneInfo('America/Sao_Paulo')).strftime('%d/%m/%Y %H:%M')} (horário de Brasília).",styles["BodyText"])])
+ def production_footer(canv,docobj):
+  canv.saveState()
+  canv.setStrokeColor(colors.HexColor("#b8cbd2")); canv.setLineWidth(0.4); canv.line(16*mm,14*mm,A4[0]-16*mm,14*mm)
+  canv.setFont("Helvetica",8); canv.setFillColor(colors.HexColor("#607d86"))
+  canv.drawCentredString(A4[0]/2,9*mm,"MALIBUB Imaginologia Odontológica · Relatório de produção para conferência e cobrança.")
+  canv.restoreState()
+ doc.build(story,onFirstPage=production_footer,onLaterPages=production_footer); buf.seek(0)
  return send_file(buf,mimetype="application/pdf",as_attachment=True,download_name=f"MALIBUB_relatorio_{secure_filename(clinic.name)}_{month}.pdf")
 
 @app.route("/finance/<int:fid>/excluir",methods=["POST"])
