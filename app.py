@@ -565,7 +565,7 @@ def new():
     scan_status,scan_detail=malware_scan(f,name)
     if scan_status in {"SUSPEITO","INFECTADO"}:
      e.status="Bloqueado por segurança"
-     db.session.add(ExamFile(exam_id=e.id,name=name,stored="",kind="bloqueado",uploaded_by=session.get("name"),scan_status=scan_status,scan_detail=scan_detail))
+     db.session.add(ExamFile(exam_id=e.id,name=name,stored="",kind="bloqueado",uploaded_by=None,scan_status=scan_status,scan_detail=scan_detail))
      continue
     if scan_status=="ERRO" and MALWARE_SCAN_REQUIRED:
      raise RuntimeError("malware scanner unavailable")
