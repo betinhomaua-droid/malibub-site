@@ -368,8 +368,8 @@ def login():
  body=f'''<div class="login-approved">
  <section class="login-visual" aria-label="MALIBUB Imaginologia Odontológica"><span class="footer-mask" aria-hidden="true"></span></section>
  <section class="login-panel"><div class="login-card">{msgs}<h2>Acesse sua conta</h2><p class="sub">Entre para enviar ou acessar seus exames.</p>
- <form method="post">{csrf_field()}<label for="email">Email</label><input id="email" type="email" name="email" placeholder="voce@clinica.com" required autocomplete="username">
- <div class="pass-wrap"><label for="pwd">Senha</label><input id="pwd" type="password" name="password" placeholder="Sua senha" required autocomplete="current-password"><button class="eye" type="button" aria-label="Mostrar ou ocultar senha" onclick="var p=document.getElementById('pwd');p.type=p.type==='password'?'text':'password';this.textContent=p.type==='password'?'◉':'○'">◉</button></div>
+ <form method="post" autocomplete="off">{csrf_field()}<label for="email">Email</label><input id="email" type="email" name="email" value="" placeholder="voce@clinica.com" required autocomplete="off" autocapitalize="none" spellcheck="false">
+ <div class="pass-wrap"><label for="pwd">Senha</label><input id="pwd" type="password" name="password" value="" placeholder="Sua senha" required autocomplete="new-password"><button class="eye" type="button" aria-label="Mostrar ou ocultar senha" onclick="var p=document.getElementById('pwd');p.type=p.type==='password'?'text':'password';this.textContent=p.type==='password'?'◉':'○'">◉</button></div>
  <button class="submit" type="submit">Entrar</button></form><div class="foot">Acesso exclusivo para clínicas e radiologista.</div></div></section>
 <div class="login-footer">© 2026 Malibub Radiologia &nbsp; Todos os Direitos Reservados</div></div>'''
  return page(body,"Entrar · MALIBUB")
