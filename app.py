@@ -782,6 +782,50 @@ def finance():
  <div class="card"><h2>Movimentações</h2><table><tr><th>Data</th><th>Categoria / descrição</th><th>Tipo</th><th>Valor</th><th>Ação</th></tr>{rows or '<tr><td colspan="5">Nenhum lançamento neste período.</td></tr>'}</table></div>'''
  return page(body)
 
+@app.route("/finance/relatorio-producao")
+def finance_production_report():
+ if session.get("role")!="Radiologista": return redirect("/")
+ clinic_id=request.args.get("clinic_id",type=int)
+ month=request.args.get("month","").strip()
+ clinic=User.query.filter_by(id=clinic_id,role="Clinica").first() if clinic_id else None
+ if not clinic or not month:
+  flash("Selecione a clínica e o mês para gerar o relatório.")
+  return redirect("/finance")
+ try:
+  y,m=map(int,month.split("-"))
+  first=datetime(y,m,1)
+  last=datetime(y+1,1,1) if m==12 else datetime(y,m+1,1)
+ except Exception:
+  flash("Período inválido.")
+  return redirect("/finance")
+ exams=Exam.query.filter(Exam.clinic_id==clinic.id,Exam.status=="Liberado",Exam.released_at>=first,Exam.released_at<last).order_by(Exam.released_at).all()
+ from reportlab.lib.pagesizes import A4
+ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+ from reportlab.lib import colors
+ from reportlab.lib.enums import TA_CENTER
+ from reportlab.lib.units import mm
+ from xml.sax.saxutils import escape
+ values={}
+ for e in exams:
+  item=Finance.query.filter_by(description=f"Laudo {e.protocol}",kind="Entrada").first()
+  values[e.protocol]=item.amount if item else 0
+ total=sum(values.values())
+ buf=io.BytesIO()
+ doc=SimpleDocTemplate(buf,pagesize=A4,rightMargin=16*mm,leftMargin=16*mm,topMargin=18*mm,bottomMargin=18*mm)
+ styles=getSampleStyleSheet()
+ title=ParagraphStyle("malibub_title",parent=styles["Title"],fontName="Helvetica-Bold",fontSize=17,leading=21,alignment=TA_CENTER,textColor=colors.HexColor("#087b9b"))
+ story=[Paragraph("MALIBUB IMAGINOLOGIA ODONTOLÓGICA",title),Paragraph("Relatório de Produção por Período",styles["Heading2"]),Spacer(1,5*mm),Paragraph(f"<b>Clínica:</b> {escape(clinic.name)}",styles["BodyText"]),Paragraph(f"<b>Período:</b> {first.strftime('%d/%m/%Y')} a {(last-timedelta(days=1)).strftime('%d/%m/%Y')}",styles["BodyText"]),Paragraph(f"<b>Quantidade de laudos:</b> {len(exams)}",styles["BodyText"]),Spacer(1,5*mm)]
+ data=[["Data","Protocolo","Exame","Valor"]]
+ for e in exams:
+  data.append([(e.released_at or e.created_at).strftime("%d/%m/%Y"),e.protocol,e.exam_type or "-",f"R$ {values[e.protocol]:.2f}"])
+ data.append(["","","TOTAL",f"R$ {total:.2f}"])
+ table=Table(data,colWidths=[30*mm,42*mm,75*mm,30*mm],repeatRows=1)
+ table.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,0),colors.HexColor("#087b9b")),("TEXTCOLOR",(0,0),(-1,0),colors.white),("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),("FONTNAME",(2,-1),(-1,-1),"Helvetica-Bold"),("GRID",(0,0),(-1,-1),0.4,colors.HexColor("#b8cbd2")),("VALIGN",(0,0),(-1,-1),"TOP"),("ALIGN",(-1,1),(-1,-1),"RIGHT"),("PADDING",(0,0),(-1,-1),6)]))
+ story.extend([table,Spacer(1,7*mm),Paragraph(f"<b>Valor total a cobrar: R$ {total:.2f}</b>",styles["Heading2"]),Paragraph(f"Emitido em {datetime.now().strftime('%d/%m/%Y %H:%M')}.",styles["BodyText"]),Spacer(1,8*mm),Paragraph("MALIBUB Imaginologia Odontológica · Relatório de produção para conferência e cobrança.",styles["BodyText"])])
+ doc.build(story); buf.seek(0)
+ return send_file(buf,mimetype="application/pdf",as_attachment=True,download_name=f"MALIBUB_relatorio_{secure_filename(clinic.name)}_{month}.pdf")
+
 @app.route("/finance/<int:fid>/excluir",methods=["POST"])
 def finance_delete(fid):
  if session.get("role")!="Radiologista": return redirect("/")
