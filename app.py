@@ -598,6 +598,34 @@ def new():
  body=f'''<h1>Novo Exame</h1><div class="card"><form method="post" enctype="multipart/form-data">{csrf_field()}<div class="grid"><label>Nome do paciente<input name="patient" required></label><label>Sexo<select name="sex"><option>Feminino</option><option>Masculino</option><option>Não informado</option></select></label><label>Data de nascimento<input type="date" name="birth" required></label><label>Dentista solicitante<input name="dentist" required></label><label>Data do exame<input type="date" name="exam_date" required></label><label>Tipo de exame<select name="exam_type"><option>Tomografia computadorizada</option><option>Panorâmica</option><option>Documentação</option><option>Tomografia Endo</option></select></label></div><label>Observação / motivo<textarea name="observation" maxlength="500"></textarea></label><label>Imagens e arquivos<input type="file" name="files" multiple accept=".jpg,.jpeg,.png,.pdf,.dcm,.zip,.rar"></label><button class="gold">Enviar exame</button></form></div>'''
  return page(body)
 
+@app.post("/exam-file/<int:fid>/scan")
+def scan_exam_file(fid):
+ if session.get("role")!="Radiologista": return redirect("/")
+ f=ExamFile.query.get_or_404(fid); e=Exam.query.get_or_404(f.exam_id)
+ if not f.stored or not storage_exists(f.stored):
+  flash("Arquivo não encontrado no armazenamento privado.")
+  return redirect(url_for("report",eid=e.id))
+ if not object_storage_enabled():
+  flash("Verificação manual exige armazenamento privado ativo.")
+  return redirect(url_for("report",eid=e.id))
+ try:
+  private_url=r2_client().generate_presigned_url("get_object",Params={"Bucket":R2_BUCKET,"Key":f.stored},ExpiresIn=900)
+  headers={"Authorization":"Bearer "+MALWARE_SCANNER_TOKEN} if MALWARE_SCANNER_TOKEN else {}
+  response=requests.post(MALWARE_SCANNER_URL+"/scan-url",headers=headers,json={"url":private_url},timeout=(5,620))
+  if response.status_code!=200:
+   f.scan_status="ERRO"; f.scan_detail="Não foi possível concluir a verificação."; db.session.commit()
+   flash("Não foi possível concluir a verificação antivírus.")
+   return redirect(url_for("report",eid=e.id))
+  data=response.json(); status=str(data.get("status","ERRO")).upper()
+  f.scan_status=status if status in {"LIMPO","INFECTADO","SUSPEITO"} else "ERRO"
+  f.scan_detail=str(data.get("detail",""))[:255]; db.session.commit()
+  flash("Arquivo verificado: "+f.scan_status+".")
+ except Exception as exc:
+  app.logger.error("manual_scan_error=%s",type(exc).__name__)
+  f.scan_status="ERRO"; f.scan_detail="Falha na verificação manual."; db.session.commit()
+  flash("Não foi possível concluir a verificação antivírus.")
+ return redirect(url_for("report",eid=e.id))
+
 @app.route("/exam-file/<int:fid>")
 def exam_file(fid):
  if not session.get("uid"): return redirect("/")
@@ -697,7 +725,7 @@ def report(eid):
   if not existing_revenue:
    db.session.add(Finance(description=f"Laudo {e.protocol}",kind="Entrada",amount=amount))
   db.session.commit(); return redirect("/dashboard")
- imgs="".join((f"<div class='exam-file'><div class='filebar'><b>{html_escape(f.name)}</b><a class='btn' href='/exam-file/{f.id}' target='_blank'>Abrir</a><a class='btn gold' href='/exam-file/{f.id}?download=1'>Baixar</a></div>" + (f"<img src='/exam-file/{f.id}' alt='{html_escape(f.name)}'>" if f.name.lower().endswith(('.jpg','.jpeg','.png','.webp')) else (f"<iframe src='/exam-file/{f.id}' title='{html_escape(f.name)}'></iframe>" if f.name.lower().endswith('.pdf') else "<div class='notice'>Pré-visualização indisponível para este formato. Use Abrir ou Baixar.</div>")) + "</div>") for f in files)
+ imgs="".join((f"<div class='exam-file'><div class='filebar'><b>{html_escape(f.name)}</b><span class='badge'>{html_escape(f.scan_status or 'NAO_VERIFICADO')}</span><form method='post' action='/exam-file/{f.id}/scan' style='display:inline'>{csrf_field()}<button type='submit'>Verificar com antivírus</button></form><a class='btn' href='/exam-file/{f.id}' target='_blank'>Abrir</a><a class='btn gold' href='/exam-file/{f.id}?download=1'>Baixar</a></div>" + (f"<img src='/exam-file/{f.id}' alt='{html_escape(f.name)}'>" if f.name.lower().endswith(('.jpg','.jpeg','.png','.webp')) else (f"<iframe src='/exam-file/{f.id}' title='{html_escape(f.name)}'></iframe>" if f.name.lower().endswith('.pdf') else "<div class='notice'>Pré-visualização indisponível para este formato. Use Abrir ou Baixar.</div>")) + "</div>") for f in files)
  ready_html="".join((f"<div class='exam-file'><div class='filebar'><b>{html_escape(f.name)}</b><a class='btn' href='/exam-file/{f.id}' target='_blank'>Abrir</a><a class='btn gold' href='/exam-file/{f.id}?download=1'>Baixar</a></div>" + (f"<img src='/exam-file/{f.id}'>" if f.name.lower().endswith(('.jpg','.jpeg')) else f"<iframe src='/exam-file/{f.id}'></iframe>") + "</div>") for f in ready_files)
  clinic=User.query.get(e.clinic_id); price=ClinicPrice.query.filter_by(clinic_id=e.clinic_id,exam_type=e.exam_type,active=True).first(); suggested_amount=(price.amount if price else None); model_link=(f"<a class='btn' href='/modelo-laudo/arquivo?exam={e.id}' target='_blank'>Ver modelo de laudo da clínica</a>" if clinic and clinic.report_model else "<span class='muted'>Clínica sem modelo de laudo cadastrado.</span>")
  body=f'''<h1>Ambiente da Radiologista — {html_escape(e.protocol)}</h1><div style="margin-bottom:12px">{model_link}</div><div class="card"><b>{html_escape(e.patient)}</b> · {html_escape(e.exam_type)}<br><span class="muted">{html_escape(e.observation or 'Sem observação clínica.')}</span></div><div class="workspace"><section class="card viewer"><h2>Imagens / arquivos</h2>{imgs or 'Nenhum anexo.'}<hr style="margin:24px 0;border:0;border-top:1px solid #dce8ec"><h2>Exame pronto / Templates</h2><p class="muted">Anexe o exame final produzido pela radiologista em JPG/JPEG e/ou PDF. Os arquivos ficarão vinculados a este exame.</p><form method="post" action="/report/{e.id}/exame-pronto" enctype="multipart/form-data">{csrf_field()}<input type="file" name="finished_files" accept=".jpg,.jpeg,.pdf,image/jpeg,application/pdf" multiple required><button class="gold" type="submit">Anexar exame pronto</button></form>{ready_html or '<div class="notice">Nenhum template/exame pronto anexado ainda.</div>'}</section><section class="card editor"><h2>Laudo escrito</h2><form method="post">{csrf_field()}<textarea name="report" placeholder="Digite o laudo..." required>{html_escape(e.report or '')}</textarea><label>Valor do laudo (R$)<input type="number" min="0.01" step="0.01" name="amount" value="{format(suggested_amount,'.2f') if suggested_amount is not None else ''}" placeholder="0,00" required></label><p class="muted">{'Valor contratado desta clínica para este tipo de exame, preenchido automaticamente.' if suggested_amount is not None else 'Sem preço contratado para este tipo de exame. Informe o valor antes de liberar.'} O valor será usado no Financeiro e no relatório de cobrança da clínica.</p><div class="editor-actions"><button type="button" onclick="localStorage.setItem('malibub_draft_{e.id}',document.querySelector('[name=report]').value);this.textContent='Rascunho salvo ✓'">Salvar rascunho</button><button type="submit" formaction="/report/{e.id}/preview-pdf" formmethod="post" formtarget="_blank">Visualizar laudo</button><button class="gold" type="submit">Finalizar e liberar</button></div></form><script>const ta=document.querySelector('[name=report]');if(!ta.value)ta.value=localStorage.getItem('malibub_draft_{e.id}')||'';</script></section></div>'''
