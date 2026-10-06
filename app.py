@@ -348,6 +348,8 @@ def clear_login_failures(key):
 
 @app.route("/",methods=["GET","POST"])
 def login():
+ if request.method=="GET" and session.get("uid"):
+  session.clear(); session["_csrf_token"]=secrets.token_urlsafe(32)
  if request.method=="POST":
   client_key=login_client_key()
   if login_rate_limited(client_key):
