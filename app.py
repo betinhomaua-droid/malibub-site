@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 import os, uuid, io, secrets, zipfile
 import boto3
+import requests
 
 app=Flask(__name__)
 APP_ENV=os.getenv("APP_ENV","production")
@@ -22,6 +23,9 @@ app.config["SQLALCHEMY_DATABASE_URI"]=DATABASE_URL or "sqlite:///malibub.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"]=False
 app.config["MAX_CONTENT_LENGTH"]=512*1024*1024
 AUTO_PURGE_DAYS=int(os.getenv("AUTO_PURGE_DAYS","90"))
+MALWARE_SCANNER_URL=os.getenv("MALWARE_SCANNER_URL","").rstrip("/")
+MALWARE_SCANNER_TOKEN=os.getenv("MALWARE_SCANNER_TOKEN","")
+MALWARE_SCAN_REQUIRED=os.getenv("MALWARE_SCAN_REQUIRED","false").lower()=="true"
 app.config["SESSION_COOKIE_HTTPONLY"]=True
 app.config["SESSION_COOKIE_SAMESITE"]="Lax"
 app.config["SESSION_COOKIE_SECURE"]=APP_ENV=="production"
@@ -94,6 +98,24 @@ def validate_zip_upload(fileobj):
   return False,"Arquivo ZIP inválido ou corrompido."
  finally:
   fileobj.stream.seek(pos)
+
+def malware_scan(fileobj,name):
+ if not MALWARE_SCANNER_URL:
+  return ("ERRO","Scanner de malware não configurado.") if MALWARE_SCAN_REQUIRED else ("NAO_VERIFICADO","Scanner ainda não ativado.")
+ try:
+  fileobj.stream.seek(0)
+  headers={"Authorization":"Bearer "+MALWARE_SCANNER_TOKEN} if MALWARE_SCANNER_TOKEN else {}
+  response=requests.post(MALWARE_SCANNER_URL+"/scan",headers=headers,files={"file":(name,fileobj.stream,fileobj.mimetype or "application/octet-stream")},timeout=(10,180))
+  fileobj.stream.seek(0)
+  if response.status_code!=200: return "ERRO","Scanner indisponível."
+  data=response.json(); status=str(data.get("status","ERRO")).upper()
+  if status=="LIMPO": return "LIMPO",str(data.get("detail","Arquivo verificado."))[:255]
+  if status in {"SUSPEITO","INFECTADO"}: return status,str(data.get("detail","Ameaça detectada."))[:255]
+  return "ERRO","Resposta inválida do scanner."
+ except Exception:
+  try: fileobj.stream.seek(0)
+  except Exception: pass
+  return "ERRO","Falha ao consultar o scanner de malware."
 
 def csrf_token():
  token=session.get("_csrf_token")
@@ -189,7 +211,7 @@ class User(db.Model):
 class Exam(db.Model):
  id=db.Column(db.Integer,primary_key=True); protocol=db.Column(db.String(30),unique=True); patient=db.Column(db.String(120)); sex=db.Column(db.String(20)); birth=db.Column(db.String(20)); dentist=db.Column(db.String(120)); exam_date=db.Column(db.String(20)); exam_type=db.Column(db.String(100)); observation=db.Column(db.String(500)); status=db.Column(db.String(50),default="Enviado"); clinic_id=db.Column(db.Integer); due_at=db.Column(db.DateTime); report=db.Column(db.Text,default=""); released_at=db.Column(db.DateTime); signed_by=db.Column(db.String(120)); signed_at=db.Column(db.DateTime); created_at=db.Column(db.DateTime,default=datetime.utcnow)
 class ExamFile(db.Model):
- id=db.Column(db.Integer,primary_key=True); exam_id=db.Column(db.Integer); name=db.Column(db.String(255)); stored=db.Column(db.String(255)); kind=db.Column(db.String(30),default="entrada"); uploaded_by=db.Column(db.String(100))
+ id=db.Column(db.Integer,primary_key=True); exam_id=db.Column(db.Integer); name=db.Column(db.String(255)); stored=db.Column(db.String(255)); kind=db.Column(db.String(30),default="entrada"); uploaded_by=db.Column(db.String(100)); scan_status=db.Column(db.String(20),default="PENDENTE"); scan_detail=db.Column(db.String(255))
 class Finance(db.Model):
  id=db.Column(db.Integer,primary_key=True); date=db.Column(db.Date,default=datetime.utcnow().date); description=db.Column(db.String(200)); kind=db.Column(db.String(20)); amount=db.Column(db.Float,default=0)
 class ClinicPrice(db.Model):
