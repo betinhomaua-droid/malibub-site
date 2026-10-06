@@ -178,6 +178,17 @@ def cleanup_expired_files():
 def cleanup_expired_files_command():
  print(f"{cleanup_expired_files()} arquivo(s) removido(s) pela política de retenção.")
 
+_last_retention_cleanup=None
+@app.before_request
+def automatic_retention_cleanup():
+ global _last_retention_cleanup
+ now=datetime.utcnow()
+ if _last_retention_cleanup and now-_last_retention_cleanup < timedelta(hours=24): return
+ try:
+  cleanup_expired_files(); _last_retention_cleanup=now
+ except Exception:
+  db.session.rollback()
+
 @app.route("/health")
 def health():
  try:
