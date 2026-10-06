@@ -337,9 +337,6 @@ _last_purge_ts=0.0
 def init():
  global _initialized
  if _initialized: return
- if object_storage_enabled():
-  ensure_r2_browser_cors()
-  ensure_r2_retention_lifecycle()
  db.create_all()
  if db.engine.dialect.name=="postgresql":
   try:
