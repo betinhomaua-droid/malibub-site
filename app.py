@@ -502,8 +502,35 @@ def admin_clinic_prices(uid):
   else: db.session.add(ClinicPrice(clinic_id=u.id,exam_type=exam_type,amount=amount,active=True))
   db.session.commit(); flash("Preço da clínica salvo."); return redirect(url_for("admin_clinic_prices",uid=u.id))
  prices=ClinicPrice.query.filter_by(clinic_id=u.id).order_by(ClinicPrice.exam_type).all()
- rows="".join("<tr><td>"+str(html_escape(x.exam_type))+"</td><td>R$ "+format(x.amount,".2f")+"</td><td><form method='post' action='/admin/usuarios/"+str(u.id)+"/precos/"+str(x.id)+"/excluir' style='margin:0' onsubmit=\"return confirm('Excluir este preço contratado?')\">"+csrf_field()+"<button type='submit'>Excluir</button></form></td></tr>" for x in prices)
+ rows="".join("<tr><td>"+str(html_escape(x.exam_type))+"</td><td>R$ "+format(x.amount,".2f")+"</td><td><a class='btn' href='/admin/usuarios/"+str(u.id)+"/precos/"+str(x.id)+"/editar'>Editar</a> <form method='post' action='/admin/usuarios/"+str(u.id)+"/precos/"+str(x.id)+"/excluir' style='display:inline-block;margin:0' onsubmit=\"return confirm('Excluir este preço contratado?')\">"+csrf_field()+"<button type='submit'>Excluir</button></form></td></tr>" for x in prices)
  body=f"""<h1>Tabela de preços — {html_escape(u.name)}</h1><div class='card'><p class='muted'>Cadastre o valor contratado por tipo de exame. O sistema usará este preço automaticamente ao laudar.</p><form method='post'>{csrf_field()}<label>Tipo de exame<input name='exam_type' maxlength='100' placeholder='Ex.: Panorâmica' required></label><label>Valor contratado (R$)<input type='number' name='amount' min='0.01' step='0.01' required></label><button class='gold' type='submit'>Salvar preço</button></form></div><div class='card'><h2>Preços cadastrados</h2><table><tr><th>Tipo de exame</th><th>Valor</th><th>Ação</th></tr>{rows or '<tr><td colspan=3>Nenhum preço cadastrado.</td></tr>'}</table></div>"""
+ return page(body)
+
+@app.route("/admin/usuarios/<int:uid>/precos/<int:pid>/editar",methods=["GET","POST"])
+def admin_clinic_price_edit(uid,pid):
+ if session.get("role")!="Radiologista": return redirect("/")
+ u=User.query.get_or_404(uid)
+ if u.role!="Clinica": return redirect("/admin/usuarios")
+ item=ClinicPrice.query.filter_by(id=pid,clinic_id=u.id).first_or_404()
+ if request.method=="POST":
+  exam_type=request.form.get("exam_type","").strip()[:100]
+  try:
+   amount=float(request.form.get("amount","").strip())
+   if amount<=0: raise ValueError
+  except (TypeError,ValueError):
+   flash("Informe um valor maior que R$ 0,00.")
+   return redirect(url_for("admin_clinic_price_edit",uid=u.id,pid=item.id))
+  if not exam_type:
+   flash("Informe o tipo de exame.")
+   return redirect(url_for("admin_clinic_price_edit",uid=u.id,pid=item.id))
+  duplicate=ClinicPrice.query.filter(ClinicPrice.clinic_id==u.id,ClinicPrice.exam_type==exam_type,ClinicPrice.id!=item.id).first()
+  if duplicate:
+   flash("Já existe um preço cadastrado para este tipo de exame.")
+   return redirect(url_for("admin_clinic_price_edit",uid=u.id,pid=item.id))
+  item.exam_type=exam_type; item.amount=amount; item.active=True
+  db.session.commit(); flash("Preço contratado atualizado.")
+  return redirect(url_for("admin_clinic_prices",uid=u.id))
+ body=f"""<h1>Editar preço — {html_escape(u.name)}</h1><div class='card'><form method='post'>{csrf_field()}<label>Tipo de exame<input name='exam_type' maxlength='100' value='{html_escape(item.exam_type)}' required></label><label>Valor contratado (R$)<input type='number' name='amount' min='0.01' step='0.01' value='{item.amount:.2f}' required></label><button class='gold' type='submit'>Salvar alterações</button><a class='btn' href='{url_for("admin_clinic_prices",uid=u.id)}'>Cancelar</a></form></div>"""
  return page(body)
 
 @app.route("/admin/usuarios/<int:uid>/precos/<int:pid>/excluir",methods=["POST"])
