@@ -272,6 +272,19 @@ CSS="""*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;backgr
 .login-card .submit{width:100%;height:56px;margin:20px 0 0;border:0;border-radius:10px;background:linear-gradient(90deg,#14cfe7,#1de4ed);color:#00121c;font-size:18px;font-weight:800}
 .login-card .foot{text-align:center;color:#9cb0bd;margin-top:22px;font-size:14px}.login-card .foot b{color:#20d8ef}.login-flash{padding:11px 13px;border:1px solid #d9a441;background:#251d0d;color:#fff;border-radius:8px;margin-bottom:15px}
 .login-footer{position:fixed;bottom:12px;left:52.5%;right:0;text-align:center;color:#9fb0bb;font-size:12px;z-index:9;pointer-events:none;background:transparent;padding:0}
+@media print{
+ @page{size:A4 portrait;margin:12mm}
+ body{background:#fff!important;color:#153847!important}
+ .shell{display:block!important;min-height:auto!important}
+ aside{display:none!important}
+ main{padding:0!important;margin:0!important;max-width:none!important;overflow:visible!important}
+ .print-result .card{border:0!important;box-shadow:none!important;border-radius:0!important;padding:0!important;margin:0!important}
+ .print-result .no-print{display:none!important}
+ .print-result h1{margin-top:0!important}
+ .print-result{width:100%!important}
+ .print-result .badge{border:1px solid #dce8ec!important}
+ .viewer.no-print{display:none!important}
+}
 @media(max-width:900px){.login-approved{grid-template-columns:1fr}.login-visual{min-height:42vh;padding:28px 8%;background-size:191% 100%}.login-copy h1{font-size:30px}.login-copy p{font-size:16px}.login-panel{padding:38px 22px 70px}.login-footer{left:0;font-size:10px}.shell,.workspace,.grid,.cards{grid-template-columns:1fr}.shell aside{position:relative}main{padding:18px;max-width:100%;overflow:hidden}.card{padding:16px}table{display:block;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}.viewer{max-height:70vh}.viewer iframe{height:60vh}.editor textarea{min-height:300px}.filebar .btn{padding:9px 12px}}@media(max-width:520px){.login-visual{min-height:34vh}.login-panel{padding:28px 16px 64px}.login-card h2{font-size:25px}.login-card input,.login-card .submit{height:52px}aside{padding:20px 16px}aside a{display:inline-block;margin:12px 14px 4px 0}.brand{font-size:22px}main{padding:14px}.card{border-radius:12px;padding:14px}button,.btn{max-width:100%}.workspace{gap:10px}}"""
 
 PRIVACY_VERSION="1.0-2026-10-07"
@@ -1091,7 +1104,7 @@ def result(eid):
  ready=ExamFile.query.filter_by(exam_id=e.id,kind="exame_pronto").all()
  ready_html="".join((f"<div class='exam-file'><div class='filebar'><b>{html_escape(f.name)}</b><a class='btn' href='/exam-file/{f.id}' target='_blank'>Abrir</a><a class='btn gold' href='/exam-file/{f.id}?download=1'>Baixar</a></div>" + (f"<img src='/exam-file/{f.id}' alt='{html_escape(f.name)}'>" if f.name.lower().endswith(('.jpg','.jpeg')) else f"<iframe src='/exam-file/{f.id}' title='{html_escape(f.name)}'></iframe>") + "</div>") for f in ready)
  signed=(e.signed_at.strftime("%d/%m/%Y %H:%M") if e.signed_at else "")
- body=f'''<h1>Resultado — {html_escape(e.protocol)}</h1><div class="card"><div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap"><div><h2 style="margin:0 0 6px">{html_escape(e.patient)}</h2><div class="muted">{html_escape(e.exam_type)} · {html_escape(e.dentist or 'Dentista não informado')}</div></div><span class="badge">{html_escape(e.status)}</span></div><hr><h3>Laudo radiológico</h3><div style="white-space:pre-wrap;min-height:220px;line-height:1.6">{html_escape(e.report or 'Laudo não informado.')}</div><div style="margin-top:22px;padding-top:16px;border-top:1px solid #dce8ec"><b>{html_escape(e.signed_by or 'Dra. Marina')}</b><br><span class="muted">Radiologista responsável · Assinado eletronicamente {signed}</span></div><hr><a class="btn gold" href="/result/{e.id}/pdf">Baixar laudo assinado em PDF</a><button onclick="window.print()">Imprimir</button></div><section class="card viewer"><h2>Exame pronto / Templates</h2><p class="muted">Arquivos finais disponibilizados pela radiologista.</p>{ready_html or '<div class="notice">Nenhum arquivo final foi anexado.</div>'}</section>'''
+ body=f'''<section class="print-result"><h1>Resultado — {html_escape(e.protocol)}</h1><div class="card"><div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap"><div><h2 style="margin:0 0 6px">{html_escape(e.patient)}</h2><div class="muted">{html_escape(e.exam_type)} · {html_escape(e.dentist or 'Dentista não informado')}</div></div><span class="badge">{html_escape(e.status)}</span></div><hr><h3>Laudo radiológico</h3><div style="white-space:pre-wrap;min-height:220px;line-height:1.6">{html_escape(e.report or 'Laudo não informado.')}</div><div style="margin-top:22px;padding-top:16px;border-top:1px solid #dce8ec"><b>{html_escape(e.signed_by or 'Dra. Marina')}</b><br><span class="muted">Radiologista responsável · Assinado eletronicamente {signed}</span></div><hr><div class="no-print"><a class="btn gold" href="/result/{e.id}/pdf">Baixar laudo assinado em PDF</a><button onclick="window.print()">Imprimir</button></div></div></section><section class="card viewer no-print"><h2>Exame pronto / Templates</h2><p class="muted">Arquivos finais disponibilizados pela radiologista.</p>{ready_html or '<div class="notice">Nenhum arquivo final foi anexado.</div>'}</section>'''
  return page(body)
 
 @app.route("/finance",methods=["GET","POST"])
