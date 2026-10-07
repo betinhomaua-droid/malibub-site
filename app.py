@@ -252,7 +252,7 @@ def assets(filename):
 class User(db.Model):
  id=db.Column(db.Integer,primary_key=True); name=db.Column(db.String(100)); email=db.Column(db.String(120),unique=True); password=db.Column(db.String(255)); role=db.Column(db.String(30)); active=db.Column(db.Boolean,default=True); logo=db.Column(db.String(255)); logo_name=db.Column(db.String(255)); report_model=db.Column(db.String(255)); report_model_name=db.Column(db.String(255)); report_top_mm=db.Column(db.Integer,default=72); report_bottom_mm=db.Column(db.Integer,default=42); privacy_version=db.Column(db.String(20)); privacy_ack_at=db.Column(db.DateTime)
 class Exam(db.Model):
- id=db.Column(db.Integer,primary_key=True); protocol=db.Column(db.String(30),unique=True); patient=db.Column(db.String(120)); sex=db.Column(db.String(20)); birth=db.Column(db.String(20)); dentist=db.Column(db.String(120)); exam_date=db.Column(db.String(20)); exam_type=db.Column(db.String(100)); observation=db.Column(db.String(500)); status=db.Column(db.String(50),default="Enviado"); clinic_id=db.Column(db.Integer); due_at=db.Column(db.DateTime); report=db.Column(db.Text,default=""); released_at=db.Column(db.DateTime); signed_by=db.Column(db.String(120)); signed_at=db.Column(db.DateTime); created_at=db.Column(db.DateTime,default=datetime.utcnow)
+ id=db.Column(db.Integer,primary_key=True); protocol=db.Column(db.String(30),unique=True); patient=db.Column(db.String(120)); sex=db.Column(db.String(20)); birth=db.Column(db.String(20)); dentist=db.Column(db.String(120)); exam_date=db.Column(db.String(20)); exam_type=db.Column(db.String(100)); observation=db.Column(db.String(500)); priority=db.Column(db.String(20),default="NORMAL"); contracted_amount=db.Column(db.Float); status=db.Column(db.String(50),default="Enviado"); clinic_id=db.Column(db.Integer); due_at=db.Column(db.DateTime); report=db.Column(db.Text,default=""); released_at=db.Column(db.DateTime); signed_by=db.Column(db.String(120)); signed_at=db.Column(db.DateTime); created_at=db.Column(db.DateTime,default=datetime.utcnow)
 class ExamFile(db.Model):
  id=db.Column(db.Integer,primary_key=True); exam_id=db.Column(db.Integer); name=db.Column(db.String(255)); stored=db.Column(db.String(255)); kind=db.Column(db.String(30),default="entrada"); uploaded_by=db.Column(db.String(100)); scan_status=db.Column(db.String(20),default="PENDENTE"); scan_detail=db.Column(db.String(255))
 class Finance(db.Model):
@@ -362,6 +362,8 @@ def init():
    db.session.execute(db.text("ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS logo_name VARCHAR(255)"))
    db.session.execute(db.text("ALTER TABLE exam_file ADD COLUMN IF NOT EXISTS scan_status VARCHAR(20) DEFAULT 'PENDENTE'"))
    db.session.execute(db.text("ALTER TABLE exam_file ADD COLUMN IF NOT EXISTS scan_detail VARCHAR(255)"))
+   db.session.execute(db.text("ALTER TABLE exam ADD COLUMN IF NOT EXISTS priority VARCHAR(20) DEFAULT 'NORMAL'"))
+   db.session.execute(db.text("ALTER TABLE exam ADD COLUMN IF NOT EXISTS contracted_amount DOUBLE PRECISION"))
    db.session.execute(db.text("UPDATE \"user\" SET active=TRUE WHERE active IS NULL"))
    db.session.commit()
   except Exception:
@@ -578,9 +580,9 @@ def dashboard():
     clinic_cell=f"<div class='clinic-cell'><img src='/clinic-logo/{clinic.id}' alt='' loading='lazy'><span>{html_escape(clinic.name)}</span></div>"
    else:
     clinic_cell=html_escape(clinic.name if clinic else "Clínica não identificada")
-   rows+=f"<tr><td>{html_escape(e.protocol)}</td><td>{html_escape(e.patient)}</td><td>{clinic_cell}</td><td>{html_escape(e.exam_type)}</td><td>{due_date_label(e.due_at)}</td><td><span class='badge'>{html_escape(e.status)}</span></td><td>{action}</td></tr>"
+   rows+=f"<tr><td>{html_escape(e.protocol)}</td><td>{html_escape(e.patient)}</td><td>{clinic_cell}</td><td>{html_escape(e.exam_type)}</td><td>{("<b style='color:#b42318'>URG</b><br>" if (e.priority or "NORMAL")=="URG" else "")+due_date_label(e.due_at,e.priority or "NORMAL")}</td><td><span class='badge'>{html_escape(e.status)}</span></td><td>{action}</td></tr>"
   else:
-   rows+=f"<tr><td>{html_escape(e.protocol)}</td><td>{html_escape(e.patient)}</td><td>{html_escape(e.exam_type)}</td><td>{due_date_label(e.due_at)}</td><td><span class='badge'>{html_escape(e.status)}</span></td><td>{action}</td></tr>"
+   rows+=f"<tr><td>{html_escape(e.protocol)}</td><td>{html_escape(e.patient)}</td><td>{html_escape(e.exam_type)}</td><td>{("<b style='color:#b42318'>URG</b><br>" if (e.priority or "NORMAL")=="URG" else "")+due_date_label(e.due_at,e.priority or "NORMAL")}</td><td><span class='badge'>{html_escape(e.status)}</span></td><td>{action}</td></tr>"
  headers="<tr><th>Protocolo</th><th>Paciente</th><th>Clínica</th><th>Exame</th><th>Entrega</th><th>Status</th><th>Ação</th></tr>" if session["role"]=="Radiologista" else "<tr><th>Protocolo</th><th>Paciente</th><th>Exame</th><th>Entrega</th><th>Status</th><th>Ação</th></tr>"
  colspan=7 if session["role"]=="Radiologista" else 6
  body=f'''<h1>Painel {'da Clínica' if session["role"]=="Clinica" else 'da Radiologista'}</h1><p>Olá, {html_escape(session["name"])}.</p>{'<a class="btn gold" href="/new">+ Novo Exame</a><a class="btn" href="/modelo-laudo">Modelo de laudo</a>' if session["role"]=="Clinica" else ''}<div class="card"><h2>Exames</h2><table>{headers}{rows or f'<tr><td colspan={colspan}>Nenhum exame.</td></tr>'}</table></div>'''
@@ -688,16 +690,18 @@ def direct_upload_url():
 def direct_upload_finalize():
  if session.get("role")!="Clinica": return {"error":"unauthorized"},403
  data=request.get_json(silent=True) or {}; files=data.get("files") or []
- patient=str(data.get("patient","")).strip()[:120]; dentist=str(data.get("dentist","")).strip()[:120]; exam_type=str(data.get("exam_type","")).strip()[:80]
+ patient=str(data.get("patient","")).strip()[:120]; dentist=str(data.get("dentist","")).strip()[:120]; exam_type=str(data.get("exam_type","")).strip()[:80]; priority=str(data.get("priority","NORMAL")).strip().upper()
  if not files or not patient or not dentist or not exam_type: return {"error":"required_fields"},400
- if not ClinicPrice.query.filter_by(clinic_id=session["uid"],exam_type=exam_type,active=True).first(): return {"error":"invalid_exam_type"},400
+ price=ClinicPrice.query.filter_by(clinic_id=session["uid"],exam_type=exam_type,active=True).first()
+ if not price: return {"error":"invalid_exam_type"},400
+ if priority not in {"NORMAL","URG"}: return {"error":"invalid_priority"},400
  verified=[]; pending=session.get("_pending_direct_uploads",{}); now=int(time.time())
  try:
   for item in files:
    key=str(item.get("key","")); name=secure_filename(str(item.get("name",""))); grant=pending.get(key)
    if not key or not name or not isinstance(grant,dict) or grant.get("name")!=name or now-int(grant.get("created",0))>1800: raise ValueError("invalid upload grant")
    r2_client().head_object(Bucket=R2_BUCKET,Key=key); verified.append((key,name))
-  e=Exam(protocol="MB"+datetime.now().strftime("%y%m%d%H%M%S"),patient=patient,sex=str(data.get("sex","Não informado")).strip(),birth=str(data.get("birth",""))[:20],dentist=dentist,exam_date=str(data.get("exam_date",""))[:20],exam_type=exam_type,observation=str(data.get("observation","")).strip()[:500],clinic_id=session["uid"],status="Aguardando laudo",due_at=add_business_days_utc(datetime.utcnow(),2))
+  e=Exam(protocol="MB"+datetime.now().strftime("%y%m%d%H%M%S"),patient=patient,sex=str(data.get("sex","Não informado")).strip(),birth=str(data.get("birth",""))[:20],dentist=dentist,exam_date=str(data.get("exam_date",""))[:20],exam_type=exam_type,observation=str(data.get("observation","")).strip()[:500],priority=priority,contracted_amount=round(price.amount*(1.5 if priority=="URG" else 1.0),2),clinic_id=session["uid"],status="Aguardando laudo",due_at=(datetime.utcnow()+timedelta(hours=12) if priority=="URG" else add_business_days_utc(datetime.utcnow(),2)))
   db.session.add(e); db.session.flush()
   for key,name in verified: db.session.add(ExamFile(exam_id=e.id,name=name,stored=key,scan_status="NAO_VERIFICADO",scan_detail="Verificação antivírus opcional pela radiologista."))
   db.session.commit()
@@ -736,13 +740,18 @@ def new():
   dentist=request.form.get("dentist","").strip()[:120]
   sex=request.form.get("sex","Não informado").strip()
   exam_type=request.form.get("exam_type","").strip()[:80]
+  priority=request.form.get("priority","NORMAL").strip().upper()
   if not patient or not dentist or not exam_type:
    flash("Preencha os dados obrigatórios do exame.")
    return redirect("/new")
-  if not ClinicPrice.query.filter_by(clinic_id=session["uid"],exam_type=exam_type,active=True).first():
+  price=ClinicPrice.query.filter_by(clinic_id=session["uid"],exam_type=exam_type,active=True).first()
+  if not price:
    flash("Selecione um tipo de exame cadastrado para esta clínica.")
    return redirect("/new")
-  e=Exam(protocol="MB"+datetime.now().strftime("%y%m%d%H%M%S"),patient=patient,sex=sex,birth=request.form.get("birth",""),dentist=dentist,exam_date=request.form.get("exam_date",""),exam_type=exam_type,observation=request.form.get("observation","").strip()[:500],clinic_id=session["uid"],status="Aguardando laudo",due_at=add_business_days_utc(datetime.utcnow(),2))
+  if priority not in {"NORMAL","URG"}:
+   flash("Selecione um prazo válido.")
+   return redirect("/new")
+  e=Exam(protocol="MB"+datetime.now().strftime("%y%m%d%H%M%S"),patient=patient,sex=sex,birth=request.form.get("birth",""),dentist=dentist,exam_date=request.form.get("exam_date",""),exam_type=exam_type,observation=request.form.get("observation","").strip()[:500],priority=priority,contracted_amount=round(price.amount*(1.5 if priority=="URG" else 1.0),2),clinic_id=session["uid"],status="Aguardando laudo",due_at=(datetime.utcnow()+timedelta(hours=12) if priority=="URG" else add_business_days_utc(datetime.utcnow(),2)))
   db.session.add(e); db.session.flush()
   uploaded=[]
   try:
@@ -767,7 +776,7 @@ def new():
  exam_type_options="".join(f"<option value='{html_escape(x.exam_type)}'>{html_escape(x.exam_type)}</option>" for x in clinic_exam_types)
  if not exam_type_options:
   exam_type_options="<option value='' disabled selected>Nenhum exame cadastrado para esta clínica</option>"
- body=f'''<h1>Novo Exame</h1><div class="card"><form id="exam-form" method="post" enctype="multipart/form-data">{csrf_field()}<div class="grid"><label>Nome do paciente<input name="patient" required></label><label>Sexo<select name="sex"><option>Feminino</option><option>Masculino</option><option>Não informado</option></select></label><label>Data de nascimento<input type="date" name="birth" required></label><label>Dentista solicitante<input name="dentist" required></label><label>Data do exame<input type="date" name="exam_date" required></label><label>Tipo de exame<select name="exam_type" required>{exam_type_options}</select></label></div><label>Observação / motivo <span class="muted">(Avaliação de Maxila/Mandíbula, Exodontia dos 38 e 48, Implante na região do dente XX, ATM etc.)</span><textarea name="observation" maxlength="500"></textarea></label>
+ body=f'''<h1>Novo Exame</h1><div class="card"><form id="exam-form" method="post" enctype="multipart/form-data">{csrf_field()}<div class="grid"><label>Nome do paciente<input name="patient" required></label><label>Sexo<select name="sex"><option>Feminino</option><option>Masculino</option><option>Não informado</option></select></label><label>Data de nascimento<input type="date" name="birth" required></label><label>Dentista solicitante<input name="dentist" required></label><label>Data do exame<input type="date" name="exam_date" required></label><div class="grid"><label>Tipo de exame<select name="exam_type" required>{exam_type_options}</select></label><label>Prazo<select name="priority" required><option value="NORMAL">Normal — até 2 dias úteis</option><option value="URG">URG — até 12h (+50% do valor do exame)</option></select></label></div></div><label>Observação / motivo <span class="muted">(Avaliação de Maxila/Mandíbula, Exodontia dos 38 e 48, Implante na região do dente XX, ATM etc.)</span><textarea name="observation" maxlength="500"></textarea></label>
 <div class="card" style="margin-top:18px"><h3>Arquivos do exame</h3><p class="muted">Adicione imagens, DICOM, PDF, ZIP ou RAR. Você pode combinar vários arquivos no mesmo exame.</p>
 <input id="exam-files" type="file" multiple accept=".jpg,.jpeg,.png,.pdf,.dcm,.zip,.rar" style="display:none">
 <input id="exam-folder" type="file" multiple webkitdirectory directory style="display:none">
@@ -795,7 +804,7 @@ def new():
     const a=await fetch("/new/direct-upload-url",{{method:"POST",headers:{{"Content-Type":"application/json","X-CSRF-Token":csrf}},body:JSON.stringify({{name:file.name,content_type:file.type||"application/octet-stream"}})}});if(!a.ok)throw new Error("auth");const s=await a.json();
     const p=await fetch(s.url,{{method:"PUT",headers:{{"Content-Type":s.content_type}},body:file}});if(!p.ok)throw new Error("put");uploaded.push({{key:s.key,name:file.name}});
    }}
-   box.textContent="Finalizando envio...";const fd=new FormData(form),payload={{files:uploaded}};["patient","sex","birth","dentist","exam_date","exam_type","observation"].forEach(k=>payload[k]=fd.get(k)||"");
+   box.textContent="Finalizando envio...";const fd=new FormData(form),payload={{files:uploaded}};["patient","sex","birth","dentist","exam_date","exam_type","priority","observation"].forEach(k=>payload[k]=fd.get(k)||"");
    const d=await fetch("/new/direct-finalize",{{method:"POST",headers:{{"Content-Type":"application/json","X-CSRF-Token":csrf}},body:JSON.stringify(payload)}});if(!d.ok)throw new Error("finalize");const r=await d.json();location.href=r.redirect||"/dashboard";
   }}catch(e){{box.textContent="O envio direto não pôde ser concluído. Tente novamente.";btn.disabled=false;}}
  }});
@@ -948,8 +957,8 @@ def report(eid):
   db.session.commit(); return redirect("/dashboard")
  imgs="".join((f"<div class='exam-file'><div class='filebar'><b>{html_escape(f.name)}</b><span class='badge'>{html_escape(f.scan_status or 'NAO_VERIFICADO')}</span><form method='post' action='/exam-file/{f.id}/scan' style='display:inline'>{csrf_field()}<button type='submit'>Verificar com antivírus</button></form><a class='btn' href='/exam-file/{f.id}' target='_blank'>Abrir</a><a class='btn gold' href='/exam-file/{f.id}?download=1'>Baixar</a></div>" + (f"<img src='/exam-file/{f.id}' alt='{html_escape(f.name)}'>" if f.name.lower().endswith(('.jpg','.jpeg','.png','.webp')) else (f"<iframe src='/exam-file/{f.id}' title='{html_escape(f.name)}'></iframe>" if f.name.lower().endswith('.pdf') else "<div class='notice'>Pré-visualização indisponível para este formato. Use Abrir ou Baixar.</div>")) + "</div>") for f in files)
  ready_html="".join((f"<div class='exam-file'><div class='filebar'><b>{html_escape(f.name)}</b><a class='btn' href='/exam-file/{f.id}' target='_blank'>Abrir</a><a class='btn gold' href='/exam-file/{f.id}?download=1'>Baixar</a><form method='post' action='/report/{e.id}/exame-pronto/{f.id}/excluir' style='display:inline-block;margin:0' onsubmit=\"return confirm('Excluir este anexo individualmente? Esta ação não pode ser desfeita.')\">{csrf_field()}<button type='submit'>Excluir</button></form></div>" + (f"<img src='/exam-file/{f.id}'>" if f.name.lower().endswith(('.jpg','.jpeg')) else f"<iframe src='/exam-file/{f.id}'></iframe>") + "</div>") for f in ready_files)
- clinic=User.query.get(e.clinic_id); price=ClinicPrice.query.filter_by(clinic_id=e.clinic_id,exam_type=e.exam_type,active=True).first(); suggested_amount=(price.amount if price else None); model_link=(f"<a class='btn' href='/modelo-laudo/arquivo?exam={e.id}' target='_blank'>Ver modelo de laudo da clínica</a>" if clinic and clinic.report_model else "<span class='muted'>Clínica sem modelo de laudo cadastrado.</span>")
- body=f'''<h1>Ambiente da Radiologista — {html_escape(e.protocol)}</h1><div style="margin-bottom:12px">{model_link}</div><div class="card"><b>{html_escape(e.patient)}</b> · {html_escape(e.exam_type)}<br><span class="muted">{html_escape(e.observation or 'Sem observação clínica.')}</span></div><div class="workspace"><section class="card viewer"><h2>Imagens / arquivos</h2>{imgs or 'Nenhum anexo.'}<hr style="margin:24px 0;border:0;border-top:1px solid #dce8ec"><h2>Exame pronto / Templates</h2><p class="muted">Anexe o exame final produzido pela radiologista em JPG/JPEG e/ou PDF. Os arquivos ficarão vinculados a este exame.</p><form method="post" action="/report/{e.id}/exame-pronto" enctype="multipart/form-data">{csrf_field()}<input type="file" name="finished_files" accept=".jpg,.jpeg,.pdf,image/jpeg,application/pdf" multiple required><button class="gold" type="submit">Anexar exame pronto</button></form>{ready_html or '<div class="notice">Nenhum template/exame pronto anexado ainda.</div>'}</section><section class="card editor"><h2>Laudo escrito</h2><form method="post">{csrf_field()}<textarea name="report" placeholder="Digite o laudo..." required>{html_escape(e.report or '')}</textarea><label>Valor do laudo (R$)<input type="number" min="0.01" step="0.01" name="amount" value="{format(suggested_amount,'.2f') if suggested_amount is not None else ''}" placeholder="0,00" required></label><p class="muted">{'Valor contratado desta clínica para este tipo de exame, preenchido automaticamente.' if suggested_amount is not None else 'Sem preço contratado para este tipo de exame. Informe o valor antes de liberar.'} O valor será usado no Financeiro e no relatório de cobrança da clínica.</p><div class="editor-actions"><button type="button" onclick="localStorage.setItem('malibub_draft_{e.id}',document.querySelector('[name=report]').value);this.textContent='Rascunho salvo ✓'">Salvar rascunho</button><button type="submit" formaction="/report/{e.id}/preview-pdf" formmethod="post" formtarget="_blank">Visualizar laudo</button><button class="gold" type="submit">Finalizar e liberar</button></div></form><script>const ta=document.querySelector('[name=report]');if(!ta.value)ta.value=localStorage.getItem('malibub_draft_{e.id}')||'';</script></section></div>'''
+ clinic=User.query.get(e.clinic_id); price=ClinicPrice.query.filter_by(clinic_id=e.clinic_id,exam_type=e.exam_type,active=True).first(); suggested_amount=(e.contracted_amount if e.contracted_amount is not None else ((price.amount*(1.5 if (e.priority or "NORMAL")=="URG" else 1.0)) if price else None)); model_link=(f"<a class='btn' href='/modelo-laudo/arquivo?exam={e.id}' target='_blank'>Ver modelo de laudo da clínica</a>" if clinic and clinic.report_model else "<span class='muted'>Clínica sem modelo de laudo cadastrado.</span>")
+ body=f'''<h1>Ambiente da Radiologista — {html_escape(e.protocol)}</h1><div style="margin-bottom:12px">{model_link}</div><div class="card"><b>{html_escape(e.patient)}</b> · {html_escape(e.exam_type)} · <b>{'URG — até 12h (+50%)' if (e.priority or 'NORMAL')=='URG' else 'Normal — até 2 dias úteis'}</b><br><span class="muted">{html_escape(e.observation or 'Sem observação clínica.')}</span></div><div class="workspace"><section class="card viewer"><h2>Imagens / arquivos</h2>{imgs or 'Nenhum anexo.'}<hr style="margin:24px 0;border:0;border-top:1px solid #dce8ec"><h2>Exame pronto / Templates</h2><p class="muted">Anexe o exame final produzido pela radiologista em JPG/JPEG e/ou PDF. Os arquivos ficarão vinculados a este exame.</p><form method="post" action="/report/{e.id}/exame-pronto" enctype="multipart/form-data">{csrf_field()}<input type="file" name="finished_files" accept=".jpg,.jpeg,.pdf,image/jpeg,application/pdf" multiple required><button class="gold" type="submit">Anexar exame pronto</button></form>{ready_html or '<div class="notice">Nenhum template/exame pronto anexado ainda.</div>'}</section><section class="card editor"><h2>Laudo escrito</h2><form method="post">{csrf_field()}<textarea name="report" placeholder="Digite o laudo..." required>{html_escape(e.report or '')}</textarea><label>Valor do laudo (R$)<input type="number" min="0.01" step="0.01" name="amount" value="{format(suggested_amount,'.2f') if suggested_amount is not None else ''}" placeholder="0,00" required></label><p class="muted">{'Valor contratado desta clínica para este tipo de exame, preenchido automaticamente.' if suggested_amount is not None else 'Sem preço contratado para este tipo de exame. Informe o valor antes de liberar.'} O valor será usado no Financeiro e no relatório de cobrança da clínica.</p><div class="editor-actions"><button type="button" onclick="localStorage.setItem('malibub_draft_{e.id}',document.querySelector('[name=report]').value);this.textContent='Rascunho salvo ✓'">Salvar rascunho</button><button type="submit" formaction="/report/{e.id}/preview-pdf" formmethod="post" formtarget="_blank">Visualizar laudo</button><button class="gold" type="submit">Finalizar e liberar</button></div></form><script>const ta=document.querySelector('[name=report]');if(!ta.value)ta.value=localStorage.getItem('malibub_draft_{e.id}')||'';</script></section></div>'''
  return page(body)
 
 @app.route("/report/<int:eid>/preview-pdf",methods=["POST"])
@@ -996,9 +1005,10 @@ def add_business_days_utc(value,days=2):
   if local.weekday()<5: added+=1
  return local.astimezone(timezone.utc).replace(tzinfo=None)
 
-def due_date_label(value):
+def due_date_label(value,priority="NORMAL"):
  local=brasilia_datetime(value)
- return local.strftime("%d/%m/%Y") if local else "—"
+ if not local: return "—"
+ return local.strftime("%d/%m/%Y %H:%M") if priority=="URG" else local.strftime("%d/%m/%Y")
 
 @app.route("/result/<int:eid>/pdf")
 def result_pdf(eid):
