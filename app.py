@@ -692,9 +692,9 @@ def direct_upload_url():
 @app.post("/new/direct-finalize")
 def direct_upload_finalize():
  if session.get("role")!="Clinica": return {"error":"unauthorized"},403
- data=request.get_json(silent=True) or {}; files=data.get("files") or []; request_file=data.get("request_file") or {}
+ data=request.get_json(silent=True) or {}; files=data.get("files") or []; request_files=data.get("request_files") or []
  patient=str(data.get("patient","")).strip()[:120]; dentist=str(data.get("dentist","")).strip()[:120]; exam_type=str(data.get("exam_type","")).strip()[:80]; priority=str(data.get("priority","NORMAL")).strip().upper()
- if not files or not request_file or not patient or not dentist or not exam_type: return {"error":"required_fields"},400
+ if not files or not request_files or not patient or not dentist or not exam_type: return {"error":"required_fields"},400
  price=ClinicPrice.query.filter_by(clinic_id=session["uid"],exam_type=exam_type,active=True).first()
  if not price: return {"error":"invalid_exam_type"},400
  if priority not in {"NORMAL","URG"}: return {"error":"invalid_priority"},400
@@ -704,16 +704,19 @@ def direct_upload_finalize():
    key=str(item.get("key","")); name=secure_filename(str(item.get("name",""))); grant=pending.get(key)
    if not key or not name or not isinstance(grant,dict) or grant.get("name")!=name or grant.get("kind","exam")!="exam" or now-int(grant.get("created",0))>1800: raise ValueError("invalid upload grant")
    r2_client().head_object(Bucket=R2_BUCKET,Key=key); verified.append((key,name))
-  request_key=str(request_file.get("key","")); request_name=secure_filename(str(request_file.get("name",""))); request_grant=pending.get(request_key)
-  if not request_key or not request_name or Path(request_name).suffix.lower() not in {".jpg",".jpeg",".png",".pdf"} or not isinstance(request_grant,dict) or request_grant.get("name")!=request_name or request_grant.get("kind")!="request" or now-int(request_grant.get("created",0))>1800: raise ValueError("invalid request grant")
-  r2_client().head_object(Bucket=R2_BUCKET,Key=request_key)
+  verified_requests=[]
+  for item in request_files:
+   request_key=str(item.get("key","")); request_name=secure_filename(str(item.get("name",""))); request_grant=pending.get(request_key)
+   if not request_key or not request_name or Path(request_name).suffix.lower() not in {".jpg",".jpeg",".png",".pdf"} or not isinstance(request_grant,dict) or request_grant.get("name")!=request_name or request_grant.get("kind")!="request" or now-int(request_grant.get("created",0))>1800: raise ValueError("invalid request grant")
+   r2_client().head_object(Bucket=R2_BUCKET,Key=request_key); verified_requests.append((request_key,request_name))
   e=Exam(protocol="MB"+datetime.now().strftime("%y%m%d%H%M%S"),patient=patient,sex=str(data.get("sex","Não informado")).strip(),birth=str(data.get("birth",""))[:20],dentist=dentist,exam_date=str(data.get("exam_date",""))[:20],exam_type=exam_type,observation=str(data.get("observation","")).strip()[:500],priority=priority,contracted_amount=round(price.amount*(1.5 if priority=="URG" else 1.0),2),clinic_id=session["uid"],status="Aguardando laudo",due_at=(datetime.utcnow()+timedelta(hours=24) if priority=="URG" else add_business_days_utc(datetime.utcnow(),2)))
   db.session.add(e); db.session.flush()
   for key,name in verified: db.session.add(ExamFile(exam_id=e.id,name=name,stored=key,scan_status="NAO_VERIFICADO",scan_detail="Verificação antivírus opcional pela radiologista."))
-  db.session.add(ExamFile(exam_id=e.id,name=request_name,stored=request_key,kind="requisicao",scan_status="NAO_VERIFICADO",scan_detail="Requisição/pedido do dentista."))
+  for request_key,request_name in verified_requests:
+   db.session.add(ExamFile(exam_id=e.id,name=request_name,stored=request_key,kind="requisicao",scan_status="NAO_VERIFICADO",scan_detail="Requisição/pedido do dentista."))
   db.session.commit()
   for key,_ in verified: pending.pop(key,None)
-  pending.pop(request_key,None)
+  for request_key,_ in verified_requests: pending.pop(request_key,None)
   session["_pending_direct_uploads"]=pending
   app.logger.warning("DIRECT_UPLOAD_FINALIZE_OK file_count=%s",len(verified))
   return {"status":"ok","redirect":"/dashboard"},200
@@ -726,15 +729,15 @@ def new():
  allowed_ext={".jpg",".jpeg",".png",".pdf",".dcm",".zip",".rar"}
  if request.method=="POST":
   incoming=[f for f in request.files.getlist("files") if f and f.filename]
-  dentist_request=request.files.get("dentist_request")
+  dentist_requests=[f for f in request.files.getlist("dentist_request") if f and f.filename]
   if not incoming:
    flash("Anexe ao menos um arquivo do exame antes de enviar.")
    return redirect("/new")
-  if not dentist_request or not dentist_request.filename:
-   flash("Anexe a requisição/pedido do dentista antes de enviar.")
+  if not dentist_requests:
+   flash("Anexe ao menos um arquivo da requisição/pedido do dentista antes de enviar.")
    return redirect("/new")
-  request_name=secure_filename(dentist_request.filename)
-  if not request_name or Path(request_name).suffix.lower() not in {".jpg",".jpeg",".png",".pdf"}:
+  request_names=[secure_filename(f.filename) for f in dentist_requests]
+  if any((not name or Path(name).suffix.lower() not in {".jpg",".jpeg",".png",".pdf"}) for name in request_names):
    flash("A requisição do dentista deve estar em PDF, JPG, JPEG ou PNG.")
    return redirect("/new")
   invalid=[secure_filename(f.filename) for f in incoming if Path(secure_filename(f.filename)).suffix.lower() not in allowed_ext]
@@ -778,10 +781,11 @@ def new():
     store_upload(f,stored,f.mimetype)
     uploaded.append(stored)
     db.session.add(ExamFile(exam_id=e.id,name=name,stored=stored,scan_status=scan_status,scan_detail=scan_detail))
-   request_stored="exames/"+uuid.uuid4().hex+"_"+request_name
-   store_upload(dentist_request,request_stored,dentist_request.mimetype)
-   uploaded.append(request_stored)
-   db.session.add(ExamFile(exam_id=e.id,name=request_name,stored=request_stored,kind="requisicao",scan_status="NAO_VERIFICADO",scan_detail="Requisição/pedido do dentista."))
+   for dentist_request,request_name in zip(dentist_requests,request_names):
+    request_stored="exames/"+uuid.uuid4().hex+"_"+request_name
+    store_upload(dentist_request,request_stored,dentist_request.mimetype)
+    uploaded.append(request_stored)
+    db.session.add(ExamFile(exam_id=e.id,name=request_name,stored=request_stored,kind="requisicao",scan_status="NAO_VERIFICADO",scan_detail="Requisição/pedido do dentista."))
    db.session.commit()
   except Exception as exc:
    app.logger.error("clinic_exam_upload_failed error_type=%s", type(exc).__name__)
@@ -797,7 +801,7 @@ def new():
  if not exam_type_options:
   exam_type_options="<option value='' disabled selected>Nenhum exame cadastrado para esta clínica</option>"
  body=f'''<h1>Novo Exame</h1><div class="card"><form id="exam-form" method="post" enctype="multipart/form-data">{csrf_field()}<div class="grid"><label>Nome do paciente<input name="patient" required></label><label>Sexo<select name="sex"><option>Feminino</option><option>Masculino</option><option>Não informado</option></select></label><label>Data de nascimento<input type="date" name="birth" required></label><label>Dentista solicitante<input name="dentist" required></label><label>Data do exame<input type="date" name="exam_date" required></label><div class="grid"><label>Tipo de exame<select name="exam_type" required>{exam_type_options}</select></label><label>Prazo<select name="priority" required><option value="NORMAL">Normal — até 2 dias úteis</option><option value="URG">URG — até 24h (+50% do valor do exame)</option></select></label></div></div><label>Observação / motivo <span class="muted">(Avaliação de Maxila/Mandíbula, Exodontia dos 38 e 48, Implante na região do dente XX, ATM etc.)</span><textarea name="observation" maxlength="500"></textarea></label>
-<div class="card" style="margin-top:18px"><h3>Requisição / pedido do dentista <span style="color:#b42318">*</span></h3><p class="muted">Obrigatório para enviar o exame. Anexe o pedido em PDF, JPG ou PNG.</p><input id="dentist-request" type="file" name="dentist_request" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" required><div id="request-status" class="notice" style="display:none;margin-top:10px"></div></div>
+<div class="card" style="margin-top:18px"><h3>Requisição / pedido do dentista <span style="color:#b42318">*</span></h3><p class="muted">Obrigatório para enviar o exame. Se o pedido tiver mais de uma página, selecione todos os arquivos. Formatos: PDF, JPG ou PNG.</p><input id="dentist-request" type="file" name="dentist_request" multiple accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" style="display:none"><div style="display:flex;gap:10px;flex-wrap:wrap"><button type="button" class="blue" id="pick-request">Selecionar arquivos</button><button type="button" class="blue" id="pick-request-more">Adicionar mais arquivos</button></div><div id="request-status" class="notice" style="display:none;margin-top:10px"></div><div id="request-list" style="margin-top:10px"></div></div>
 <div class="card" style="margin-top:18px"><h3>Arquivos do exame</h3><p class="muted">Adicione imagens, DICOM, PDF, ZIP ou RAR. Você pode combinar vários arquivos no mesmo exame.</p>
 <input id="exam-files" type="file" multiple accept=".jpg,.jpeg,.png,.pdf,.dcm,.zip,.rar" style="display:none">
 <input id="exam-folder" type="file" multiple webkitdirectory directory style="display:none">
@@ -808,29 +812,36 @@ def new():
 (function(){{
  const form=document.getElementById("exam-form"), requestInput=document.getElementById("dentist-request"), requestStatus=document.getElementById("request-status"), input=document.getElementById("exam-files"), folder=document.getElementById("exam-folder"), list=document.getElementById("file-list"), summary=document.getElementById("file-summary"), box=document.getElementById("upload-progress"), btn=document.getElementById("send-exam");
  if(!form||!input) return;
- const csrf=form.querySelector("[name=_csrf_token]").value, selected=[];
+ const csrf=form.querySelector("[name=_csrf_token]").value, selected=[], selectedRequests=[];
  const allowed=/[.](jpg|jpeg|png|pdf|dcm|zip|rar)$/i;
  function fmt(n){{if(n<1024)return n+" B";if(n<1048576)return (n/1024).toFixed(1)+" KB";if(n<1073741824)return (n/1048576).toFixed(1)+" MB";return (n/1073741824).toFixed(2)+" GB";}}
  function add(files){{Array.from(files).forEach(file=>{{if(!allowed.test(file.name))return;const rel=file.webkitRelativePath||file.name,key=rel+"|"+file.size+"|"+file.lastModified;if(!selected.some(x=>x.key===key))selected.push({{key:key,file:file,relativePath:rel}});}});render();}}
+ function renderRequests(){{requestStatus.style.display=selectedRequests.length?"block":"none";requestStatus.textContent=selectedRequests.length+" arquivo(s) da requisição selecionado(s)";const rl=document.getElementById("request-list");rl.innerHTML="";selectedRequests.forEach((file,i)=>{{const row=document.createElement("div");row.style.cssText="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #e5e7eb";const name=document.createElement("span");name.textContent=file.name+" — "+fmt(file.size);const rm=document.createElement("button");rm.type="button";rm.className="blue";rm.textContent="Remover";rm.onclick=()=>{{selectedRequests.splice(i,1);renderRequests();}};row.append(name,rm);rl.appendChild(row);}});}}
+ function addRequests(files){{Array.from(files).forEach(file=>{{if(!/[.](pdf|jpg|jpeg|png)$/i.test(file.name))return;const key=file.name+"|"+file.size+"|"+file.lastModified;if(!selectedRequests.some(x=>x._key===key)){{file._key=key;selectedRequests.push(file);}}}});renderRequests();}}
+ document.getElementById("pick-request").onclick=()=>requestInput.click();document.getElementById("pick-request-more").onclick=()=>requestInput.click();requestInput.onchange=()=>{{addRequests(requestInput.files);requestInput.value="";}};
  function render(){{const total=selected.reduce((s,x)=>s+x.file.size,0);summary.style.display=selected.length?"block":"none";summary.textContent=selected.length+" arquivo(s) selecionado(s) • "+fmt(total);list.innerHTML="";selected.forEach((x,i)=>{{const row=document.createElement("div");row.style.cssText="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #e5e7eb";const name=document.createElement("span");name.textContent=(x.relativePath||x.file.name)+" — "+fmt(x.file.size);const rm=document.createElement("button");rm.type="button";rm.className="blue";rm.textContent="Remover";rm.onclick=()=>{{selected.splice(i,1);render();}};row.append(name,rm);list.appendChild(row);}});}}
  document.getElementById("pick-files").onclick=()=>input.click();document.getElementById("pick-more").onclick=()=>input.click();document.getElementById("pick-folder").onclick=()=>folder.click();
  input.onchange=()=>{{add(input.files);input.value="";}};folder.onchange=()=>{{add(folder.files);folder.value="";}};
  form.addEventListener("submit",async function(ev){{
-  if(!requestInput.files||!requestInput.files.length){{ev.preventDefault();requestStatus.style.display="block";requestStatus.textContent="Anexe a requisição/pedido do dentista para continuar.";return;}}
+  if(!selectedRequests.length){{ev.preventDefault();requestStatus.style.display="block";requestStatus.textContent="Anexe ao menos um arquivo da requisição/pedido do dentista para continuar.";return;}}
   if(!window.fetch||!selected.length){{if(!selected.length){{ev.preventDefault();box.style.display="block";box.textContent="Adicione ao menos um arquivo do exame.";}}return;}}
   ev.preventDefault();btn.disabled=true;box.style.display="block";
   try{{
-   const req=requestInput.files[0];if(!/[.](pdf|jpg|jpeg|png)$/i.test(req.name))throw new Error("request_format");
-   requestStatus.style.display="block";requestStatus.textContent="Enviando requisição do dentista...";
-   const ra=await fetch("/new/direct-upload-url",{{method:"POST",headers:{{"Content-Type":"application/json","X-CSRF-Token":csrf}},body:JSON.stringify({{name:req.name,content_type:req.type||"application/octet-stream",kind:"request"}})}});if(!ra.ok)throw new Error("request_auth");const rs=await ra.json();
-   const rp=await fetch(rs.url,{{method:"PUT",headers:{{"Content-Type":rs.content_type}},body:req}});if(!rp.ok)throw new Error("request_put");const requestFile={{key:rs.key,name:req.name}};requestStatus.textContent="Requisição anexada.";
+   const requestFiles=[];
+   requestStatus.style.display="block";
+   for(let ri=0;ri<selectedRequests.length;ri++){{
+    const req=selectedRequests[ri];requestStatus.textContent="Enviando requisição "+(ri+1)+" de "+selectedRequests.length+"...";
+    const ra=await fetch("/new/direct-upload-url",{{method:"POST",headers:{{"Content-Type":"application/json","X-CSRF-Token":csrf}},body:JSON.stringify({{name:req.name,content_type:req.type||"application/octet-stream",kind:"request"}})}});if(!ra.ok)throw new Error("request_auth");const rs=await ra.json();
+    const rp=await fetch(rs.url,{{method:"PUT",headers:{{"Content-Type":rs.content_type}},body:req}});if(!rp.ok)throw new Error("request_put");requestFiles.push({{key:rs.key,name:req.name}});
+   }}
+   requestStatus.textContent=selectedRequests.length+" arquivo(s) da requisição enviado(s).";
    const uploaded=[];
    for(let i=0;i<selected.length;i++){{
     const file=selected[i].file;box.textContent="Enviando arquivo "+(i+1)+" de "+selected.length+" • "+fmt(file.size);
     const a=await fetch("/new/direct-upload-url",{{method:"POST",headers:{{"Content-Type":"application/json","X-CSRF-Token":csrf}},body:JSON.stringify({{name:file.name,content_type:file.type||"application/octet-stream",kind:"exam"}})}});if(!a.ok)throw new Error("auth");const s=await a.json();
     const p=await fetch(s.url,{{method:"PUT",headers:{{"Content-Type":s.content_type}},body:file}});if(!p.ok)throw new Error("put");uploaded.push({{key:s.key,name:file.name}});
    }}
-   box.textContent="Finalizando envio...";const fd=new FormData(form),payload={{files:uploaded,request_file:requestFile}};["patient","sex","birth","dentist","exam_date","exam_type","priority","observation"].forEach(k=>payload[k]=fd.get(k)||"");
+   box.textContent="Finalizando envio...";const fd=new FormData(form),payload={{files:uploaded,request_files:requestFiles}};["patient","sex","birth","dentist","exam_date","exam_type","priority","observation"].forEach(k=>payload[k]=fd.get(k)||"");
    const d=await fetch("/new/direct-finalize",{{method:"POST",headers:{{"Content-Type":"application/json","X-CSRF-Token":csrf}},body:JSON.stringify(payload)}});if(!d.ok)throw new Error("finalize");const r=await d.json();location.href=r.redirect||"/dashboard";
   }}catch(e){{box.textContent="O envio direto não pôde ser concluído. Tente novamente.";btn.disabled=false;}}
  }});
