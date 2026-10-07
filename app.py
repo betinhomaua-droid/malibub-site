@@ -667,6 +667,7 @@ def direct_upload_finalize():
  data=request.get_json(silent=True) or {}; files=data.get("files") or []
  patient=str(data.get("patient","")).strip()[:120]; dentist=str(data.get("dentist","")).strip()[:120]; exam_type=str(data.get("exam_type","")).strip()[:80]
  if not files or not patient or not dentist or not exam_type: return {"error":"required_fields"},400
+ if not ClinicPrice.query.filter_by(clinic_id=session["uid"],exam_type=exam_type,active=True).first(): return {"error":"invalid_exam_type"},400
  verified=[]; pending=session.get("_pending_direct_uploads",{}); now=int(time.time())
  try:
   for item in files:
@@ -715,6 +716,9 @@ def new():
   if not patient or not dentist or not exam_type:
    flash("Preencha os dados obrigatórios do exame.")
    return redirect("/new")
+  if not ClinicPrice.query.filter_by(clinic_id=session["uid"],exam_type=exam_type,active=True).first():
+   flash("Selecione um tipo de exame cadastrado para esta clínica.")
+   return redirect("/new")
   e=Exam(protocol="MB"+datetime.now().strftime("%y%m%d%H%M%S"),patient=patient,sex=sex,birth=request.form.get("birth",""),dentist=dentist,exam_date=request.form.get("exam_date",""),exam_type=exam_type,observation=request.form.get("observation","").strip()[:500],clinic_id=session["uid"],status="Aguardando laudo",due_at=datetime.utcnow()+timedelta(hours=24))
   db.session.add(e); db.session.flush()
   uploaded=[]
@@ -736,7 +740,11 @@ def new():
    flash("Não foi possível concluir o envio. Nenhum exame incompleto foi criado; tente novamente.")
    return redirect("/new")
   return redirect("/dashboard")
- body=f'''<h1>Novo Exame</h1><div class="card"><form id="exam-form" method="post" enctype="multipart/form-data">{csrf_field()}<div class="grid"><label>Nome do paciente<input name="patient" required></label><label>Sexo<select name="sex"><option>Feminino</option><option>Masculino</option><option>Não informado</option></select></label><label>Data de nascimento<input type="date" name="birth" required></label><label>Dentista solicitante<input name="dentist" required></label><label>Data do exame<input type="date" name="exam_date" required></label><label>Tipo de exame<select name="exam_type"><option>Tomografia computadorizada</option><option>Panorâmica</option><option>Documentação</option><option>Tomografia Endo</option></select></label></div><label>Observação / motivo<textarea name="observation" maxlength="500"></textarea></label>
+ clinic_exam_types=ClinicPrice.query.filter_by(clinic_id=session["uid"],active=True).order_by(ClinicPrice.exam_type.asc()).all()
+ exam_type_options="".join(f"<option value='{html_escape(x.exam_type)}'>{html_escape(x.exam_type)}</option>" for x in clinic_exam_types)
+ if not exam_type_options:
+  exam_type_options="<option value='' disabled selected>Nenhum exame cadastrado para esta clínica</option>"
+ body=f'''<h1>Novo Exame</h1><div class="card"><form id="exam-form" method="post" enctype="multipart/form-data">{csrf_field()}<div class="grid"><label>Nome do paciente<input name="patient" required></label><label>Sexo<select name="sex"><option>Feminino</option><option>Masculino</option><option>Não informado</option></select></label><label>Data de nascimento<input type="date" name="birth" required></label><label>Dentista solicitante<input name="dentist" required></label><label>Data do exame<input type="date" name="exam_date" required></label><label>Tipo de exame<select name="exam_type" required>{exam_type_options}</select></label></div><label>Observação / motivo<textarea name="observation" maxlength="500"></textarea></label>
 <div class="card" style="margin-top:18px"><h3>Arquivos do exame</h3><p class="muted">Adicione imagens, DICOM, PDF, ZIP ou RAR. Você pode combinar vários arquivos no mesmo exame.</p>
 <input id="exam-files" type="file" multiple accept=".jpg,.jpeg,.png,.pdf,.dcm,.zip,.rar" style="display:none">
 <input id="exam-folder" type="file" multiple webkitdirectory directory style="display:none">
