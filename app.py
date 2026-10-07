@@ -260,7 +260,7 @@ class Finance(db.Model):
 class ClinicPrice(db.Model):
  id=db.Column(db.Integer,primary_key=True); clinic_id=db.Column(db.Integer,index=True,nullable=False); exam_type=db.Column(db.String(100),nullable=False); amount=db.Column(db.Float,nullable=False); active=db.Column(db.Boolean,default=True); __table_args__=(db.UniqueConstraint("clinic_id","exam_type",name="uq_clinic_exam_price"),)
 
-CSS="""*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#f4f8fa;color:#153847}a{text-decoration:none;color:#087b9b}.shell{display:grid;grid-template-columns:220px 1fr;min-height:100vh}aside{background:linear-gradient(180deg,#06394c,#087b9b);color:white;padding:28px 20px}aside a{color:white;display:block;margin:20px 0}.brand{font-size:25px;font-weight:800}.brand span{display:block;font-weight:400}.brand small{display:block;font-size:10px;margin-top:8px}main{padding:32px;max-width:1500px}.card{background:white;border:1px solid #dce8ec;border-radius:16px;padding:22px;margin-bottom:18px;box-shadow:0 5px 18px #0c40540d}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}input,select,textarea{width:100%;padding:11px;border:1px solid #cbdde3;border-radius:8px;margin-top:6px}label{font-weight:700}button,.btn{display:inline-block;background:#087b9b;color:white;border:0;border-radius:8px;padding:11px 16px;margin:8px 5px 5px 0}.gold{background:#c99b3b}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px;border-bottom:1px solid #e5edef}.badge{background:#e6f4f7;padding:5px 9px;border-radius:12px}.workspace{display:grid;grid-template-columns:1fr 1fr;gap:18px}.viewer{max-height:650px;overflow:auto}.viewer img{width:100%;height:auto;display:block;margin:10px 0 18px;border-radius:8px}.viewer iframe{width:100%;height:560px;border:1px solid #dce8ec;border-radius:8px;margin:10px 0 18px}.exam-file{margin-bottom:18px}.filebar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.filebar b{margin-right:auto}.editor textarea{min-height:430px}.muted{color:#657f89}.notice{padding:12px;background:#fff7df;border-left:4px solid #c99b3b;margin:12px 0}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.cards .card b{display:block;font-size:28px;color:#087b9b}
+CSS="""*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#f4f8fa;color:#153847}a{text-decoration:none;color:#087b9b}.shell{display:grid;grid-template-columns:220px 1fr;min-height:100vh}aside{background:linear-gradient(180deg,#06394c,#087b9b);color:white;padding:28px 20px}aside a{color:white;display:block;margin:20px 0}.brand{font-size:25px;font-weight:800}.brand span{display:block;font-weight:400}.brand small{display:block;font-size:10px;margin-top:8px}main{padding:32px;max-width:1500px}.card{background:white;border:1px solid #dce8ec;border-radius:16px;padding:22px;margin-bottom:18px;box-shadow:0 5px 18px #0c40540d}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}input,select,textarea{width:100%;padding:11px;border:1px solid #cbdde3;border-radius:8px;margin-top:6px}label{font-weight:700}button,.btn{display:inline-block;background:#087b9b;color:white;border:0;border-radius:8px;padding:11px 16px;margin:8px 5px 5px 0}.gold{background:#c99b3b}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px;border-bottom:1px solid #e5edef}.badge{background:#e6f4f7;padding:5px 9px;border-radius:12px}.workspace{display:grid;grid-template-columns:1fr 1fr;gap:18px}.viewer{max-height:650px;overflow:auto}.viewer img{width:100%;height:auto;display:block;margin:10px 0 18px;border-radius:8px}.viewer iframe{width:100%;height:560px;border:1px solid #dce8ec;border-radius:8px;margin:10px 0 18px}.exam-file{margin-bottom:18px}.filebar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.filebar b{margin-right:auto}.editor textarea{min-height:430px}.muted{color:#657f89}.notice{padding:12px;background:#fff7df;border-left:4px solid #c99b3b;margin:12px 0}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.cards .card b{display:block;font-size:28px;color:#087b9b}.clinic-cell{display:flex;align-items:center;gap:8px;min-width:130px}.clinic-cell img{width:38px;height:38px;object-fit:contain;border-radius:6px;background:#fff;border:1px solid #e5edef;padding:2px}
 .login-approved{min-height:100vh;display:grid;grid-template-columns:52.5% 47.5%;gap:0;background:#020b14;color:white;overflow:hidden}
 .login-visual{background-color:#020b14;background-image:url('/assets/login-malibub-aprovado.png');background-repeat:no-repeat;background-position:left top;background-size:191% 100%;position:relative;border:0;outline:0;overflow:hidden;isolation:isolate}
 .login-visual:after{content:"";position:absolute;top:0;right:0;width:2px;height:100%;background:#020b14;pointer-events:none;z-index:6}.login-visual .footer-mask{position:absolute;left:0;right:0;bottom:0;height:56px;background:#020b14;z-index:5;pointer-events:none}
@@ -562,15 +562,38 @@ def dashboard():
  if session["role"]=="Clinica": exams=q.filter_by(clinic_id=session["uid"]).order_by(Exam.created_at.desc()).all()
  else: exams=q.order_by(Exam.created_at.desc()).all()
  rows=""
+ clinics={}
+ if session["role"]=="Radiologista":
+  clinic_ids=list({e.clinic_id for e in exams if e.clinic_id})
+  clinics={u.id:u for u in User.query.filter(User.id.in_(clinic_ids)).all()} if clinic_ids else {}
  for e in exams:
   blocked=ExamFile.query.filter(ExamFile.exam_id==e.id,ExamFile.scan_status.in_(["SUSPEITO","INFECTADO"])).first()
   if session["role"]=="Clinica" and blocked:
    action="<span style='display:inline-block;background:#b42318;color:white;font-weight:800;padding:9px 12px;border-radius:8px'>SUSPEITO/INFECTADO</span>"
   else:
    action=(f'<a class="btn" href="/report/{e.id}">Laudar</a>' if session["role"]=="Radiologista" and e.status!="Liberado" else (f'<a class="btn" href="/result/{e.id}">Resultado</a>' if e.status=="Liberado" else ""))
-  rows+=f"<tr><td>{html_escape(e.protocol)}</td><td>{html_escape(e.patient)}</td><td>{html_escape(e.exam_type)}</td><td><span class='badge'>{html_escape(e.status)}</span></td><td>{action}</td></tr>"
- body=f'''<h1>Painel {'da Clínica' if session["role"]=="Clinica" else 'da Radiologista'}</h1><p>Olá, {html_escape(session["name"])}.</p>{'<a class="btn gold" href="/new">+ Novo Exame</a><a class="btn" href="/modelo-laudo">Modelo de laudo</a>' if session["role"]=="Clinica" else ''}<div class="card"><h2>Exames</h2><table><tr><th>Protocolo</th><th>Paciente</th><th>Exame</th><th>Status</th><th>Ação</th></tr>{rows or '<tr><td colspan=5>Nenhum exame.</td></tr>'}</table></div>'''
+  if session["role"]=="Radiologista":
+   clinic=clinics.get(e.clinic_id)
+   if clinic and clinic.logo:
+    clinic_cell=f"<div class='clinic-cell'><img src='/clinic-logo/{clinic.id}' alt='' loading='lazy'><span>{html_escape(clinic.name)}</span></div>"
+   else:
+    clinic_cell=html_escape(clinic.name if clinic else "Clínica não identificada")
+   rows+=f"<tr><td>{html_escape(e.protocol)}</td><td>{html_escape(e.patient)}</td><td>{clinic_cell}</td><td>{html_escape(e.exam_type)}</td><td>{due_date_label(e.due_at)}</td><td><span class='badge'>{html_escape(e.status)}</span></td><td>{action}</td></tr>"
+  else:
+   rows+=f"<tr><td>{html_escape(e.protocol)}</td><td>{html_escape(e.patient)}</td><td>{html_escape(e.exam_type)}</td><td>{due_date_label(e.due_at)}</td><td><span class='badge'>{html_escape(e.status)}</span></td><td>{action}</td></tr>"
+ headers="<tr><th>Protocolo</th><th>Paciente</th><th>Clínica</th><th>Exame</th><th>Entrega</th><th>Status</th><th>Ação</th></tr>" if session["role"]=="Radiologista" else "<tr><th>Protocolo</th><th>Paciente</th><th>Exame</th><th>Entrega</th><th>Status</th><th>Ação</th></tr>"
+ colspan=7 if session["role"]=="Radiologista" else 6
+ body=f'''<h1>Painel {'da Clínica' if session["role"]=="Clinica" else 'da Radiologista'}</h1><p>Olá, {html_escape(session["name"])}.</p>{'<a class="btn gold" href="/new">+ Novo Exame</a><a class="btn" href="/modelo-laudo">Modelo de laudo</a>' if session["role"]=="Clinica" else ''}<div class="card"><h2>Exames</h2><table>{headers}{rows or f'<tr><td colspan={colspan}>Nenhum exame.</td></tr>'}</table></div>'''
  return page(body)
+
+@app.route("/clinic-logo/<int:uid>")
+def clinic_logo(uid):
+ if not session.get("uid"): return redirect("/")
+ if session.get("role")=="Clinica" and session.get("uid")!=uid: return ("",403)
+ if session.get("role") not in {"Clinica","Radiologista"}: return ("",403)
+ u=User.query.get_or_404(uid)
+ if u.role!="Clinica" or not u.logo or not storage_exists(u.logo): return ("",404)
+ return storage_response(u.logo,u.logo_name,False)
 
 @app.route("/modelo-laudo",methods=["GET","POST"])
 def report_model():
@@ -674,7 +697,7 @@ def direct_upload_finalize():
    key=str(item.get("key","")); name=secure_filename(str(item.get("name",""))); grant=pending.get(key)
    if not key or not name or not isinstance(grant,dict) or grant.get("name")!=name or now-int(grant.get("created",0))>1800: raise ValueError("invalid upload grant")
    r2_client().head_object(Bucket=R2_BUCKET,Key=key); verified.append((key,name))
-  e=Exam(protocol="MB"+datetime.now().strftime("%y%m%d%H%M%S"),patient=patient,sex=str(data.get("sex","Não informado")).strip(),birth=str(data.get("birth",""))[:20],dentist=dentist,exam_date=str(data.get("exam_date",""))[:20],exam_type=exam_type,observation=str(data.get("observation","")).strip()[:500],clinic_id=session["uid"],status="Aguardando laudo",due_at=datetime.utcnow()+timedelta(hours=24))
+  e=Exam(protocol="MB"+datetime.now().strftime("%y%m%d%H%M%S"),patient=patient,sex=str(data.get("sex","Não informado")).strip(),birth=str(data.get("birth",""))[:20],dentist=dentist,exam_date=str(data.get("exam_date",""))[:20],exam_type=exam_type,observation=str(data.get("observation","")).strip()[:500],clinic_id=session["uid"],status="Aguardando laudo",due_at=add_business_days_utc(datetime.utcnow(),2))
   db.session.add(e); db.session.flush()
   for key,name in verified: db.session.add(ExamFile(exam_id=e.id,name=name,stored=key,scan_status="NAO_VERIFICADO",scan_detail="Verificação antivírus opcional pela radiologista."))
   db.session.commit()
@@ -719,7 +742,7 @@ def new():
   if not ClinicPrice.query.filter_by(clinic_id=session["uid"],exam_type=exam_type,active=True).first():
    flash("Selecione um tipo de exame cadastrado para esta clínica.")
    return redirect("/new")
-  e=Exam(protocol="MB"+datetime.now().strftime("%y%m%d%H%M%S"),patient=patient,sex=sex,birth=request.form.get("birth",""),dentist=dentist,exam_date=request.form.get("exam_date",""),exam_type=exam_type,observation=request.form.get("observation","").strip()[:500],clinic_id=session["uid"],status="Aguardando laudo",due_at=datetime.utcnow()+timedelta(hours=24))
+  e=Exam(protocol="MB"+datetime.now().strftime("%y%m%d%H%M%S"),patient=patient,sex=sex,birth=request.form.get("birth",""),dentist=dentist,exam_date=request.form.get("exam_date",""),exam_type=exam_type,observation=request.form.get("observation","").strip()[:500],clinic_id=session["uid"],status="Aguardando laudo",due_at=add_business_days_utc(datetime.utcnow(),2))
   db.session.add(e); db.session.flush()
   uploaded=[]
   try:
@@ -963,6 +986,19 @@ def brasilia_datetime(value):
 def brasilia_stamp(value):
  local=brasilia_datetime(value)
  return local.strftime("%d/%m/%Y %H:%M") if local else ""
+
+def add_business_days_utc(value,days=2):
+ """Add Monday-Friday business days, preserving the local Brasilia clock time."""
+ local=brasilia_datetime(value or datetime.utcnow())
+ added=0
+ while added<days:
+  local+=timedelta(days=1)
+  if local.weekday()<5: added+=1
+ return local.astimezone(timezone.utc).replace(tzinfo=None)
+
+def due_date_label(value):
+ local=brasilia_datetime(value)
+ return local.strftime("%d/%m/%Y") if local else "—"
 
 @app.route("/result/<int:eid>/pdf")
 def result_pdf(eid):
