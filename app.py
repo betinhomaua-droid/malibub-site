@@ -329,6 +329,7 @@ _initialized=False
 _last_purge_ts=0.0
 @app.before_request
 def require_current_privacy_ack():
+ if not _initialized: return
  if session.get("role")=="Clinica" and session.get("uid") and request.endpoint not in {"privacy_acknowledgement","privacy_policy","terms_of_use","logout","assets","static"}:
   u=db.session.get(User,session["uid"])
   if u and u.privacy_version!=PRIVACY_VERSION:
