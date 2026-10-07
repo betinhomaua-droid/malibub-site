@@ -945,6 +945,17 @@ def br_date(value):
  try: return datetime.strptime(raw,"%Y-%m-%d").strftime("%d/%m/%Y")
  except ValueError: return raw
 
+BRASILIA_TZ=ZoneInfo("America/Sao_Paulo")
+def brasilia_datetime(value):
+ if not value: return None
+ # Datas gravadas historicamente no PostgreSQL são UTC sem timezone.
+ if value.tzinfo is None: value=value.replace(tzinfo=timezone.utc)
+ return value.astimezone(BRASILIA_TZ)
+
+def brasilia_stamp(value):
+ local=brasilia_datetime(value)
+ return local.strftime("%d/%m/%Y %H:%M") if local else ""
+
 @app.route("/result/<int:eid>/pdf")
 def result_pdf(eid):
  if not session.get("uid"): return redirect("/")
@@ -973,7 +984,7 @@ def result_pdf(eid):
   from reportlab.lib.units import mm
   from reportlab.lib import colors
   from xml.sax.saxutils import escape
-  signed=e.signed_at.strftime("%d/%m/%Y %H:%M") if e.signed_at else (e.released_at.strftime("%d/%m/%Y %H:%M") if e.released_at else "")
+  signed=brasilia_stamp(e.signed_at or e.released_at)
   W,H=A4
   def tmj_header_footer(canv,docobj):
    canv.saveState()
@@ -1070,7 +1081,7 @@ def result_pdf(eid):
   t=Table(data,colWidths=[42*mm,120*mm]); t.setStyle(TableStyle([("GRID",(0,0),(-1,-1),.4,colors.HexColor("#DCE8EC")),("BACKGROUND",(0,0),(0,-1),colors.HexColor("#F1F6F7")),("FONTNAME",(0,0),(0,-1),"Helvetica-Bold"),("FONTSIZE",(0,0),(-1,-1),9),("PADDING",(0,0),(-1,-1),6)])); story += [t,Spacer(1,7*mm),Paragraph("LAUDO RADIOLÓGICO",ParagraphStyle("h",parent=title,alignment=0,fontSize=12,textColor=navy)),Spacer(1,2*mm)]
  if not has_pdf_model:
   for line in (e.report or "").splitlines(): story.append(Paragraph(escape(line) or "&nbsp;",body))
- signer=escape(e.signed_by or "Dra. Marina"); signed=e.signed_at.strftime("%d/%m/%Y %H:%M") if e.signed_at else (e.released_at.strftime("%d/%m/%Y %H:%M") if e.released_at else "")
+ signer=escape(e.signed_by or "Dra. Marina"); signed=brasilia_stamp(e.signed_at or e.released_at)
  if not has_pdf_model:
   story += [Spacer(1,12*mm),Table([[""]],colWidths=[70*mm],style=TableStyle([("LINEABOVE",(0,0),(-1,-1),.6,navy)])),Paragraph(f"<b>{signer}</b>",ParagraphStyle("sig",parent=body,alignment=TA_CENTER,textColor=navy)),Paragraph("Radiologista responsável",ParagraphStyle("sig2",parent=styles["Normal"],alignment=TA_CENTER,fontSize=8,textColor=colors.HexColor("#657F89"))),Spacer(1,3*mm),Paragraph(f"Assinado eletronicamente em {escape(signed)}",ParagraphStyle("f",parent=styles["Normal"],fontSize=8,textColor=colors.HexColor("#657F89"))),Paragraph(f"Validação MALIBUB · Protocolo {escape(e.protocol or '')}",ParagraphStyle("f3",parent=styles["Normal"],fontSize=7.5,textColor=colors.HexColor("#657F89"))),Spacer(1,2*mm),Paragraph((escape(clinic.name)+" · MALIBUB Imaginologia Odontológica") if clinic else "MALIBUB Imaginologia Odontológica",ParagraphStyle("f2",parent=styles["Normal"],fontSize=8,textColor=gold))]
  else:
@@ -1149,7 +1160,7 @@ def result(eid):
  if e.status!="Liberado": return redirect("/dashboard")
  ready=ExamFile.query.filter_by(exam_id=e.id,kind="exame_pronto").all()
  ready_html="".join((f"<div class='exam-file'><div class='filebar'><b>{html_escape(f.name)}</b><a class='btn' href='/exam-file/{f.id}' target='_blank'>Abrir</a><a class='btn gold' href='/exam-file/{f.id}?download=1'>Baixar</a></div>" + (f"<img src='/exam-file/{f.id}' alt='{html_escape(f.name)}'>" if f.name.lower().endswith(('.jpg','.jpeg')) else f"<iframe src='/exam-file/{f.id}' title='{html_escape(f.name)}'></iframe>") + "</div>") for f in ready)
- signed=(e.signed_at.strftime("%d/%m/%Y %H:%M") if e.signed_at else "")
+ signed=brasilia_stamp(e.signed_at)
  body=f'''<section class="print-result"><h1>Resultado — {html_escape(e.protocol)}</h1><div class="card"><div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap"><div><h2 style="margin:0 0 6px">{html_escape(e.patient)}</h2><div class="muted">{html_escape(e.exam_type)} · {html_escape(e.dentist or 'Dentista não informado')}</div></div><span class="badge">{html_escape(e.status)}</span></div><hr><h3>Laudo radiológico</h3><div style="white-space:pre-wrap;min-height:220px;line-height:1.6">{html_escape(e.report or 'Laudo não informado.')}</div><div style="margin-top:22px;padding-top:16px;border-top:1px solid #dce8ec"><b>{html_escape(e.signed_by or 'Dra. Marina')}</b><br><span class="muted">Radiologista responsável · Assinado eletronicamente {signed}</span></div><hr><div class="no-print"><a class="btn gold" href="/result/{e.id}/pdf">Baixar laudo assinado em PDF</a><a class="btn" href="/result/{e.id}/pdf?print=1" target="_blank">Imprimir</a></div></div></section><section class="card viewer no-print"><h2>Exame pronto / Templates</h2><p class="muted">Arquivos finais disponibilizados pela radiologista.</p>{ready_html or '<div class="notice">Nenhum arquivo final foi anexado.</div>'}</section>'''
  return page(body)
 
