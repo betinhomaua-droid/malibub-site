@@ -250,7 +250,7 @@ def assets(filename):
  return send_from_directory(Path(app.root_path)/"assets", filename)
 
 class User(db.Model):
- id=db.Column(db.Integer,primary_key=True); name=db.Column(db.String(100)); email=db.Column(db.String(120),unique=True); password=db.Column(db.String(255)); role=db.Column(db.String(30)); active=db.Column(db.Boolean,default=True); logo=db.Column(db.String(255)); logo_name=db.Column(db.String(255)); report_model=db.Column(db.String(255)); report_model_name=db.Column(db.String(255)); report_top_mm=db.Column(db.Integer,default=72); report_bottom_mm=db.Column(db.Integer,default=42)
+ id=db.Column(db.Integer,primary_key=True); name=db.Column(db.String(100)); email=db.Column(db.String(120),unique=True); password=db.Column(db.String(255)); role=db.Column(db.String(30)); active=db.Column(db.Boolean,default=True); logo=db.Column(db.String(255)); logo_name=db.Column(db.String(255)); report_model=db.Column(db.String(255)); report_model_name=db.Column(db.String(255)); report_top_mm=db.Column(db.Integer,default=72); report_bottom_mm=db.Column(db.Integer,default=42); privacy_version=db.Column(db.String(20)); privacy_ack_at=db.Column(db.DateTime)
 class Exam(db.Model):
  id=db.Column(db.Integer,primary_key=True); protocol=db.Column(db.String(30),unique=True); patient=db.Column(db.String(120)); sex=db.Column(db.String(20)); birth=db.Column(db.String(20)); dentist=db.Column(db.String(120)); exam_date=db.Column(db.String(20)); exam_type=db.Column(db.String(100)); observation=db.Column(db.String(500)); status=db.Column(db.String(50),default="Enviado"); clinic_id=db.Column(db.Integer); due_at=db.Column(db.DateTime); report=db.Column(db.Text,default=""); released_at=db.Column(db.DateTime); signed_by=db.Column(db.String(120)); signed_at=db.Column(db.DateTime); created_at=db.Column(db.DateTime,default=datetime.utcnow)
 class ExamFile(db.Model):
@@ -274,6 +274,48 @@ CSS="""*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;backgr
 .login-footer{position:fixed;bottom:12px;left:52.5%;right:0;text-align:center;color:#9fb0bb;font-size:12px;z-index:9;pointer-events:none;background:transparent;padding:0}
 @media(max-width:900px){.login-approved{grid-template-columns:1fr}.login-visual{min-height:42vh;padding:28px 8%;background-size:191% 100%}.login-copy h1{font-size:30px}.login-copy p{font-size:16px}.login-panel{padding:38px 22px 70px}.login-footer{left:0;font-size:10px}.shell,.workspace,.grid,.cards{grid-template-columns:1fr}.shell aside{position:relative}main{padding:18px;max-width:100%;overflow:hidden}.card{padding:16px}table{display:block;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}.viewer{max-height:70vh}.viewer iframe{height:60vh}.editor textarea{min-height:300px}.filebar .btn{padding:9px 12px}}@media(max-width:520px){.login-visual{min-height:34vh}.login-panel{padding:28px 16px 64px}.login-card h2{font-size:25px}.login-card input,.login-card .submit{height:52px}aside{padding:20px 16px}aside a{display:inline-block;margin:12px 14px 4px 0}.brand{font-size:22px}main{padding:14px}.card{border-radius:12px;padding:14px}button,.btn{max-width:100%}.workspace{gap:10px}}"""
 
+PRIVACY_VERSION="1.0-2026-10-07"
+PRIVACY_TEXT="""<h1>Política de Privacidade</h1>
+<div class="card"><p><b>Versão 1.0 — 07/10/2026</b></p>
+<p>A Radiologia MALIBUB respeita a privacidade e a proteção dos dados pessoais. No fluxo de prestação de serviços de radiologia, a clínica contratante atua como Controladora das decisões essenciais sobre os dados de seus pacientes e a Radiologia MALIBUB atua como Operadora, tratando os dados em nome da clínica e conforme suas instruções, sem prejuízo da análise do papel aplicável a cada operação concreta.</p>
+<p>Podem ser tratados dados de identificação, informações relacionadas ao exame, imagens radiológicas, informações clínicas pertinentes, laudos e registros técnicos necessários à segurança e à execução do serviço. Dados de saúde são dados pessoais sensíveis e recebem proteção reforçada.</p>
+<p>A MALIBUB adota medidas técnicas e administrativas destinadas a reduzir riscos de acesso não autorizado, perda, alteração, divulgação ou tratamento inadequado, incluindo autenticação, segregação de acesso, comunicação HTTPS, armazenamento privado e controles de segurança e retenção.</p>
+<p>Os dados de pacientes não são utilizados pela MALIBUB para publicidade ou mala direta. Solicitações relacionadas aos dados do paciente devem ser dirigidas prioritariamente à clínica responsável pelo atendimento. Para assuntos de privacidade relacionados à operação da MALIBUB: <b>radiologiamalibub@gmail.com</b>.</p>
+<p><b>Operadora:</b> Radiologia MALIBUB — CNPJ 39.853.728/0001-00 — Avenida Sete de Setembro, 3000 - CONJ 206 ANDAR 01, Condomínio Lifespace, CEP 80.230-085, Centro, Curitiba - PR.</p>
+<p>Os arquivos de exames armazenados na área operacional da plataforma estão sujeitos à política técnica de exclusão automática após 90 dias, ressalvados prazos legais, regulatórios ou instruções formalmente aplicáveis. Outros registros podem possuir prazos de retenção distintos.</p>
+<p>Esta Política poderá ser atualizada para refletir alterações legais, regulatórias ou operacionais. Alterações relevantes poderão exigir nova ciência na plataforma.</p></div>"""
+
+TERMS_TEXT="""<h1>Termos de Uso e Proteção de Dados</h1>
+<div class="card"><p><b>Versão 1.0 — 07/10/2026</b></p>
+<p>A plataforma MALIBUB destina-se ao envio, processamento e disponibilização de exames e laudos radiológicos por usuários autorizados.</p>
+<p>A clínica contratante declara que é responsável pelas decisões essenciais sobre os dados pessoais que encaminha à plataforma, pela legitimidade do tratamento e pela autorização para encaminhar os dados e arquivos necessários à execução do serviço. A Radiologia MALIBUB trata esses dados em nome da clínica e conforme suas instruções no fluxo clínico contratado.</p>
+<p>Credenciais de acesso são individuais e devem ser protegidas. O usuário não deve compartilhar senha ou permitir acesso por pessoa não autorizada.</p>
+<p>É proibido utilizar a plataforma para finalidade incompatível com a prestação do serviço, inserir conteúdo ilícito ou tentar contornar os controles de segurança.</p>
+<p>Ao enviar um exame, a clínica confirma que está autorizada a encaminhar os dados e arquivos necessários à execução do serviço solicitado.</p>
+<p>Contato de privacidade da Radiologia MALIBUB: <b>radiologiamalibub@gmail.com</b>.</p></div>"""
+
+@app.route("/privacidade")
+def privacy_policy():
+ return page(PRIVACY_TEXT,"Política de Privacidade · MALIBUB")
+
+@app.route("/termos")
+def terms_of_use():
+ return page(TERMS_TEXT,"Termos de Uso · MALIBUB")
+
+@app.route("/privacidade/ciencia",methods=["GET","POST"])
+def privacy_acknowledgement():
+ if session.get("role")!="Clinica" or not session.get("uid"): return redirect("/")
+ u=User.query.get_or_404(session["uid"])
+ if request.method=="POST":
+  if request.form.get("ack")!="yes":
+   flash("Para continuar, confirme a ciência da Política de Privacidade e dos Termos de Uso.")
+   return redirect("/privacidade/ciencia")
+  u.privacy_version=PRIVACY_VERSION; u.privacy_ack_at=datetime.utcnow(); db.session.commit()
+  flash("Ciência de privacidade registrada.")
+  return redirect("/dashboard")
+ body=f"""<h1>Proteção de Dados e LGPD</h1><div class='card'><p>A Clínica declara estar ciente de que atua como Controladora dos dados pessoais encaminhados à plataforma e que a Radiologia MALIBUB atua como Operadora no tratamento realizado para execução dos serviços contratados, conforme a Política de Privacidade e os Termos de Uso.</p><p><a href='/privacidade' target='_blank'>Ler Política de Privacidade</a> · <a href='/termos' target='_blank'>Ler Termos de Uso</a></p><form method='post'>{csrf_field()}<label style='display:flex;gap:10px;align-items:flex-start'><input type='checkbox' name='ack' value='yes' required style='width:auto;margin-top:3px'> <span>Li e estou ciente da Política de Privacidade e dos Termos de Uso — versão {PRIVACY_VERSION}.</span></label><button class='gold' type='submit'>Continuar</button></form></div>"""
+ return page(body,"Ciência de Privacidade · MALIBUB")
+
 def page(body,title="MALIBUB"):
  msgs="".join(f'<div class="notice">{html_escape(m)}</div>' for m in __import__("flask").get_flashed_messages())
  body=msgs+body
@@ -286,6 +328,13 @@ def page(body,title="MALIBUB"):
 _initialized=False
 _last_purge_ts=0.0
 @app.before_request
+def require_current_privacy_ack():
+ if session.get("role")=="Clinica" and session.get("uid") and request.endpoint not in {"privacy_acknowledgement","privacy_policy","terms_of_use","logout","assets","static"}:
+  u=db.session.get(User,session["uid"])
+  if u and u.privacy_version!=PRIVACY_VERSION:
+   return redirect("/privacidade/ciencia")
+
+@app.before_request
 def init():
  global _initialized
  if _initialized: return
@@ -293,6 +342,8 @@ def init():
  if db.engine.dialect.name=="postgresql":
   try:
    db.session.execute(db.text("ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE"))
+   db.session.execute(db.text("ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS privacy_version VARCHAR(20)"))
+   db.session.execute(db.text("ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS privacy_ack_at TIMESTAMP"))
    db.session.execute(db.text("ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS logo VARCHAR(255)"))
    db.session.execute(db.text("ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS logo_name VARCHAR(255)"))
    db.session.execute(db.text("ALTER TABLE exam_file ADD COLUMN IF NOT EXISTS scan_status VARCHAR(20) DEFAULT 'PENDENTE'"))
@@ -371,7 +422,7 @@ def login():
  <section class="login-panel"><div class="login-card">{msgs}<h2>Acesse sua conta</h2><p class="sub">Entre para enviar ou acessar seus exames.</p>
  <form method="post" autocomplete="off">{csrf_field()}<label for="email">Email</label><input id="email" type="email" name="email" value="" placeholder="voce@clinica.com" required autocomplete="off" autocapitalize="none" spellcheck="false">
  <div class="pass-wrap"><label for="pwd">Senha</label><input id="pwd" type="password" name="password" value="" placeholder="Sua senha" required autocomplete="new-password"><button class="eye" type="button" aria-label="Mostrar ou ocultar senha" onclick="var p=document.getElementById('pwd');p.type=p.type==='password'?'text':'password';this.textContent=p.type==='password'?'◉':'○'">◉</button></div>
- <button class="submit" type="submit">Entrar</button></form><div class="foot">Acesso exclusivo para clínicas e radiologista.</div></div></section>
+ <button class="submit" type="submit">Entrar</button></form><div class="foot">Acesso exclusivo para clínicas e radiologista.<br><a href="/privacidade" target="_blank">Política de Privacidade</a> · <a href="/termos" target="_blank">Termos de Uso</a></div></div></section>
 <div class="login-footer">© 2026 Malibub Radiologia &nbsp; Todos os Direitos Reservados</div></div>'''
  return page(body,"Entrar · MALIBUB")
 
@@ -650,7 +701,7 @@ def new():
 <input id="exam-folder" type="file" multiple webkitdirectory directory style="display:none">
 <div style="display:flex;gap:10px;flex-wrap:wrap"><button type="button" class="blue" id="pick-files">Selecionar arquivos</button><button type="button" class="blue" id="pick-folder">Selecionar pasta</button><button type="button" class="blue" id="pick-more">Adicionar mais arquivos</button></div>
 <div id="file-summary" class="notice" style="display:none;margin-top:12px"></div><div id="file-list" style="margin-top:10px"></div></div>
-<div id="upload-progress" class="notice" style="display:none"></div><button id="send-exam" class="gold">Enviar exame</button></form></div>
+<div id="upload-progress" class="notice" style="display:none"></div><p class="muted" style="margin-top:14px">Ao enviar, a Clínica confirma que está autorizada a encaminhar os dados e arquivos necessários à execução do serviço solicitado.</p><button id="send-exam" class="gold">Enviar exame</button></form></div>
 <script>
 (function(){{
  const form=document.getElementById("exam-form"), input=document.getElementById("exam-files"), folder=document.getElementById("exam-folder"), list=document.getElementById("file-list"), summary=document.getElementById("file-summary"), box=document.getElementById("upload-progress"), btn=document.getElementById("send-exam");
