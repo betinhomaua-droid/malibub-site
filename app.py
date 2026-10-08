@@ -575,7 +575,9 @@ def dashboard():
   if session["role"]=="Clinica" and blocked:
    action="<span style='display:inline-block;background:#b42318;color:white;font-weight:800;padding:9px 12px;border-radius:8px'>SUSPEITO/INFECTADO</span>"
   else:
-   action=(f'<a class="btn" href="/report/{e.id}">Laudar</a>' if session["role"]=="Radiologista" and e.status!="Liberado" else (f'<a class="btn" href="/result/{e.id}">Resultado</a>' if e.status=="Liberado" else ""))
+   primary_action=(f'<a class="btn" href="/report/{e.id}">Laudar</a>' if session["role"]=="Radiologista" and e.status!="Liberado" else (f'<a class="btn" href="/result/{e.id}">Resultado</a>' if e.status=="Liberado" else ""))
+   delete_action=(f'<form method="post" action="/exam/{e.id}/excluir" style="display:inline" onsubmit="return confirm(\'Excluir definitivamente este exame, seus arquivos e o lançamento financeiro vinculado? Esta ação não pode ser desfeita.\')">{csrf_field()}<button type="submit" style="background:#b42318">Excluir</button></form>' if session["role"]=="Radiologista" else "")
+   action=primary_action+delete_action
   if session["role"]=="Radiologista":
    clinic=clinics.get(e.clinic_id)
    if clinic and clinic.logo:
@@ -589,6 +591,35 @@ def dashboard():
  colspan=7 if session["role"]=="Radiologista" else 6
  body=f'''<h1>Painel {'da Clínica' if session["role"]=="Clinica" else 'da Radiologista'}</h1><p>Olá, {html_escape(session["name"])}.</p>{'<a class="btn gold" href="/new">+ Novo Exame</a><a class="btn" href="/modelo-laudo">Modelo de laudo</a>' if session["role"]=="Clinica" else ''}<div class="card"><h2>Exames</h2><table>{headers}{rows or f'<tr><td colspan={colspan}>Nenhum exame.</td></tr>'}</table></div>'''
  return page(body)
+
+@app.post("/exam/<int:eid>/excluir")
+def delete_exam(eid):
+ if session.get("role")!="Radiologista": return redirect("/")
+ e=Exam.query.get_or_404(eid)
+ files=ExamFile.query.filter_by(exam_id=e.id).all()
+ stored_keys=[item.stored for item in files if item.stored]
+ protocol=e.protocol
+ try:
+  Finance.query.filter_by(description=f"Laudo {protocol}").delete(synchronize_session=False)
+  for item in files: db.session.delete(item)
+  db.session.delete(e)
+  db.session.commit()
+ except Exception as exc:
+  db.session.rollback()
+  app.logger.error("exam_delete_failed exam_id=%s error_type=%s",eid,type(exc).__name__)
+  flash("Não foi possível excluir o exame. Tente novamente.")
+  return redirect("/dashboard")
+ storage_failures=0
+ for key in stored_keys:
+  try: storage_delete(key)
+  except Exception as exc:
+   storage_failures+=1
+   app.logger.error("exam_file_storage_delete_failed exam_id=%s error_type=%s",eid,type(exc).__name__)
+ if storage_failures:
+  flash("Exame excluído do painel. Alguns arquivos não puderam ser removidos do armazenamento e serão tratados pela rotina de retenção.")
+ else:
+  flash("Exame, arquivos e lançamento financeiro vinculado excluídos.")
+ return redirect("/dashboard")
 
 @app.route("/clinic-logo/<int:uid>")
 def clinic_logo(uid):
