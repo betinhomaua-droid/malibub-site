@@ -253,6 +253,8 @@ def assets(filename):
 
 class User(db.Model):
  id=db.Column(db.Integer,primary_key=True); name=db.Column(db.String(100)); email=db.Column(db.String(120),unique=True); password=db.Column(db.String(255)); role=db.Column(db.String(30)); active=db.Column(db.Boolean,default=True); logo=db.Column(db.String(255)); logo_name=db.Column(db.String(255)); report_model=db.Column(db.String(255)); report_model_name=db.Column(db.String(255)); report_top_mm=db.Column(db.Integer,default=72); report_bottom_mm=db.Column(db.Integer,default=42); privacy_version=db.Column(db.String(20)); privacy_ack_at=db.Column(db.DateTime)
+class ReportModel(db.Model):
+ id=db.Column(db.Integer,primary_key=True); clinic_id=db.Column(db.Integer,index=True,nullable=False); name=db.Column(db.String(255)); stored=db.Column(db.String(255)); created_at=db.Column(db.DateTime,default=datetime.utcnow)
 class Exam(db.Model):
  id=db.Column(db.Integer,primary_key=True); protocol=db.Column(db.String(30),unique=True); patient=db.Column(db.String(120)); sex=db.Column(db.String(20)); birth=db.Column(db.String(20)); dentist=db.Column(db.String(120)); exam_date=db.Column(db.String(20)); exam_type=db.Column(db.String(100)); observation=db.Column(db.String(500)); priority=db.Column(db.String(20),default="NORMAL"); contracted_amount=db.Column(db.Float); status=db.Column(db.String(50),default="Enviado"); clinic_id=db.Column(db.Integer); due_at=db.Column(db.DateTime); report=db.Column(db.Text,default=""); released_at=db.Column(db.DateTime); signed_by=db.Column(db.String(120)); signed_at=db.Column(db.DateTime); created_at=db.Column(db.DateTime,default=datetime.utcnow)
 class ExamFile(db.Model):
@@ -646,16 +648,11 @@ def report_model():
     flash("A logomarca deve estar em JPG ou PNG."); return redirect("/modelo-laudo")
    scan_status,scan_detail=malware_scan(logo,logo_name)
    if scan_status in {"SUSPEITO","INFECTADO"}:
-    flash("SUSPEITO/INFECTADO — a logomarca foi bloqueada e não foi armazenada.")
-    return redirect("/modelo-laudo")
+    flash("SUSPEITO/INFECTADO — a logomarca foi bloqueada e não foi armazenada."); return redirect("/modelo-laudo")
    if scan_status=="ERRO" and MALWARE_SCAN_REQUIRED:
-    flash("A varredura de segurança está indisponível. O arquivo não foi armazenado.")
-    return redirect("/modelo-laudo")
-   logo_stored="logo_"+str(u.id)+"_"+uuid.uuid4().hex+logo_ext
-   store_upload(logo,logo_stored,logo.mimetype)
-   old_logo=u.logo
-   u.logo=logo_stored; u.logo_name=logo_name
-   db.session.commit()
+    flash("A varredura de segurança está indisponível. O arquivo não foi armazenado."); return redirect("/modelo-laudo")
+   stored="logo_"+str(u.id)+"_"+uuid.uuid4().hex+logo_ext; store_upload(logo,stored,logo.mimetype)
+   old_logo=u.logo; u.logo=stored; u.logo_name=logo_name; db.session.commit()
    if old_logo:
     try: storage_delete(old_logo)
     except Exception: pass
@@ -666,23 +663,48 @@ def report_model():
    if ext not in {".pdf",".docx",".jpg",".jpeg",".png"}: flash("Use PDF, DOCX, JPG ou PNG."); return redirect("/modelo-laudo")
    scan_status,scan_detail=malware_scan(file,name)
    if scan_status in {"SUSPEITO","INFECTADO"}:
-    flash("SUSPEITO/INFECTADO — o modelo de laudo foi bloqueado e não foi armazenado.")
-    return redirect("/modelo-laudo")
+    flash("SUSPEITO/INFECTADO — o modelo de laudo foi bloqueado e não foi armazenado."); return redirect("/modelo-laudo")
    if scan_status=="ERRO" and MALWARE_SCAN_REQUIRED:
-    flash("A varredura de segurança está indisponível. O arquivo não foi armazenado.")
-    return redirect("/modelo-laudo")
-   stored="modelo_"+str(u.id)+"_"+uuid.uuid4().hex+ext
-   store_upload(file,stored,file.mimetype)
-   old_model=u.report_model
-   u.report_model=stored; u.report_model_name=name; db.session.commit()
-   if old_model:
-    try: storage_delete(old_model)
-    except Exception: pass
-   flash("Modelo personalizado da clínica salvo após varredura de segurança.")
+    flash("A varredura de segurança está indisponível. O arquivo não foi armazenado."); return redirect("/modelo-laudo")
+   stored="modelo_"+str(u.id)+"_"+uuid.uuid4().hex+ext; store_upload(file,stored,file.mimetype)
+   item=ReportModel(clinic_id=u.id,name=name,stored=stored); db.session.add(item)
+   if not u.report_model:
+    u.report_model=stored; u.report_model_name=name
+   db.session.commit(); flash("Novo modelo de laudo anexado.")
+  else: db.session.commit()
   return redirect("/modelo-laudo")
- current=(f"<p><b>Modelo atual:</b> {html_escape(u.report_model_name or '')}</p><a class='btn' href='/modelo-laudo/arquivo' target='_blank'>Visualizar modelo</a>" if u.report_model else "<div class='notice'>Nenhum modelo personalizado cadastrado.</div>")
- body=f"""<h1>Identidade visual / Modelo de laudo</h1><div class='card'><p>Cadastre a identidade visual da clínica e o modelo personalizado que servirá de referência para os laudos.</p>{("<p><b>Logomarca atual:</b> "+html_escape(u.logo_name or "")+"</p>") if u.logo else "<div class='notice'>Nenhuma logomarca cadastrada.</div>"}{current}<form method='post' enctype='multipart/form-data'>{csrf_field()}<label>Logomarca da clínica (JPG ou PNG)<input type='file' name='logo' accept='.jpg,.jpeg,.png,image/jpeg,image/png'></label><label>Modelo personalizado (PDF, DOCX, JPG ou PNG)<input type='file' name='report_model' accept='.pdf,.docx,.jpg,.jpeg,.png,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png'></label><div class='grid'><label>Margem superior do conteúdo (mm)<input type='number' name='report_top_mm' min='20' max='120' value='{u.report_top_mm or 72}'></label><label>Margem inferior (mm)<input type='number' name='report_bottom_mm' min='15' max='100' value='{u.report_bottom_mm or 42}'></label></div><p class='muted'>Ajuste estes valores quando o papel timbrado tiver cabeçalho ou rodapé maiores.</p><button class='gold' type='submit'>Salvar modelo e posicionamento</button></form></div>"""
+ models=ReportModel.query.filter_by(clinic_id=u.id).order_by(ReportModel.created_at.desc()).all()
+ if u.report_model and not any(x.stored==u.report_model for x in models):
+  legacy=ReportModel(clinic_id=u.id,name=u.report_model_name or "Modelo atual",stored=u.report_model); db.session.add(legacy); db.session.commit(); models.insert(0,legacy)
+ rows=""
+ for m in models:
+  active=(m.stored==u.report_model)
+  rows+=f"<tr><td>{html_escape(m.name)}</td><td>{'<span class=badge>Em uso</span>' if active else ''}</td><td><a class='btn' href='/modelo-laudo/arquivo?model={m.id}' target='_blank'>Visualizar</a>{'' if active else f'<form method=post action=/modelo-laudo/{m.id}/usar style=display:inline>{csrf_field()}<button type=submit>Usar este modelo</button></form>'}<form method=post action=/modelo-laudo/{m.id}/excluir style=display:inline onsubmit=\"return confirm('Excluir este modelo de laudo?')\">{csrf_field()}<button type=submit style='background:#b42318'>Excluir</button></form></td></tr>"
+ models_html=f"<table><tr><th>Modelo</th><th>Status</th><th>Ação</th></tr>{rows}</table>" if rows else "<div class='notice'>Nenhum modelo cadastrado.</div>"
+ body=f"""<h1>Identidade visual / Modelos de laudo</h1><div class='card'><p>Cadastre a identidade visual da clínica e mantenha vários modelos de laudo. O modelo marcado como <b>Em uso</b> será aplicado aos novos laudos.</p>{("<p><b>Logomarca atual:</b> "+html_escape(u.logo_name or "")+"</p>") if u.logo else "<div class='notice'>Nenhuma logomarca cadastrada.</div>"}<h3>Modelos cadastrados</h3>{models_html}<hr><form method='post' enctype='multipart/form-data'>{csrf_field()}<label>Trocar logomarca da clínica (JPG ou PNG)<input type='file' name='logo' accept='.jpg,.jpeg,.png,image/jpeg,image/png'></label><label>Anexar outro modelo (PDF, DOCX, JPG ou PNG)<input type='file' name='report_model' accept='.pdf,.docx,.jpg,.jpeg,.png,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png'></label><div class='grid'><label>Margem superior do conteúdo (mm)<input type='number' name='report_top_mm' min='20' max='120' value='{u.report_top_mm or 72}'></label><label>Margem inferior (mm)<input type='number' name='report_bottom_mm' min='15' max='100' value='{u.report_bottom_mm or 42}'></label></div><p class='muted'>Ajuste estes valores quando o papel timbrado tiver cabeçalho ou rodapé maiores.</p><button class='gold' type='submit'>Salvar / anexar modelo</button></form></div>"""
  return page(body)
+
+@app.post("/modelo-laudo/<int:mid>/usar")
+def use_report_model(mid):
+ if session.get("role")!="Clinica": return redirect("/dashboard")
+ u=User.query.get_or_404(session["uid"]); item=ReportModel.query.filter_by(id=mid,clinic_id=u.id).first_or_404()
+ u.report_model=item.stored; u.report_model_name=item.name; db.session.commit(); flash("Modelo de laudo selecionado.")
+ return redirect("/modelo-laudo")
+
+@app.post("/modelo-laudo/<int:mid>/excluir")
+def delete_report_model(mid):
+ if session.get("role")!="Clinica": return redirect("/dashboard")
+ u=User.query.get_or_404(session["uid"]); item=ReportModel.query.filter_by(id=mid,clinic_id=u.id).first_or_404()
+ was_active=(u.report_model==item.stored); stored=item.stored
+ db.session.delete(item)
+ if was_active:
+  replacement=ReportModel.query.filter(ReportModel.clinic_id==u.id,ReportModel.id!=item.id).order_by(ReportModel.created_at.desc()).first()
+  u.report_model=replacement.stored if replacement else None; u.report_model_name=replacement.name if replacement else None
+ db.session.commit()
+ try: storage_delete(stored)
+ except Exception: pass
+ flash("Modelo excluído."+(" Outro modelo foi selecionado automaticamente." if was_active and u.report_model else ""))
+ return redirect("/modelo-laudo")
 
 @app.route("/modelo-laudo/arquivo")
 def report_model_file():
@@ -692,14 +714,15 @@ def report_model_file():
   eid=request.args.get("exam",type=int)
   if not eid: return redirect("/dashboard")
   e=Exam.query.get_or_404(eid); uid=e.clinic_id
- elif session.get("role")!="Clinica":
-  return redirect("/")
- u=User.query.get_or_404(uid)
- if not u.report_model: return redirect("/dashboard")
- if not storage_exists(u.report_model):
-  flash("O modelo de laudo não está disponível no armazenamento atual. Envie o modelo novamente.")
-  return redirect("/modelo-laudo" if session.get("role")=="Clinica" else "/dashboard")
- return storage_response(u.report_model,u.report_model_name,False)
+ elif session.get("role")!="Clinica": return redirect("/")
+ u=User.query.get_or_404(uid); stored=u.report_model; name=u.report_model_name
+ mid=request.args.get("model",type=int)
+ if mid and session.get("role")=="Clinica":
+  item=ReportModel.query.filter_by(id=mid,clinic_id=u.id).first_or_404(); stored=item.stored; name=item.name
+ if not stored: return redirect("/dashboard")
+ if not storage_exists(stored):
+  flash("O modelo de laudo não está disponível no armazenamento atual."); return redirect("/modelo-laudo" if session.get("role")=="Clinica" else "/dashboard")
+ return storage_response(stored,name,False)
 
 @app.post("/new/direct-upload-url")
 def direct_upload_url():
