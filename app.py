@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 import time
 from pathlib import Path
 import os, uuid, io, secrets, zipfile
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 import boto3
 import requests
 
@@ -30,6 +31,7 @@ app.config["SESSION_COOKIE_HTTPONLY"]=True
 app.config["SESSION_COOKIE_SAMESITE"]="Lax"
 app.config["SESSION_COOKIE_SECURE"]=APP_ENV=="production"
 app.config["PERMANENT_SESSION_LIFETIME"]=timedelta(hours=8)
+DIRECT_UPLOAD_SIGNER=URLSafeTimedSerializer(app.config["SECRET_KEY"],salt="malibub-direct-upload-v2")
 db=SQLAlchemy(app)
 UPLOAD=Path(app.instance_path)/"uploads"; UPLOAD.mkdir(parents=True,exist_ok=True)
 R2_BUCKET=os.getenv("R2_BUCKET","")
@@ -676,18 +678,28 @@ def direct_upload_url():
  name=secure_filename(str(data.get("name","")))
  content_type=str(data.get("content_type") or "application/octet-stream")[:120]
  if not name or Path(name).suffix.lower() not in {".jpg",".jpeg",".png",".pdf",".dcm",".zip",".rar"}: return {"error":"invalid_file"},400
- key="exames/"+uuid.uuid4().hex+"_"+name
- pending=session.get("_pending_direct_uploads",{})
- now=int(time.time())
- pending={k:v for k,v in pending.items() if isinstance(v,dict) and now-int(v.get("created",0))<1800}
  upload_kind=str(data.get("kind","exam")).strip().lower()
  if upload_kind not in {"exam","request"}: return {"error":"invalid_kind"},400
  if upload_kind=="request" and Path(name).suffix.lower() not in {".jpg",".jpeg",".png",".pdf"}: return {"error":"invalid_request_file"},400
- pending[key]={"name":name,"created":now,"kind":upload_kind}
- session["_pending_direct_uploads"]=pending
+ key="exames/"+uuid.uuid4().hex+"_"+name
+ grant=DIRECT_UPLOAD_SIGNER.dumps({"key":key,"name":name,"kind":upload_kind,"uid":session["uid"]})
  url=r2_client().generate_presigned_url("put_object",Params={"Bucket":R2_BUCKET,"Key":key,"ContentType":content_type},ExpiresIn=900)
  app.logger.warning("DIRECT_UPLOAD_URL_OK")
- return {"key":key,"url":url,"content_type":content_type},200
+ return {"key":key,"url":url,"content_type":content_type,"grant":grant},200
+
+def verify_direct_upload_grant(item,expected_kind):
+ key=str(item.get("key","")); name=secure_filename(str(item.get("name",""))); token=str(item.get("grant",""))
+ if not key or not name or not token: raise ValueError("missing upload grant")
+ try:
+  grant=DIRECT_UPLOAD_SIGNER.loads(token,max_age=1800)
+ except (BadSignature,SignatureExpired) as exc:
+  raise ValueError("invalid upload grant") from exc
+ if grant.get("key")!=key or grant.get("name")!=name or grant.get("kind")!=expected_kind or grant.get("uid")!=session.get("uid"):
+  raise ValueError("upload grant mismatch")
+ if expected_kind=="request" and Path(name).suffix.lower() not in {".jpg",".jpeg",".png",".pdf"}:
+  raise ValueError("invalid request file")
+ r2_client().head_object(Bucket=R2_BUCKET,Key=key)
+ return key,name
 
 @app.post("/new/direct-finalize")
 def direct_upload_finalize():
@@ -698,27 +710,17 @@ def direct_upload_finalize():
  price=ClinicPrice.query.filter_by(clinic_id=session["uid"],exam_type=exam_type,active=True).first()
  if not price: return {"error":"invalid_exam_type"},400
  if priority not in {"NORMAL","URG"}: return {"error":"invalid_priority"},400
- verified=[]; pending=session.get("_pending_direct_uploads",{}); now=int(time.time())
  try:
-  for item in files:
-   key=str(item.get("key","")); name=secure_filename(str(item.get("name",""))); grant=pending.get(key)
-   if not key or not name or not isinstance(grant,dict) or grant.get("name")!=name or grant.get("kind","exam")!="exam" or now-int(grant.get("created",0))>1800: raise ValueError("invalid upload grant")
-   r2_client().head_object(Bucket=R2_BUCKET,Key=key); verified.append((key,name))
-  verified_requests=[]
-  for item in request_files:
-   request_key=str(item.get("key","")); request_name=secure_filename(str(item.get("name",""))); request_grant=pending.get(request_key)
-   if not request_key or not request_name or Path(request_name).suffix.lower() not in {".jpg",".jpeg",".png",".pdf"} or not isinstance(request_grant,dict) or request_grant.get("name")!=request_name or request_grant.get("kind")!="request" or now-int(request_grant.get("created",0))>1800: raise ValueError("invalid request grant")
-   r2_client().head_object(Bucket=R2_BUCKET,Key=request_key); verified_requests.append((request_key,request_name))
+  verified=[verify_direct_upload_grant(item,"exam") for item in files]
+  verified_requests=[verify_direct_upload_grant(item,"request") for item in request_files]
   e=Exam(protocol="MB"+datetime.now().strftime("%y%m%d%H%M%S"),patient=patient,sex=str(data.get("sex","Não informado")).strip(),birth=str(data.get("birth",""))[:20],dentist=dentist,exam_date=str(data.get("exam_date",""))[:20],exam_type=exam_type,observation=str(data.get("observation","")).strip()[:500],priority=priority,contracted_amount=round(price.amount*(1.5 if priority=="URG" else 1.0),2),clinic_id=session["uid"],status="Aguardando laudo",due_at=(datetime.utcnow()+timedelta(hours=24) if priority=="URG" else add_business_days_utc(datetime.utcnow(),2)))
   db.session.add(e); db.session.flush()
   for key,name in verified: db.session.add(ExamFile(exam_id=e.id,name=name,stored=key,scan_status="NAO_VERIFICADO",scan_detail="Verificação antivírus opcional pela radiologista."))
   for request_key,request_name in verified_requests:
    db.session.add(ExamFile(exam_id=e.id,name=request_name,stored=request_key,kind="requisicao",scan_status="NAO_VERIFICADO",scan_detail="Requisição/pedido do dentista."))
   db.session.commit()
-  for key,_ in verified: pending.pop(key,None)
-  for request_key,_ in verified_requests: pending.pop(request_key,None)
-  session["_pending_direct_uploads"]=pending
-  app.logger.warning("DIRECT_UPLOAD_FINALIZE_OK file_count=%s",len(verified))
+  session.pop("_pending_direct_uploads",None)
+  app.logger.warning("DIRECT_UPLOAD_FINALIZE_OK file_count=%s request_count=%s",len(verified),len(verified_requests))
   return {"status":"ok","redirect":"/dashboard"},200
  except Exception as exc:
   db.session.rollback(); app.logger.error("direct_upload_finalize_failed error_type=%s",type(exc).__name__); return {"error":"finalize_failed"},500
@@ -832,14 +834,14 @@ def new():
    for(let ri=0;ri<selectedRequests.length;ri++){{
     const req=selectedRequests[ri];requestStatus.textContent="Enviando requisição "+(ri+1)+" de "+selectedRequests.length+"...";
     const ra=await fetch("/new/direct-upload-url",{{method:"POST",headers:{{"Content-Type":"application/json","X-CSRF-Token":csrf}},body:JSON.stringify({{name:req.name,content_type:req.type||"application/octet-stream",kind:"request"}})}});if(!ra.ok)throw new Error("request_auth");const rs=await ra.json();
-    const rp=await fetch(rs.url,{{method:"PUT",headers:{{"Content-Type":rs.content_type}},body:req}});if(!rp.ok)throw new Error("request_put");requestFiles.push({{key:rs.key,name:req.name}});
+    const rp=await fetch(rs.url,{{method:"PUT",headers:{{"Content-Type":rs.content_type}},body:req}});if(!rp.ok)throw new Error("request_put");requestFiles.push({{key:rs.key,name:req.name,grant:rs.grant}});
    }}
    requestStatus.textContent=selectedRequests.length+" arquivo(s) da requisição enviado(s).";
    const uploaded=[];
    for(let i=0;i<selected.length;i++){{
     const file=selected[i].file;box.textContent="Enviando arquivo "+(i+1)+" de "+selected.length+" • "+fmt(file.size);
     const a=await fetch("/new/direct-upload-url",{{method:"POST",headers:{{"Content-Type":"application/json","X-CSRF-Token":csrf}},body:JSON.stringify({{name:file.name,content_type:file.type||"application/octet-stream",kind:"exam"}})}});if(!a.ok)throw new Error("auth");const s=await a.json();
-    const p=await fetch(s.url,{{method:"PUT",headers:{{"Content-Type":s.content_type}},body:file}});if(!p.ok)throw new Error("put");uploaded.push({{key:s.key,name:file.name}});
+    const p=await fetch(s.url,{{method:"PUT",headers:{{"Content-Type":s.content_type}},body:file}});if(!p.ok)throw new Error("put");uploaded.push({{key:s.key,name:file.name,grant:s.grant}});
    }}
    box.textContent="Finalizando envio...";const fd=new FormData(form),payload={{files:uploaded,request_files:requestFiles}};["patient","sex","birth","dentist","exam_date","exam_type","priority","observation"].forEach(k=>payload[k]=fd.get(k)||"");
    const d=await fetch("/new/direct-finalize",{{method:"POST",headers:{{"Content-Type":"application/json","X-CSRF-Token":csrf}},body:JSON.stringify(payload)}});if(!d.ok)throw new Error("finalize");const r=await d.json();location.href=r.redirect||"/dashboard";
