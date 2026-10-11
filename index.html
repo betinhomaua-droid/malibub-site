@@ -42,6 +42,21 @@
 .privacy-banner{max-width:620px;left:16px;right:auto;bottom:16px;padding:11px 13px;gap:12px;font-size:12px}
 .privacy-banner p{max-width:380px}.privacy-actions a,.privacy-actions button{padding:8px 10px}
 @media(max-width:700px){.seo-section{padding:0 15px;margin:24px auto 35px}.seo-grid{grid-template-columns:1fr;gap:12px}.seo-intro,.seo-card,.seo-faq{padding:19px 17px}.privacy-banner{left:10px;right:10px;bottom:66px;max-width:none;font-size:12px}.privacy-actions{margin-top:10px}}
+
+/* Mobile: ações legíveis sem alterar a arte principal */
+.mobile-hero{display:none}
+@media(max-width:700px){
+.mobile-hero{display:block;margin:0 14px 10px;padding:18px 17px 20px;border-radius:17px;background:linear-gradient(130deg,#eff9ff,#fff);border:1px solid #d5eaf5;color:#194966;line-height:1.5}
+.mobile-hero h2{font-size:21px;line-height:1.25;color:#08669b;margin:0 0 9px}
+.mobile-hero p{font-size:14px;margin:0 0 14px}
+.mobile-hero-actions{display:flex;flex-wrap:wrap;gap:9px}
+.mobile-hero-actions a{display:inline-flex;align-items:center;justify-content:center;padding:12px 15px;border-radius:10px;font-weight:700;font-size:14px;text-decoration:none;background:#087eae;color:#fff;min-height:44px}
+.mobile-hero-actions a.secondary{background:#fff;color:#08669b;border:1px solid #90cbe6}
+.privacy-banner{left:10px;right:10px;bottom:10px;max-width:none;padding:10px 12px;font-size:11px;box-shadow:0 3px 15px rgba(0,0,0,.12)}
+.privacy-banner p{max-width:none}
+.privacy-actions{margin-top:8px;gap:7px}
+.privacy-actions a,.privacy-actions button{font-size:11px;padding:8px 10px}
+}
 </style></head><body>
 <div class="page">
 <img class="art" src="assets/layout-malibub.png" alt="MALIBUB Imaginologia Odontológica — serviços, como funciona e Dra. Marina Linhares">
@@ -49,6 +64,11 @@
 <a class="hotspot learn" href="https://www.instagram.com/radiologiamalibub" target="_blank" rel="noopener noreferrer" aria-label="Conhecer nossos serviços no Instagram da MALIBUB"></a>
 <a class="hotspot platform" id="plataforma" href="https://portal.malibub.com.br/" aria-label="Acessar plataforma"></a>
 </div>
+<section class="mobile-hero" aria-label="Acesso rápido aos serviços MALIBUB">
+<h2>Laudos de radiologia odontológica</h2>
+<p>Envie exames de tomografia Cone Beam e outras imagens odontológicas pela plataforma MALIBUB.</p>
+<div class="mobile-hero-actions"><a href="https://portal.malibub.com.br/">Enviar exame</a><a class="secondary" href="https://www.instagram.com/radiologiamalibub/" target="_blank" rel="noopener noreferrer">Conhecer serviços</a></div>
+</section>
 <section class="seo-section" aria-label="Informações sobre os serviços MALIBUB">
 <div class="seo-intro">
 <h1>Laudos e interpretação de imagens em radiologia odontológica</h1>
