@@ -1224,7 +1224,7 @@ def result_pdf(eid):
   try:
    bg=Image(str(model_path)); bg._restrictSize(170*mm,48*mm); story += [bg,Spacer(1,4*mm)]
   except Exception: pass
- if not story and not has_pdf_model: story=[Paragraph("MALIBUB",title),Paragraph("Imaginologia Odontológica",ParagraphStyle("s",parent=styles["Normal"],alignment=TA_CENTER,textColor=teal,fontSize=10)),Spacer(1,6*mm)]
+ if not story and not has_pdf_model:\n  clinic_title=escape((clinic.name if clinic and clinic.name else "Clínica solicitante"))\n  story=[Paragraph(clinic_title,title),Spacer(1,6*mm)]
  if not has_pdf_model:
   data=[["Protocolo",escape(e.protocol or "")],["Paciente",escape(e.patient or "")],["Sexo",escape(e.sex or "Não informado")],["Data de nascimento",escape(br_date(e.birth))],["Exame",escape(e.exam_type or "")],["Dentista solicitante",escape(e.dentist or "")],["Data do exame",escape(br_date(e.exam_date))]]
   t=Table(data,colWidths=[42*mm,120*mm]); t.setStyle(TableStyle([("GRID",(0,0),(-1,-1),.4,colors.HexColor("#DCE8EC")),("BACKGROUND",(0,0),(0,-1),colors.HexColor("#F1F6F7")),("FONTNAME",(0,0),(0,-1),"Helvetica-Bold"),("FONTSIZE",(0,0),(-1,-1),9),("PADDING",(0,0),(-1,-1),6)])); story += [t,Spacer(1,7*mm),Paragraph("LAUDO RADIOLÓGICO",ParagraphStyle("h",parent=title,alignment=0,fontSize=12,textColor=navy)),Spacer(1,2*mm)]
