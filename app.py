@@ -1161,7 +1161,7 @@ def result_pdf(eid):
    c.saveState()
    try:
     c.setFillColor(colors.HexColor("#41499A"))
-    p=c.beginPath(); sw=38*mm; sh=sw*256/600; x0=(W-sw)/2; y0=20*mm
+    p=c.beginPath(); sw=23*mm; sh=sw*256/600; x0=(W-sw)/2; y0=20*mm
     for contour in signature_paths:
      for i,xy in enumerate(contour.split()):
       x,y=map(int,xy.split(",")); px=x0+x*sw/600; py=y0+(256-y)*sh/256
