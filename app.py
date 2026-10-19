@@ -1284,7 +1284,7 @@ def result_pdf(eid):
     draw_report_signature(self.canv,self.width,baseline=2*mm)
   signature_block=[
    InlineReportSignature(),
-   Spacer(1,1*mm),
+   Spacer(1,-2*mm),
    Paragraph(f"<b>{signer}</b>",ParagraphStyle("sig",parent=body,alignment=TA_CENTER,textColor=navy)),
    Paragraph("Radiologista responsável · CRO-SP 113752",ParagraphStyle("sig2",parent=styles["Normal"],alignment=TA_CENTER,fontSize=8,textColor=colors.HexColor("#657F89"))),
    Spacer(1,3*mm),
