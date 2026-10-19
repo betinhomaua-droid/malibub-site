@@ -575,7 +575,7 @@ def dashboard():
    due=e.due_at or datetime.max
    return (due,0 if (e.priority or "NORMAL")=="URG" else 1,e.created_at or datetime.max)
   pending_exams=sorted([e for e in exams if e.status!="Liberado"],key=pending_sort_key)
-  completed_exams=sorted([e for e in exams if e.status=="Liberado"],key=lambda e:e.created_at or datetime.min,reverse=True)
+  completed_exams=sorted([e for e in exams if e.status=="Liberado"],key=lambda e:(e.released_at or e.created_at or datetime.min,e.id or 0),reverse=True)
   exams=pending_exams+completed_exams
  clinics={}
  if is_radiologist:
