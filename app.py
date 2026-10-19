@@ -1171,9 +1171,11 @@ def result_pdf(eid):
   signed=brasilia_stamp(e.signed_at or e.released_at)
   W,H=A4
   from reportlab.platypus import Flowable
-  class LastPageSignature(Flowable):
-   def __init__(self): super().__init__(); self.width=1; self.height=1
-   def draw(self): self.canv._malibub_signature_last=True
+  class TMJInlineSignature(Flowable):
+   def __init__(self):
+    super().__init__(); self.width=W-44*mm; self.height=13*mm
+   def draw(self):
+    draw_report_signature(self.canv,self.width,baseline=0)
   def tmj_header_footer(canv,docobj):
    canv.saveState()
    navy=colors.HexColor("#06394C"); teal=colors.HexColor("#087B9B"); gold=colors.HexColor("#C99B3B")
@@ -1204,9 +1206,7 @@ def result_pdf(eid):
    canv.restoreState()
   frame=Frame(22*mm,46*mm,W-44*mm,H-107*mm,leftPadding=0,rightPadding=0,topPadding=0,bottomPadding=0,id="tmj_body")
   tdoc=BaseDocTemplate(buf,pagesize=A4,leftMargin=22*mm,rightMargin=22*mm,topMargin=61*mm,bottomMargin=46*mm,title=f"{e.protocol} - Laudo TMJ",author="MALIBUB Imaginologia Odontológica")
-  def tmj_last_page_footer(canv,docobj):
-   if getattr(canv,"_malibub_signature_last",False): draw_report_signature(canv,W)
-  tdoc.addPageTemplates(PageTemplate(id="TMJ",frames=[frame],onPage=tmj_header_footer,onPageEnd=tmj_last_page_footer))
+  tdoc.addPageTemplates(PageTemplate(id="TMJ",frames=[frame],onPage=tmj_header_footer))
   normal=ParagraphStyle("tmjn",fontName="Helvetica",fontSize=9.2,leading=14,spaceAfter=4,textColor=colors.black)
   bold=ParagraphStyle("tmjb",parent=normal,fontName="Helvetica-Bold")
   center=ParagraphStyle("tmjc",parent=bold,alignment=TA_CENTER,fontSize=10,leading=13,spaceAfter=9)
@@ -1231,7 +1231,16 @@ def result_pdf(eid):
    Paragraph("“Há dados do paciente que somente o profissional solicitante do exame possui, confirmando ou não a interpretação das imagens pelo radiologista”",italic),
    Spacer(1,3*mm)
   ]
-  story_tmj.append(LastPageSignature())
+  tmj_signature_style=ParagraphStyle("tmj_signer",parent=normal,alignment=TA_CENTER,fontName="Helvetica-Bold",fontSize=10,leading=12,spaceAfter=2)
+  tmj_sub_style=ParagraphStyle("tmj_sub",parent=normal,alignment=TA_CENTER,fontSize=8,leading=11,textColor=colors.HexColor("#657F89"),spaceAfter=1)
+  story_tmj.append(KeepTogether([
+   Spacer(1,7*mm),TMJInlineSignature(),
+   Paragraph("Dra. Marina L. Bub",tmj_signature_style),
+   Paragraph("Radiologista responsável · CRO-SP 113752",tmj_sub_style),
+   Spacer(1,3*mm),
+   Paragraph(f"Assinado eletronicamente em {escape(signed)}",tmj_sub_style),
+   Paragraph(f"Validação MALIBUB · Protocolo {escape(e.protocol or '')}",tmj_sub_style)
+  ]))
   tdoc.build(story_tmj)
   buf.seek(0)
   return send_file(buf,mimetype="application/pdf",as_attachment=True,download_name=f"{e.protocol}_laudo.pdf")
