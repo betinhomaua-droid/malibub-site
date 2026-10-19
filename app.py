@@ -1155,7 +1155,27 @@ def result_pdf(eid):
   from xml.sax.saxutils import escape
   signed=brasilia_stamp(e.signed_at or e.released_at)
   W,H=A4
+  # Assinatura vetorial extraída da imagem original. Sem dependência de Base64.
+  signature_paths=["599,10 590,1 574,0 550,12 533,28 523,43 521,56 528,75 539,89 504,118 496,120 493,116 508,82 508,74 499,71 438,118 424,125 422,119 434,96 432,88 424,89 400,110 394,96 381,92 416,55 418,44 413,40 402,42 377,57 334,97 335,87 330,81 324,81 305,90 296,89 363,22 366,15 363,7 348,6 320,30 295,57 284,84 217,146 203,148 200,139 210,106 244,73 265,44 266,33 263,29 255,27 241,40 208,85 199,102 70,209 31,234 0,244 2,255 31,246 68,224 136,171 191,123 193,124 190,147 195,156 203,159 215,158 235,146 287,97 294,101 305,101 320,95 295,150 296,156 303,158 311,151 340,106 372,75 393,60 395,61 356,101 356,107 360,110 379,103 387,105 388,118 348,151 349,161 360,162 373,158 391,141 396,127 411,115 415,133 425,137 450,123 488,93 490,94 483,109 483,120 491,130 504,130 515,124 549,95 577,112 581,118 569,126 544,133 544,143 569,138 589,126 592,113 584,103 556,85 594,35 599,23","587,12 589,19 579,38 549,77 545,78 533,60 534,46 562,17 579,10"]
+  def draw_signature(c):
+   c.saveState()
+   try:
+    c.setFillColor(colors.HexColor("#41499A"))
+    p=c.beginPath(); sw=74*mm; sh=sw*256/600; x0=(W-sw)/2; y0=21*mm
+    for contour in signature_paths:
+     for i,xy in enumerate(contour.split()):
+      x,y=map(int,xy.split(",")); px=x0+x*sw/600; py=y0+(256-y)*sh/256
+      if i==0: p.moveTo(px,py)
+      else: p.lineTo(px,py)
+     p.close()
+    c.drawPath(p,stroke=0,fill=1,fillMode=0)
+   finally: c.restoreState()
+  from reportlab.platypus import Flowable
+  class LastPageSignature(Flowable):
+   def __init__(self): super().__init__(); self.width=1; self.height=1
+   def draw(self): self.canv._malibub_signature_last=True
   def tmj_header_footer(canv,docobj):
+   if getattr(canv,'_malibub_signature_last',False): draw_signature(canv)
    canv.saveState()
    navy=colors.HexColor("#06394C"); teal=colors.HexColor("#087B9B"); gold=colors.HexColor("#C99B3B")
    # Cabeçalho clínico discreto; a marca MALIBUB fica no fechamento do documento.
@@ -1183,8 +1203,8 @@ def result_pdf(eid):
    canv.setFillColor(colors.HexColor("#7B8C93")); canv.setFont("Helvetica",6.5)
    canv.drawRightString(W-22*mm,7*mm,f"Página {docobj.page}")
    canv.restoreState()
-  frame=Frame(22*mm,23*mm,W-44*mm,H-84*mm,leftPadding=0,rightPadding=0,topPadding=0,bottomPadding=0,id="tmj_body")
-  tdoc=BaseDocTemplate(buf,pagesize=A4,leftMargin=22*mm,rightMargin=22*mm,topMargin=61*mm,bottomMargin=23*mm,title=f"{e.protocol} - Laudo TMJ",author="MALIBUB Imaginologia Odontológica")
+  frame=Frame(22*mm,46*mm,W-44*mm,H-107*mm,leftPadding=0,rightPadding=0,topPadding=0,bottomPadding=0,id="tmj_body")
+  tdoc=BaseDocTemplate(buf,pagesize=A4,leftMargin=22*mm,rightMargin=22*mm,topMargin=61*mm,bottomMargin=46*mm,title=f"{e.protocol} - Laudo TMJ",author="MALIBUB Imaginologia Odontológica")
   tdoc.addPageTemplates(PageTemplate(id="TMJ",frames=[frame],onPage=tmj_header_footer))
   normal=ParagraphStyle("tmjn",fontName="Helvetica",fontSize=9.2,leading=14,spaceAfter=4,textColor=colors.black)
   bold=ParagraphStyle("tmjb",parent=normal,fontName="Helvetica-Bold")
@@ -1210,6 +1230,7 @@ def result_pdf(eid):
    Paragraph("“Há dados do paciente que somente o profissional solicitante do exame possui, confirmando ou não a interpretação das imagens pelo radiologista”",italic),
    Spacer(1,3*mm)
   ]
+  story_tmj.append(LastPageSignature())
   tdoc.build(story_tmj)
   buf.seek(0)
   return send_file(buf,mimetype="application/pdf",as_attachment=True,download_name=f"{e.protocol}_laudo.pdf")
