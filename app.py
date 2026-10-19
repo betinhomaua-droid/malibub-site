@@ -1276,27 +1276,24 @@ def result_pdf(eid):
   for line in (e.report or "").splitlines(): story.append(Paragraph(escape(line) or "&nbsp;",body))
  signer=escape(e.signed_by or "Dra. Marina"); signed=brasilia_stamp(e.signed_at or e.released_at)
  if not has_pdf_model:
-  story += [Spacer(1,8*mm),Paragraph(f"<b>{signer}</b>",ParagraphStyle("sig",parent=body,alignment=TA_CENTER,textColor=navy)),Paragraph("Radiologista responsável",ParagraphStyle("sig2",parent=styles["Normal"],alignment=TA_CENTER,fontSize=8,textColor=colors.HexColor("#657F89"))),Spacer(1,3*mm),Paragraph(f"Assinado eletronicamente em {escape(signed)}",ParagraphStyle("f",parent=styles["Normal"],fontSize=8,textColor=colors.HexColor("#657F89"))),Paragraph(f"Validação MALIBUB · Protocolo {escape(e.protocol or '')}",ParagraphStyle("f3",parent=styles["Normal"],fontSize=7.5,textColor=colors.HexColor("#657F89"))),Spacer(1,2*mm),Paragraph((escape(clinic.name)+" · MALIBUB Imaginologia Odontológica") if clinic else "MALIBUB Imaginologia Odontológica",ParagraphStyle("f2",parent=styles["Normal"],fontSize=8,textColor=gold))]
- else:
-  # No modelo personalizado, a confirmação da assinatura é aplicada depois,
-  # como rodapé fixo em todas as páginas do PDF final.
-  pass
- if not has_pdf_model:
+  from reportlab.platypus import Flowable, KeepTogether
+  class InlineReportSignature(Flowable):
+   def __init__(self):
+    super().__init__(); self.width=160*mm; self.height=16*mm
+   def draw(self):
+    draw_report_signature(self.canv,self.width,baseline=2*mm)
+  signature_block=[
+   InlineReportSignature(),
+   Spacer(1,1*mm),
+   Paragraph(f"<b>{signer}</b>",ParagraphStyle("sig",parent=body,alignment=TA_CENTER,textColor=navy)),
+   Paragraph("Radiologista responsável · CRO-SP 113752",ParagraphStyle("sig2",parent=styles["Normal"],alignment=TA_CENTER,fontSize=8,textColor=colors.HexColor("#657F89"))),
+   Spacer(1,3*mm),
+   Paragraph(f"Assinado eletronicamente em {escape(signed)}",ParagraphStyle("f",parent=styles["Normal"],fontSize=8,textColor=colors.HexColor("#657F89"))),
+   Paragraph(f"Validação MALIBUB · Protocolo {escape(e.protocol or '')}",ParagraphStyle("f2",parent=styles["Normal"],fontSize=8,textColor=colors.HexColor("#657F89")))
+  ]
+  story += [Spacer(1,6*mm),KeepTogether(signature_block)]
   doc.build(story)
   buf.seek(0)
-  # Assinatura apenas na última página do PDF padrão.
-  from pypdf import PdfReader, PdfWriter
-  from reportlab.pdfgen import canvas
-  reader=PdfReader(buf); writer=PdfWriter()
-  for page_index,page in enumerate(reader.pages):
-   if page_index==len(reader.pages)-1:
-    page_width=float(page.mediabox.width)
-    overlay=io.BytesIO(); cv=canvas.Canvas(overlay,pagesize=(page_width,float(page.mediabox.height)))
-    draw_report_signature(cv,page_width,baseline=24*mm)
-    cv.save(); overlay.seek(0)
-    page.merge_page(PdfReader(overlay).pages[0])
-   writer.add_page(page)
-  signed_pdf=io.BytesIO(); writer.write(signed_pdf); signed_pdf.seek(0); buf=signed_pdf
  # Modelo PDF da clínica: o texto do campo "Laudo radiológico" deve ocupar
  # uma área própria logo após a descrição fixa, sem sobrepor o restante do modelo.
  # Para modelos que já contêm texto fixo abaixo da descrição (ex.: TMJ), o sistema
