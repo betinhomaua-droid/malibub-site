@@ -1281,7 +1281,7 @@ def result_pdf(eid):
    def __init__(self):
     super().__init__(); self.width=160*mm; self.height=16*mm
    def draw(self):
-    draw_report_signature(self.canv,self.width,baseline=2*mm)
+    draw_report_signature(self.canv,self.width,baseline=-2*mm)
   signature_block=[
    InlineReportSignature(),
    Spacer(1,-2*mm),
