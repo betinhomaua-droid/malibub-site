@@ -1143,7 +1143,7 @@ def result_pdf(eid):
  model_name=(clinic.report_model_name or "").lower() if clinic else ""
  # O gerador TMJ reconstruído é permitido somente quando não há PDF ativo.
  # Se a clínica cadastrou um PDF, preservar o arquivo escolhido no fluxo personalizado.
- is_tmj_model=("laudotmj" in model_name or "tmj" in model_name) and not (clinic and clinic.report_model and Path(clinic.report_model).suffix.lower()==".pdf")
+ is_tmj_model=("laudotmj" in model_name or "tmj" in model_name)
  has_pdf_model=bool(clinic and clinic.report_model and Path(clinic.report_model).suffix.lower()==".pdf")
  # O modelo TMJ é reconstruído como documento fluido: o texto digitado no laudo
  # passa a fazer parte do fluxo do documento, empurrando o conteúdo seguinte e
@@ -1214,9 +1214,9 @@ def result_pdf(eid):
   center=ParagraphStyle("tmjc",parent=bold,alignment=TA_CENTER,fontSize=10,leading=13,spaceAfter=9)
   italic=ParagraphStyle("tmji",parent=normal,fontName="Helvetica-Oblique",spaceBefore=5,spaceAfter=7)
   story_tmj=[
-   Paragraph("<u>TOMOGRAFIA COMPUTADORIZADA POR FEIXE CÔNICO DA MANDÍBULA</u>",center),
+   Paragraph("<u>TOMOGRAFIA COMPUTADORIZADA POR FEIXE CÔNICO</u>",center),
    Spacer(1,3*mm),
-   Paragraph("<b>Técnica:</b> Estudo realizado por aquisição volumétrica cone beam da região solicitada, em cortes axiais de 0,12 mm de espessura, paralelos ao rebordo alveolar e sem contraste. Realizadas reformatações panorâmicas e transversais com 2,0mm de distância entre os cortes (pode ser alterado para se obter melhor imagem) e reconstruções em 3D.",normal),
+    Paragraph("<b>Técnica:</b> Estudo realizado por aquisição volumétrica cone beam da região solicitada, em cortes axiais paralelos ao rebordo alveolar e sem contraste. Realizadas reformatações panorâmicas e transversais e reconstruções em 3D.",normal),
    Spacer(1,4*mm),
    Paragraph("<b>Descrição do exame:</b>",bold)
   ]
