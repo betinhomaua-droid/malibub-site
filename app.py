@@ -1163,6 +1163,31 @@ def result_pdf(eid):
     p.close()
    cv.drawPath(p,stroke=0,fill=1,fillMode=0)
   finally: cv.restoreState()
+ def apply_final_footer(pdf_bytes):
+  # Rodapé institucional exclusivamente na última página.
+  from pypdf import PdfReader, PdfWriter
+  from reportlab.pdfgen import canvas
+  reader=PdfReader(io.BytesIO(pdf_bytes)); writer=PdfWriter()
+  total=len(reader.pages)
+  for index,page in enumerate(reader.pages):
+   if index==total-1:
+    width=float(page.mediabox.width); height=float(page.mediabox.height)
+    overlay=io.BytesIO(); cv=canvas.Canvas(overlay,pagesize=(width,height))
+    cv.setStrokeColor(colors.HexColor("#DCE8EC")); cv.line(22*mm,43*mm,width-22*mm,43*mm)
+    draw_report_signature(cv,width,baseline=31*mm)
+    cv.setFillColor(colors.HexColor("#06394C")); cv.setFont("Helvetica-Bold",8.8)
+    cv.drawCentredString(width/2,28*mm,"Dra. Marina L. Bub")
+    cv.setFillColor(colors.HexColor("#52666E")); cv.setFont("Helvetica",7.6)
+    cv.drawCentredString(width/2,24*mm,"Radiologista responsável - CRO-SP 113752")
+    cv.setFillColor(colors.HexColor("#06394C")); cv.setFont("Helvetica-Bold",7.8)
+    cv.drawCentredString(width/2,17*mm,"MALIBUB Imaginologia Odontológica")
+    cv.setFillColor(colors.HexColor("#52666E")); cv.setFont("Helvetica",7.2)
+    cv.drawCentredString(width/2,13*mm,"Assinado eletronicamente por Marina Bub - CRO-SP 113752")
+    cv.setFont("Helvetica",6.8)
+    cv.drawCentredString(width/2,9*mm,f"Data: {brasilia_stamp(e.signed_at or e.released_at)} - Protocolo {e.protocol or ''}")
+    cv.save(); overlay.seek(0); page.merge_page(PdfReader(overlay).pages[0])
+   writer.add_page(page)
+  out=io.BytesIO(); writer.write(out); out.seek(0); return out
  if is_tmj_model:
   from reportlab.platypus import BaseDocTemplate, PageTemplate, Frame, Paragraph, Spacer, KeepTogether
   from reportlab.lib.styles import ParagraphStyle
@@ -1194,20 +1219,9 @@ def result_pdf(eid):
    canv.drawString(22*mm,H-45*mm,f"Dentista solicitante: {e.dentist or ''}")
    canv.setStrokeColor(colors.HexColor("#DCE8EC")); canv.setLineWidth(.5)
    canv.line(22*mm,H-49*mm,W-22*mm,H-49*mm)
-   # Rodapé em três linhas independentes, com área exclusiva.
-   canv.setStrokeColor(colors.HexColor("#DCE8EC")); canv.setLineWidth(.5)
-   canv.line(22*mm,18*mm,W-22*mm,18*mm)
-   canv.setFillColor(navy); canv.setFont("Helvetica-Bold",7.8)
-   canv.drawCentredString(W/2,14*mm,"MALIBUB Imaginologia Odontológica")
-   canv.setFillColor(colors.HexColor("#52666E")); canv.setFont("Helvetica-Bold",7.3)
-   canv.drawCentredString(W/2,10.5*mm,"Assinado eletronicamente por Marina Bub · CROSP 113752")
-   canv.setFont("Helvetica",6.8)
-   canv.drawCentredString(W/2,7*mm,f"Data: {signed} · Protocolo {e.protocol or ''}")
-   canv.setFillColor(colors.HexColor("#7B8C93")); canv.setFont("Helvetica",6.5)
-   canv.drawRightString(W-22*mm,7*mm,f"Página {docobj.page}")
    canv.restoreState()
-  frame=Frame(22*mm,25*mm,W-44*mm,H-86*mm,leftPadding=0,rightPadding=0,topPadding=0,bottomPadding=0,id="tmj_body")
-  tdoc=BaseDocTemplate(buf,pagesize=A4,leftMargin=22*mm,rightMargin=22*mm,topMargin=61*mm,bottomMargin=25*mm,title=f"{e.protocol} - Laudo TMJ",author="MALIBUB Imaginologia Odontológica")
+  frame=Frame(22*mm,48*mm,W-44*mm,H-109*mm,leftPadding=0,rightPadding=0,topPadding=0,bottomPadding=0,id="tmj_body")
+  tdoc=BaseDocTemplate(buf,pagesize=A4,leftMargin=22*mm,rightMargin=22*mm,topMargin=61*mm,bottomMargin=48*mm,title=f"{e.protocol} - Laudo TMJ",author="MALIBUB Imaginologia Odontológica")
   tdoc.addPageTemplates(PageTemplate(id="TMJ",frames=[frame],onPage=tmj_header_footer))
   normal=ParagraphStyle("tmjn",fontName="Helvetica",fontSize=9.2,leading=14,spaceAfter=4,textColor=colors.black)
   bold=ParagraphStyle("tmjb",parent=normal,fontName="Helvetica-Bold")
@@ -1235,13 +1249,8 @@ def result_pdf(eid):
   ]
   tmj_signature_style=ParagraphStyle("tmj_signer",parent=normal,alignment=TA_CENTER,fontName="Helvetica-Bold",fontSize=10,leading=12,spaceAfter=2)
   tmj_sub_style=ParagraphStyle("tmj_sub",parent=normal,alignment=TA_CENTER,fontSize=8,leading=11,textColor=colors.HexColor("#657F89"),spaceAfter=1)
-  story_tmj.append(KeepTogether([
-   Spacer(1,2*mm),TMJInlineSignature(),
-   Paragraph("Dra. Marina L. Bub",tmj_signature_style),
-   Paragraph("Radiologista responsável · CRO-SP 113752",tmj_sub_style)
-  ]))
   tdoc.build(story_tmj)
-  buf.seek(0)
+  buf=apply_final_footer(buf.getvalue())
   return send_file(buf,mimetype="application/pdf",as_attachment=True,download_name=f"{e.protocol}_laudo.pdf")
  doc=SimpleDocTemplate(buf,pagesize=A4,rightMargin=22*mm,leftMargin=22*mm,topMargin=((clinic.report_top_mm or 72)*mm if has_pdf_model else 16*mm),bottomMargin=((clinic.report_bottom_mm or 42)*mm if has_pdf_model else 18*mm),title=f"{e.protocol} - Laudo MALIBUB",author="MALIBUB Imaginologia Odontológica")
  styles=getSampleStyleSheet(); navy=colors.HexColor("#06394C"); teal=colors.HexColor("#087B9B"); gold=colors.HexColor("#C99B3B")
@@ -1284,24 +1293,9 @@ def result_pdf(eid):
   for line in (e.report or "").splitlines(): story.append(Paragraph(escape(line) or "&nbsp;",body))
  signer=escape(e.signed_by or "Dra. Marina"); signed=brasilia_stamp(e.signed_at or e.released_at)
  if not has_pdf_model:
-  from reportlab.platypus import Flowable, KeepTogether
-  class InlineReportSignature(Flowable):
-   def __init__(self):
-    super().__init__(); self.width=160*mm; self.height=16*mm
-   def draw(self):
-    draw_report_signature(self.canv,self.width,baseline=-2*mm)
-  signature_block=[
-   InlineReportSignature(),
-   Spacer(1,-2*mm),
-   Paragraph("<b>Dra. Marina L. Bub</b>",ParagraphStyle("sig",parent=body,alignment=TA_CENTER,textColor=navy)),
-   Paragraph("Radiologista responsável · CRO-SP 113752",ParagraphStyle("sig2",parent=styles["Normal"],alignment=TA_CENTER,fontSize=8,textColor=colors.HexColor("#657F89"))),
-   Spacer(1,3*mm),
-   Paragraph(f"Assinado eletronicamente em {escape(signed)}",ParagraphStyle("f",parent=styles["Normal"],alignment=TA_CENTER,fontSize=8,textColor=colors.HexColor("#657F89"))),
-   Paragraph(f"Validação MALIBUB · Protocolo {escape(e.protocol or '')}",ParagraphStyle("f2",parent=styles["Normal"],alignment=TA_CENTER,fontSize=8,textColor=colors.HexColor("#657F89")))
-  ]
-  story += [Spacer(1,6*mm),KeepTogether(signature_block)]
+  doc.bottomMargin=48*mm
   doc.build(story)
-  buf.seek(0)
+  buf=apply_final_footer(buf.getvalue())
  # Modelo PDF da clínica: o texto do campo "Laudo radiológico" deve ocupar
  # uma área própria logo após a descrição fixa, sem sobrepor o restante do modelo.
  # Para modelos que já contêm texto fixo abaixo da descrição (ex.: TMJ), o sistema
@@ -1348,15 +1342,7 @@ def result_pdf(eid):
     cv.drawCentredString(width/2,10*mm,f"Assinado eletronicamente por {e.signed_by or 'Dra. Marina'}")
     cv.drawCentredString(width/2,6.5*mm,f"Data: {signed} · Protocolo {e.protocol or ''}")
     cv.save(); extra.seek(0); final_writer.add_page(PdfReader(extra).pages[0])
-   # Assinatura centralizada na última página do PDF personalizado.
-   if final_writer.pages:
-    last_page=final_writer.pages[-1]
-    pw=float(last_page.mediabox.width); ph=float(last_page.mediabox.height)
-    overlay_signature=io.BytesIO(); cv=canvas.Canvas(overlay_signature,pagesize=(pw,ph))
-    draw_report_signature(cv,pw,baseline=19*mm)
-    cv.save(); overlay_signature.seek(0)
-    last_page.merge_page(PdfReader(overlay_signature).pages[0])
-   merged=io.BytesIO(); final_writer.write(merged); merged.seek(0); buf=merged
+   merged=io.BytesIO(); final_writer.write(merged); merged.seek(0); buf=apply_final_footer(merged.getvalue())
   except Exception:
    return "Não foi possível gerar o PDF personalizado. Verifique o modelo de laudo cadastrado.",500
  print_mode=request.args.get("print")=="1"
