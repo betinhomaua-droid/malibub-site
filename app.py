@@ -1175,7 +1175,6 @@ def result_pdf(eid):
    def __init__(self): super().__init__(); self.width=1; self.height=1
    def draw(self): self.canv._malibub_signature_last=True
   def tmj_header_footer(canv,docobj):
-   if getattr(canv,'_malibub_signature_last',False): draw_signature(canv)
    canv.saveState()
    navy=colors.HexColor("#06394C"); teal=colors.HexColor("#087B9B"); gold=colors.HexColor("#C99B3B")
    # Cabeçalho clínico discreto; a marca MALIBUB fica no fechamento do documento.
@@ -1205,7 +1204,9 @@ def result_pdf(eid):
    canv.restoreState()
   frame=Frame(22*mm,46*mm,W-44*mm,H-107*mm,leftPadding=0,rightPadding=0,topPadding=0,bottomPadding=0,id="tmj_body")
   tdoc=BaseDocTemplate(buf,pagesize=A4,leftMargin=22*mm,rightMargin=22*mm,topMargin=61*mm,bottomMargin=46*mm,title=f"{e.protocol} - Laudo TMJ",author="MALIBUB Imaginologia Odontológica")
-  tdoc.addPageTemplates(PageTemplate(id="TMJ",frames=[frame],onPage=tmj_header_footer))
+  def tmj_last_page_footer(canv,docobj):
+   if getattr(canv,"_malibub_signature_last",False): draw_signature(canv)
+  tdoc.addPageTemplates(PageTemplate(id="TMJ",frames=[frame],onPage=tmj_header_footer,onPageEnd=tmj_last_page_footer))
   normal=ParagraphStyle("tmjn",fontName="Helvetica",fontSize=9.2,leading=14,spaceAfter=4,textColor=colors.black)
   bold=ParagraphStyle("tmjb",parent=normal,fontName="Helvetica-Bold")
   center=ParagraphStyle("tmjc",parent=bold,alignment=TA_CENTER,fontSize=10,leading=13,spaceAfter=9)
