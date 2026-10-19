@@ -1236,10 +1236,7 @@ def result_pdf(eid):
   story_tmj.append(KeepTogether([
    Spacer(1,7*mm),TMJInlineSignature(),
    Paragraph("Dra. Marina L. Bub",tmj_signature_style),
-   Paragraph("Radiologista responsável · CRO-SP 113752",tmj_sub_style),
-   Spacer(1,3*mm),
-   Paragraph(f"Assinado eletronicamente em {escape(signed)}",tmj_sub_style),
-   Paragraph(f"Validação MALIBUB · Protocolo {escape(e.protocol or '')}",tmj_sub_style)
+   Paragraph("Radiologista responsável · CRO-SP 113752",tmj_sub_style)
   ]))
   tdoc.build(story_tmj)
   buf.seek(0)
