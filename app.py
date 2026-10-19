@@ -1175,7 +1175,7 @@ def result_pdf(eid):
   from reportlab.platypus import Flowable
   class TMJInlineSignature(Flowable):
    def __init__(self):
-    super().__init__(); self.width=W-44*mm; self.height=13*mm
+    super().__init__(); self.width=W-44*mm; self.height=10*mm
    def draw(self):
     draw_report_signature(self.canv,self.width,baseline=0)
   def tmj_header_footer(canv,docobj):
@@ -1206,8 +1206,8 @@ def result_pdf(eid):
    canv.setFillColor(colors.HexColor("#7B8C93")); canv.setFont("Helvetica",6.5)
    canv.drawRightString(W-22*mm,7*mm,f"Página {docobj.page}")
    canv.restoreState()
-  frame=Frame(22*mm,46*mm,W-44*mm,H-107*mm,leftPadding=0,rightPadding=0,topPadding=0,bottomPadding=0,id="tmj_body")
-  tdoc=BaseDocTemplate(buf,pagesize=A4,leftMargin=22*mm,rightMargin=22*mm,topMargin=61*mm,bottomMargin=46*mm,title=f"{e.protocol} - Laudo TMJ",author="MALIBUB Imaginologia Odontológica")
+  frame=Frame(22*mm,25*mm,W-44*mm,H-86*mm,leftPadding=0,rightPadding=0,topPadding=0,bottomPadding=0,id="tmj_body")
+  tdoc=BaseDocTemplate(buf,pagesize=A4,leftMargin=22*mm,rightMargin=22*mm,topMargin=61*mm,bottomMargin=25*mm,title=f"{e.protocol} - Laudo TMJ",author="MALIBUB Imaginologia Odontológica")
   tdoc.addPageTemplates(PageTemplate(id="TMJ",frames=[frame],onPage=tmj_header_footer))
   normal=ParagraphStyle("tmjn",fontName="Helvetica",fontSize=9.2,leading=14,spaceAfter=4,textColor=colors.black)
   bold=ParagraphStyle("tmjb",parent=normal,fontName="Helvetica-Bold")
@@ -1236,7 +1236,7 @@ def result_pdf(eid):
   tmj_signature_style=ParagraphStyle("tmj_signer",parent=normal,alignment=TA_CENTER,fontName="Helvetica-Bold",fontSize=10,leading=12,spaceAfter=2)
   tmj_sub_style=ParagraphStyle("tmj_sub",parent=normal,alignment=TA_CENTER,fontSize=8,leading=11,textColor=colors.HexColor("#657F89"),spaceAfter=1)
   story_tmj.append(KeepTogether([
-   Spacer(1,7*mm),TMJInlineSignature(),
+   Spacer(1,2*mm),TMJInlineSignature(),
    Paragraph("Dra. Marina L. Bub",tmj_signature_style),
    Paragraph("Radiologista responsável · CRO-SP 113752",tmj_sub_style)
   ]))
