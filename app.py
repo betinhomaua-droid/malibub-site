@@ -1285,7 +1285,7 @@ def result_pdf(eid):
   signature_block=[
    InlineReportSignature(),
    Spacer(1,-2*mm),
-   Paragraph(f"<b>{signer}</b>",ParagraphStyle("sig",parent=body,alignment=TA_CENTER,textColor=navy)),
+   Paragraph("<b>Dra. Marina L. Bub</b>",ParagraphStyle("sig",parent=body,alignment=TA_CENTER,textColor=navy)),
    Paragraph("Radiologista responsável · CRO-SP 113752",ParagraphStyle("sig2",parent=styles["Normal"],alignment=TA_CENTER,fontSize=8,textColor=colors.HexColor("#657F89"))),
    Spacer(1,3*mm),
    Paragraph(f"Assinado eletronicamente em {escape(signed)}",ParagraphStyle("f",parent=styles["Normal"],fontSize=8,textColor=colors.HexColor("#657F89"))),
