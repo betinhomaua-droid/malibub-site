@@ -565,33 +565,53 @@ def admin_user_status(uid):
 def dashboard():
  if not session.get("uid"): return redirect("/")
  q=Exam.query
- if session["role"]=="Clinica": exams=q.filter_by(clinic_id=session["uid"]).order_by(Exam.created_at.desc()).all()
- else: exams=q.order_by(Exam.created_at.desc()).all()
- rows=""
+ is_radiologist=session["role"]=="Radiologista"
+ if not is_radiologist:
+  exams=q.filter_by(clinic_id=session["uid"]).order_by(Exam.created_at.desc()).all()
+ else:
+  exams=q.all()
+  def pending_sort_key(e):
+   # Primeiro o prazo real de entrega; URG desempata antes dos normais.
+   due=e.due_at or datetime.max
+   return (due,0 if (e.priority or "NORMAL")=="URG" else 1,e.created_at or datetime.max)
+  pending_exams=sorted([e for e in exams if e.status!="Liberado"],key=pending_sort_key)
+  completed_exams=sorted([e for e in exams if e.status=="Liberado"],key=lambda e:e.created_at or datetime.min,reverse=True)
+  exams=pending_exams+completed_exams
  clinics={}
- if session["role"]=="Radiologista":
+ if is_radiologist:
   clinic_ids=list({e.clinic_id for e in exams if e.clinic_id})
   clinics={u.id:u for u in User.query.filter(User.id.in_(clinic_ids)).all()} if clinic_ids else {}
- for e in exams:
+
+ headers="<tr><th>Protocolo</th><th>Paciente</th><th>Clínica</th><th>Exame</th><th>Entrega</th><th>Status</th><th>Ação</th></tr>" if is_radiologist else "<tr><th>Protocolo</th><th>Paciente</th><th>Exame</th><th>Entrega</th><th>Status</th><th>Ação</th></tr>"
+ colspan=7 if is_radiologist else 6
+
+ def exam_row(e):
   blocked=ExamFile.query.filter(ExamFile.exam_id==e.id,ExamFile.scan_status.in_(["SUSPEITO","INFECTADO"])).first()
   if session["role"]=="Clinica" and blocked:
    action="<span style='display:inline-block;background:#b42318;color:white;font-weight:800;padding:9px 12px;border-radius:8px'>SUSPEITO/INFECTADO</span>"
   else:
-   primary_action=(f'<a class="btn" href="/report/{e.id}">Laudar</a>' if session["role"]=="Radiologista" and e.status!="Liberado" else (f'<a class="btn" href="/result/{e.id}">Resultado</a>' if e.status=="Liberado" else ""))
-   delete_action=(f'<form method="post" action="/exam/{e.id}/excluir" style="display:inline" onsubmit="return confirm(\'Excluir definitivamente este exame, seus arquivos e o lançamento financeiro vinculado? Esta ação não pode ser desfeita.\')">{csrf_field()}<button type="submit" style="background:#b42318">Excluir</button></form>' if session["role"]=="Radiologista" else "")
+   primary_action=(f'<a class="btn" href="/report/{e.id}">Laudar</a>' if is_radiologist and e.status!="Liberado" else (f'<a class="btn" href="/result/{e.id}">Resultado</a>' if e.status=="Liberado" else ""))
+   delete_action=(f'<form method="post" action="/exam/{e.id}/excluir" style="display:inline" onsubmit="return confirm(\'Excluir definitivamente este exame, seus arquivos e o lançamento financeiro vinculado? Esta ação não pode ser desfeita.\')">{csrf_field()}<button type="submit" style="background:#b42318">Excluir</button></form>' if is_radiologist else "")
    action=primary_action+delete_action
-  if session["role"]=="Radiologista":
+  delivery=("<b style='color:#b42318'>URG</b><br>" if (e.priority or "NORMAL")=="URG" else "")+due_date_label(e.due_at,e.priority or "NORMAL")
+  if is_radiologist:
    clinic=clinics.get(e.clinic_id)
    if clinic and clinic.logo:
     clinic_cell=f"<div class='clinic-cell'><img src='/clinic-logo/{clinic.id}' alt='' loading='lazy'><span>{html_escape(clinic.name)}</span></div>"
    else:
     clinic_cell=html_escape(clinic.name if clinic else "Clínica não identificada")
-   rows+=f"<tr><td>{html_escape(e.protocol)}</td><td>{html_escape(e.patient)}</td><td>{clinic_cell}</td><td>{html_escape(e.exam_type)}</td><td>{("<b style='color:#b42318'>URG</b><br>" if (e.priority or "NORMAL")=="URG" else "")+due_date_label(e.due_at,e.priority or "NORMAL")}</td><td><span class='badge'>{html_escape(e.status)}</span></td><td>{action}</td></tr>"
-  else:
-   rows+=f"<tr><td>{html_escape(e.protocol)}</td><td>{html_escape(e.patient)}</td><td>{html_escape(e.exam_type)}</td><td>{("<b style='color:#b42318'>URG</b><br>" if (e.priority or "NORMAL")=="URG" else "")+due_date_label(e.due_at,e.priority or "NORMAL")}</td><td><span class='badge'>{html_escape(e.status)}</span></td><td>{action}</td></tr>"
- headers="<tr><th>Protocolo</th><th>Paciente</th><th>Clínica</th><th>Exame</th><th>Entrega</th><th>Status</th><th>Ação</th></tr>" if session["role"]=="Radiologista" else "<tr><th>Protocolo</th><th>Paciente</th><th>Exame</th><th>Entrega</th><th>Status</th><th>Ação</th></tr>"
- colspan=7 if session["role"]=="Radiologista" else 6
- body=f'''<h1>Painel {'da Clínica' if session["role"]=="Clinica" else 'da Radiologista'}</h1><p>Olá, {html_escape(session["name"])}.</p>{'<a class="btn gold" href="/new">+ Novo Exame</a><a class="btn" href="/modelo-laudo">Modelo de laudo</a>' if session["role"]=="Clinica" else ''}<div class="card"><h2>Exames</h2><table>{headers}{rows or f'<tr><td colspan={colspan}>Nenhum exame.</td></tr>'}</table></div>'''
+   return f"<tr><td>{html_escape(e.protocol)}</td><td>{html_escape(e.patient)}</td><td>{clinic_cell}</td><td>{html_escape(e.exam_type)}</td><td>{delivery}</td><td><span class='badge'>{html_escape(e.status)}</span></td><td>{action}</td></tr>"
+  return f"<tr><td>{html_escape(e.protocol)}</td><td>{html_escape(e.patient)}</td><td>{html_escape(e.exam_type)}</td><td>{delivery}</td><td><span class='badge'>{html_escape(e.status)}</span></td><td>{action}</td></tr>"
+
+ if is_radiologist:
+  pending_rows="".join(exam_row(e) for e in pending_exams)
+  completed_rows="".join(exam_row(e) for e in completed_exams)
+  body=f'''<h1>Painel da Radiologista</h1><p>Olá, {html_escape(session["name"])}.</p>
+  <div class="card"><h2>Exames a fazer</h2><p style="color:#60747d">Ordenados pela prioridade de entrega: os prazos mais próximos aparecem primeiro.</p><table>{headers}{pending_rows or f'<tr><td colspan={colspan}>Nenhum exame pendente.</td></tr>'}</table></div>
+  <div class="card" style="margin-top:24px"><h2>Exames já realizados</h2><table>{headers}{completed_rows or f'<tr><td colspan={colspan}>Nenhum exame realizado.</td></tr>'}</table></div>'''
+ else:
+  rows="".join(exam_row(e) for e in exams)
+  body=f'''<h1>Painel da Clínica</h1><p>Olá, {html_escape(session["name"])}.</p><a class="btn gold" href="/new">+ Novo Exame</a><a class="btn" href="/modelo-laudo">Modelo de laudo</a><div class="card"><h2>Exames</h2><table>{headers}{rows or f'<tr><td colspan={colspan}>Nenhum exame.</td></tr>'}</table></div>'''
  return page(body)
 
 @app.post("/exam/<int:eid>/excluir")
