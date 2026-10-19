@@ -1141,7 +1141,9 @@ def result_pdf(eid):
  from xml.sax.saxutils import escape
  buf=io.BytesIO(); clinic=User.query.get(e.clinic_id)
  model_name=(clinic.report_model_name or "").lower() if clinic else ""
- is_tmj_model=("laudotmj" in model_name or "tmj" in model_name)
+ # O gerador TMJ reconstruído é permitido somente quando não há PDF ativo.
+ # Se a clínica cadastrou um PDF, preservar o arquivo escolhido no fluxo personalizado.
+ is_tmj_model=("laudotmj" in model_name or "tmj" in model_name) and not (clinic and clinic.report_model and Path(clinic.report_model).suffix.lower()==".pdf")
  has_pdf_model=bool(clinic and clinic.report_model and Path(clinic.report_model).suffix.lower()==".pdf")
  # O modelo TMJ é reconstruído como documento fluido: o texto digitado no laudo
  # passa a fazer parte do fluxo do documento, empurrando o conteúdo seguinte e
