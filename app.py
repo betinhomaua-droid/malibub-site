@@ -1288,8 +1288,8 @@ def result_pdf(eid):
    Paragraph("<b>Dra. Marina L. Bub</b>",ParagraphStyle("sig",parent=body,alignment=TA_CENTER,textColor=navy)),
    Paragraph("Radiologista responsável · CRO-SP 113752",ParagraphStyle("sig2",parent=styles["Normal"],alignment=TA_CENTER,fontSize=8,textColor=colors.HexColor("#657F89"))),
    Spacer(1,3*mm),
-   Paragraph(f"Assinado eletronicamente em {escape(signed)}",ParagraphStyle("f",parent=styles["Normal"],fontSize=8,textColor=colors.HexColor("#657F89"))),
-   Paragraph(f"Validação MALIBUB · Protocolo {escape(e.protocol or '')}",ParagraphStyle("f2",parent=styles["Normal"],fontSize=8,textColor=colors.HexColor("#657F89")))
+   Paragraph(f"Assinado eletronicamente em {escape(signed)}",ParagraphStyle("f",parent=styles["Normal"],alignment=TA_CENTER,fontSize=8,textColor=colors.HexColor("#657F89"))),
+   Paragraph(f"Validação MALIBUB · Protocolo {escape(e.protocol or '')}",ParagraphStyle("f2",parent=styles["Normal"],alignment=TA_CENTER,fontSize=8,textColor=colors.HexColor("#657F89")))
   ]
   story += [Spacer(1,6*mm),KeepTogether(signature_block)]
   doc.build(story)
