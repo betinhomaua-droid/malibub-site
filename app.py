@@ -1146,6 +1146,21 @@ def result_pdf(eid):
  # O modelo TMJ é reconstruído como documento fluido: o texto digitado no laudo
  # passa a fazer parte do fluxo do documento, empurrando o conteúdo seguinte e
  # criando novas páginas automaticamente, em vez de ser desenhado por cima do PDF.
+ # Assinatura vetorial reutilizável para todos os formatos de laudo.
+ signature_paths=["599,10 590,1 574,0 550,12 533,28 523,43 521,56 528,75 539,89 504,118 496,120 493,116 508,82 508,74 499,71 438,118 424,125 422,119 434,96 432,88 424,89 400,110 394,96 381,92 416,55 418,44 413,40 402,42 377,57 334,97 335,87 330,81 324,81 305,90 296,89 363,22 366,15 363,7 348,6 320,30 295,57 284,84 217,146 203,148 200,139 210,106 244,73 265,44 266,33 263,29 255,27 241,40 208,85 199,102 70,209 31,234 0,244 2,255 31,246 68,224 136,171 191,123 193,124 190,147 195,156 203,159 215,158 235,146 287,97 294,101 305,101 320,95 295,150 296,156 303,158 311,151 340,106 372,75 393,60 395,61 356,101 356,107 360,110 379,103 387,105 388,118 348,151 349,161 360,162 373,158 391,141 396,127 411,115 415,133 425,137 450,123 488,93 490,94 483,109 483,120 491,130 504,130 515,124 549,95 577,112 581,118 569,126 544,133 544,143 569,138 589,126 592,113 584,103 556,85 594,35 599,23","587,12 589,19 579,38 549,77 545,78 533,60 534,46 562,17 579,10"]
+ def draw_report_signature(cv,page_width,baseline=20*mm):
+  cv.saveState()
+  try:
+   cv.setFillColor(colors.HexColor("#41499A"))
+   p=cv.beginPath(); sw=23*mm; sh=sw*256/600; x0=(page_width-sw)/2
+   for contour in signature_paths:
+    for i,xy in enumerate(contour.split()):
+     x,y=map(int,xy.split(",")); px=x0+x*sw/600; py=baseline+(256-y)*sh/256
+     if i==0: p.moveTo(px,py)
+     else: p.lineTo(px,py)
+    p.close()
+   cv.drawPath(p,stroke=0,fill=1,fillMode=0)
+  finally: cv.restoreState()
  if is_tmj_model:
   from reportlab.platypus import BaseDocTemplate, PageTemplate, Frame, Paragraph, Spacer, KeepTogether
   from reportlab.lib.styles import ParagraphStyle
@@ -1155,21 +1170,6 @@ def result_pdf(eid):
   from xml.sax.saxutils import escape
   signed=brasilia_stamp(e.signed_at or e.released_at)
   W,H=A4
-  # Assinatura vetorial extraída da imagem original. Sem dependência de Base64.
-  signature_paths=["599,10 590,1 574,0 550,12 533,28 523,43 521,56 528,75 539,89 504,118 496,120 493,116 508,82 508,74 499,71 438,118 424,125 422,119 434,96 432,88 424,89 400,110 394,96 381,92 416,55 418,44 413,40 402,42 377,57 334,97 335,87 330,81 324,81 305,90 296,89 363,22 366,15 363,7 348,6 320,30 295,57 284,84 217,146 203,148 200,139 210,106 244,73 265,44 266,33 263,29 255,27 241,40 208,85 199,102 70,209 31,234 0,244 2,255 31,246 68,224 136,171 191,123 193,124 190,147 195,156 203,159 215,158 235,146 287,97 294,101 305,101 320,95 295,150 296,156 303,158 311,151 340,106 372,75 393,60 395,61 356,101 356,107 360,110 379,103 387,105 388,118 348,151 349,161 360,162 373,158 391,141 396,127 411,115 415,133 425,137 450,123 488,93 490,94 483,109 483,120 491,130 504,130 515,124 549,95 577,112 581,118 569,126 544,133 544,143 569,138 589,126 592,113 584,103 556,85 594,35 599,23","587,12 589,19 579,38 549,77 545,78 533,60 534,46 562,17 579,10"]
-  def draw_signature(c):
-   c.saveState()
-   try:
-    c.setFillColor(colors.HexColor("#41499A"))
-    p=c.beginPath(); sw=23*mm; sh=sw*256/600; x0=(W-sw)/2; y0=20*mm
-    for contour in signature_paths:
-     for i,xy in enumerate(contour.split()):
-      x,y=map(int,xy.split(",")); px=x0+x*sw/600; py=y0+(256-y)*sh/256
-      if i==0: p.moveTo(px,py)
-      else: p.lineTo(px,py)
-     p.close()
-    c.drawPath(p,stroke=0,fill=1,fillMode=0)
-   finally: c.restoreState()
   from reportlab.platypus import Flowable
   class LastPageSignature(Flowable):
    def __init__(self): super().__init__(); self.width=1; self.height=1
@@ -1205,7 +1205,7 @@ def result_pdf(eid):
   frame=Frame(22*mm,46*mm,W-44*mm,H-107*mm,leftPadding=0,rightPadding=0,topPadding=0,bottomPadding=0,id="tmj_body")
   tdoc=BaseDocTemplate(buf,pagesize=A4,leftMargin=22*mm,rightMargin=22*mm,topMargin=61*mm,bottomMargin=46*mm,title=f"{e.protocol} - Laudo TMJ",author="MALIBUB Imaginologia Odontológica")
   def tmj_last_page_footer(canv,docobj):
-   if getattr(canv,"_malibub_signature_last",False): draw_signature(canv)
+   if getattr(canv,"_malibub_signature_last",False): draw_report_signature(canv,W)
   tdoc.addPageTemplates(PageTemplate(id="TMJ",frames=[frame],onPage=tmj_header_footer,onPageEnd=tmj_last_page_footer))
   normal=ParagraphStyle("tmjn",fontName="Helvetica",fontSize=9.2,leading=14,spaceAfter=4,textColor=colors.black)
   bold=ParagraphStyle("tmjb",parent=normal,fontName="Helvetica-Bold")
@@ -1284,6 +1284,19 @@ def result_pdf(eid):
  if not has_pdf_model:
   doc.build(story)
   buf.seek(0)
+  # Assinatura apenas na última página do PDF padrão.
+  from pypdf import PdfReader, PdfWriter
+  from reportlab.pdfgen import canvas
+  reader=PdfReader(buf); writer=PdfWriter()
+  for page_index,page in enumerate(reader.pages):
+   if page_index==len(reader.pages)-1:
+    page_width=float(page.mediabox.width)
+    overlay=io.BytesIO(); cv=canvas.Canvas(overlay,pagesize=(page_width,float(page.mediabox.height)))
+    draw_report_signature(cv,page_width,baseline=24*mm)
+    cv.save(); overlay.seek(0)
+    page.merge_page(PdfReader(overlay).pages[0])
+   writer.add_page(page)
+  signed_pdf=io.BytesIO(); writer.write(signed_pdf); signed_pdf.seek(0); buf=signed_pdf
  # Modelo PDF da clínica: o texto do campo "Laudo radiológico" deve ocupar
  # uma área própria logo após a descrição fixa, sem sobrepor o restante do modelo.
  # Para modelos que já contêm texto fixo abaixo da descrição (ex.: TMJ), o sistema
@@ -1330,6 +1343,14 @@ def result_pdf(eid):
     cv.drawCentredString(width/2,10*mm,f"Assinado eletronicamente por {e.signed_by or 'Dra. Marina'}")
     cv.drawCentredString(width/2,6.5*mm,f"Data: {signed} · Protocolo {e.protocol or ''}")
     cv.save(); extra.seek(0); final_writer.add_page(PdfReader(extra).pages[0])
+   # Assinatura centralizada na última página do PDF personalizado.
+   if final_writer.pages:
+    last_page=final_writer.pages[-1]
+    pw=float(last_page.mediabox.width); ph=float(last_page.mediabox.height)
+    overlay_signature=io.BytesIO(); cv=canvas.Canvas(overlay_signature,pagesize=(pw,ph))
+    draw_report_signature(cv,pw,baseline=19*mm)
+    cv.save(); overlay_signature.seek(0)
+    last_page.merge_page(PdfReader(overlay_signature).pages[0])
    merged=io.BytesIO(); final_writer.write(merged); merged.seek(0); buf=merged
   except Exception:
    return "Não foi possível gerar o PDF personalizado. Verifique o modelo de laudo cadastrado.",500
