@@ -1163,6 +1163,17 @@ def result_pdf(eid):
     p.close()
    cv.drawPath(p,stroke=0,fill=1,fillMode=0)
   finally: cv.restoreState()
+ from reportlab.platypus import Flowable, KeepTogether
+ class ReportSignature(Flowable):
+  def __init__(self):
+   super().__init__(); self.width=150*mm; self.height=24*mm
+  def draw(self):
+   w=self.width
+   draw_report_signature(self.canv,w,baseline=12*mm)
+   self.canv.setFillColor(colors.HexColor("#06394C")); self.canv.setFont("Helvetica-Bold",9)
+   self.canv.drawCentredString(w/2,8*mm,"Dra. Marina L. Bub")
+   self.canv.setFillColor(colors.HexColor("#52666E")); self.canv.setFont("Helvetica",7.8)
+   self.canv.drawCentredString(w/2,4*mm,"Radiologista responsável - CRO-SP 113752")
  def apply_final_footer(pdf_bytes):
   # Rodapé institucional exclusivamente na última página.
   from pypdf import PdfReader, PdfWriter
@@ -1173,16 +1184,11 @@ def result_pdf(eid):
    if index==total-1:
     width=float(page.mediabox.width); height=float(page.mediabox.height)
     overlay=io.BytesIO(); cv=canvas.Canvas(overlay,pagesize=(width,height))
-    cv.setStrokeColor(colors.HexColor("#DCE8EC")); cv.line(22*mm,43*mm,width-22*mm,43*mm)
-    draw_report_signature(cv,width,baseline=31*mm)
-    cv.setFillColor(colors.HexColor("#06394C")); cv.setFont("Helvetica-Bold",8.8)
-    cv.drawCentredString(width/2,28*mm,"Dra. Marina L. Bub")
-    cv.setFillColor(colors.HexColor("#52666E")); cv.setFont("Helvetica",7.6)
-    cv.drawCentredString(width/2,24*mm,"Radiologista responsável - CRO-SP 113752")
+    cv.setStrokeColor(colors.HexColor("#DCE8EC")); cv.line(22*mm,24*mm,width-22*mm,24*mm)
     cv.setFillColor(colors.HexColor("#06394C")); cv.setFont("Helvetica-Bold",7.8)
-    cv.drawCentredString(width/2,17*mm,"MALIBUB Imaginologia Odontológica")
+    cv.drawCentredString(width/2,18*mm,"MALIBUB Imaginologia Odontológica")
     cv.setFillColor(colors.HexColor("#52666E")); cv.setFont("Helvetica",7.2)
-    cv.drawCentredString(width/2,13*mm,"Assinado eletronicamente por Marina Bub - CRO-SP 113752")
+    cv.drawCentredString(width/2,14*mm,"Assinado eletronicamente por Marina Bub - CRO-SP 113752")
     cv.setFont("Helvetica",6.8)
     cv.drawCentredString(width/2,9*mm,f"Data: {brasilia_stamp(e.signed_at or e.released_at)} - Protocolo {e.protocol or ''}")
     cv.save(); overlay.seek(0); page.merge_page(PdfReader(overlay).pages[0])
@@ -1249,6 +1255,7 @@ def result_pdf(eid):
   ]
   tmj_signature_style=ParagraphStyle("tmj_signer",parent=normal,alignment=TA_CENTER,fontName="Helvetica-Bold",fontSize=10,leading=12,spaceAfter=2)
   tmj_sub_style=ParagraphStyle("tmj_sub",parent=normal,alignment=TA_CENTER,fontSize=8,leading=11,textColor=colors.HexColor("#657F89"),spaceAfter=1)
+  story_tmj.append(KeepTogether([Spacer(1,3*mm),ReportSignature()]))
   tdoc.build(story_tmj)
   buf=apply_final_footer(buf.getvalue())
   return send_file(buf,mimetype="application/pdf",as_attachment=True,download_name=f"{e.protocol}_laudo.pdf")
@@ -1293,6 +1300,7 @@ def result_pdf(eid):
   for line in (e.report or "").splitlines(): story.append(Paragraph(escape(line) or "&nbsp;",body))
  signer=escape(e.signed_by or "Dra. Marina"); signed=brasilia_stamp(e.signed_at or e.released_at)
  if not has_pdf_model:
+  story.append(KeepTogether([Spacer(1,5*mm),ReportSignature()]))
   doc.build(story)
   buf=apply_final_footer(buf.getvalue())
  # Modelo PDF da clínica: o texto do campo "Laudo radiológico" deve ocupar
