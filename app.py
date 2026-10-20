@@ -1329,24 +1329,36 @@ def result_pdf(eid):
    line_index=0
    while line_index<len(report_lines) and y>min_y:
     cv.drawString(left,y,report_lines[line_index][:max_chars]); line_index+=1; y-=4.4*mm
-   cv.setFont("Helvetica",7.5); cv.setFillColor(colors.HexColor("#52666E"))
-   cv.drawCentredString(width/2,10*mm,f"Assinado eletronicamente por {e.signed_by or 'Dra. Marina'}")
-   cv.drawCentredString(width/2,6.5*mm,f"Data: {signed} · Protocolo {e.protocol or ''}")
+   # Assinatura clínica após o texto, com quebra de página quando necessário.
+   if line_index==len(report_lines) and y>43*mm:
+    draw_report_signature(cv,width,baseline=y-12*mm)
+    cv.setFillColor(colors.HexColor("#06394C")); cv.setFont("Helvetica-Bold",9)
+    cv.drawCentredString(width/2,y-16*mm,"Dra. Marina L. Bub")
+    cv.setFillColor(colors.HexColor("#52666E")); cv.setFont("Helvetica",7.8)
+    cv.drawCentredString(width/2,y-20*mm,"Radiologista responsável - CRO-SP 113752")
+    signature_done=True
+   else: signature_done=False
    cv.save(); overlay.seek(0); first.merge_page(PdfReader(overlay).pages[0]); final_writer.add_page(first)
    # Mantém eventuais páginas originais seguintes.
    for original_page in list(base_reader.pages)[1:]: final_writer.add_page(original_page)
    # Continuação: página limpa com cabeçalho textual da clínica, sem repetir os parágrafos fixos.
-   while line_index<len(report_lines):
+   while line_index<len(report_lines) or not signature_done:
     extra=io.BytesIO(); cv=canvas.Canvas(extra,pagesize=A4); width,height=A4
     cv.setFont("Helvetica-Bold",11); cv.setFillColor(colors.HexColor("#111111"))
     cv.drawCentredString(width/2,height-20*mm,"LAUDO RADIOLÓGICO — CONTINUAÇÃO")
     cv.setFont("Helvetica",8); cv.drawString(22*mm,height-27*mm,f"Paciente: {e.patient}  |  Sexo: {e.sex or 'Não informado'}  |  Nascimento: {br_date(e.birth)}"); cv.drawString(22*mm,height-31*mm,f"Dentista: {e.dentist or ''}  |  Data do exame: {br_date(e.exam_date)}  |  Exame: {e.exam_type or ''}")
     cv.line(22*mm,height-34*mm,width-22*mm,height-34*mm)
     y=height-42*mm; cv.setFont("Helvetica",9)
-    while line_index<len(report_lines) and y>25*mm:
+    while line_index<len(report_lines) and y>45*mm:
      cv.drawString(22*mm,y,report_lines[line_index][:max_chars]); line_index+=1; y-=4.4*mm
     cv.setFont("Helvetica",7.5); cv.setFillColor(colors.HexColor("#52666E"))
-    # Identificação e assinatura são adicionadas ao final, somente na última página.
+    if line_index==len(report_lines):
+     draw_report_signature(cv,width,baseline=y-12*mm)
+     cv.setFillColor(colors.HexColor("#06394C")); cv.setFont("Helvetica-Bold",9)
+     cv.drawCentredString(width/2,y-16*mm,"Dra. Marina L. Bub")
+     cv.setFillColor(colors.HexColor("#52666E")); cv.setFont("Helvetica",7.8)
+     cv.drawCentredString(width/2,y-20*mm,"Radiologista responsável - CRO-SP 113752")
+     signature_done=True
 
     cv.save(); extra.seek(0); final_writer.add_page(PdfReader(extra).pages[0])
    merged=io.BytesIO(); final_writer.write(merged); merged.seek(0); buf=apply_final_footer(merged.getvalue())
