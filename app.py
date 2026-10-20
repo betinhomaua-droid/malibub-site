@@ -8,7 +8,8 @@ from collections import defaultdict, deque
 from zoneinfo import ZoneInfo
 import time
 from pathlib import Path
-import os, uuid, io, secrets, zipfile
+import os, uuid, io, secrets, zipfile, base64
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 import boto3
 import requests
 
@@ -30,6 +31,7 @@ app.config["SESSION_COOKIE_HTTPONLY"]=True
 app.config["SESSION_COOKIE_SAMESITE"]="Lax"
 app.config["SESSION_COOKIE_SECURE"]=APP_ENV=="production"
 app.config["PERMANENT_SESSION_LIFETIME"]=timedelta(hours=8)
+DIRECT_UPLOAD_SIGNER=URLSafeTimedSerializer(app.config["SECRET_KEY"],salt="malibub-direct-upload-v2")
 db=SQLAlchemy(app)
 UPLOAD=Path(app.instance_path)/"uploads"; UPLOAD.mkdir(parents=True,exist_ok=True)
 R2_BUCKET=os.getenv("R2_BUCKET","")
@@ -251,8 +253,10 @@ def assets(filename):
 
 class User(db.Model):
  id=db.Column(db.Integer,primary_key=True); name=db.Column(db.String(100)); email=db.Column(db.String(120),unique=True); password=db.Column(db.String(255)); role=db.Column(db.String(30)); active=db.Column(db.Boolean,default=True); logo=db.Column(db.String(255)); logo_name=db.Column(db.String(255)); report_model=db.Column(db.String(255)); report_model_name=db.Column(db.String(255)); report_top_mm=db.Column(db.Integer,default=72); report_bottom_mm=db.Column(db.Integer,default=42); privacy_version=db.Column(db.String(20)); privacy_ack_at=db.Column(db.DateTime)
+class ReportModel(db.Model):
+ id=db.Column(db.Integer,primary_key=True); clinic_id=db.Column(db.Integer,index=True,nullable=False); name=db.Column(db.String(255)); stored=db.Column(db.String(255)); created_at=db.Column(db.DateTime,default=datetime.utcnow)
 class Exam(db.Model):
- id=db.Column(db.Integer,primary_key=True); protocol=db.Column(db.String(30),unique=True); patient=db.Column(db.String(120)); sex=db.Column(db.String(20)); birth=db.Column(db.String(20)); dentist=db.Column(db.String(120)); exam_date=db.Column(db.String(20)); exam_type=db.Column(db.String(100)); observation=db.Column(db.String(500)); priority=db.Column(db.String(20),default="NORMAL"); contracted_amount=db.Column(db.Float); status=db.Column(db.String(50),default="Enviado"); clinic_id=db.Column(db.Integer); due_at=db.Column(db.DateTime); report=db.Column(db.Text,default=""); released_at=db.Column(db.DateTime); signed_by=db.Column(db.String(120)); signed_at=db.Column(db.DateTime); created_at=db.Column(db.DateTime,default=datetime.utcnow)
+ id=db.Column(db.Integer,primary_key=True); protocol=db.Column(db.String(30),unique=True); patient=db.Column(db.String(120)); sex=db.Column(db.String(20)); birth=db.Column(db.String(20)); dentist=db.Column(db.String(120)); exam_date=db.Column(db.String(20)); exam_type=db.Column(db.String(100)); observation=db.Column(db.String(500)); priority=db.Column(db.String(20),default="NORMAL"); contracted_amount=db.Column(db.Float); status=db.Column(db.String(50),default="Enviado"); clinic_id=db.Column(db.Integer); due_at=db.Column(db.DateTime); report=db.Column(db.Text,default=""); report_html=db.Column(db.Text,default=""); released_at=db.Column(db.DateTime); signed_by=db.Column(db.String(120)); signed_at=db.Column(db.DateTime); created_at=db.Column(db.DateTime,default=datetime.utcnow)
 class ExamFile(db.Model):
  id=db.Column(db.Integer,primary_key=True); exam_id=db.Column(db.Integer); name=db.Column(db.String(255)); stored=db.Column(db.String(255)); kind=db.Column(db.String(30),default="entrada"); uploaded_by=db.Column(db.String(100)); scan_status=db.Column(db.String(20),default="PENDENTE"); scan_detail=db.Column(db.String(255))
 class Finance(db.Model):
@@ -364,6 +368,7 @@ def init():
    db.session.execute(db.text("ALTER TABLE exam_file ADD COLUMN IF NOT EXISTS scan_detail VARCHAR(255)"))
    db.session.execute(db.text("ALTER TABLE exam ADD COLUMN IF NOT EXISTS priority VARCHAR(20) DEFAULT 'NORMAL'"))
    db.session.execute(db.text("ALTER TABLE exam ADD COLUMN IF NOT EXISTS contracted_amount DOUBLE PRECISION"))
+   db.session.execute(db.text("ALTER TABLE exam ADD COLUMN IF NOT EXISTS report_html TEXT"))
    db.session.execute(db.text("UPDATE \"user\" SET active=TRUE WHERE active IS NULL"))
    db.session.commit()
   except Exception:
@@ -373,6 +378,7 @@ def init():
    cols=[r[1] for r in db.session.execute(db.text("PRAGMA table_info(exam)")).fetchall()]
    if "signed_by" not in cols: db.session.execute(db.text("ALTER TABLE exam ADD COLUMN signed_by VARCHAR(120)"))
    if "signed_at" not in cols: db.session.execute(db.text("ALTER TABLE exam ADD COLUMN signed_at DATETIME"))
+   if "report_html" not in cols: db.session.execute(db.text("ALTER TABLE exam ADD COLUMN report_html TEXT"))
    db.session.commit()
   except Exception:
    db.session.rollback()
@@ -561,32 +567,83 @@ def admin_user_status(uid):
 def dashboard():
  if not session.get("uid"): return redirect("/")
  q=Exam.query
- if session["role"]=="Clinica": exams=q.filter_by(clinic_id=session["uid"]).order_by(Exam.created_at.desc()).all()
- else: exams=q.order_by(Exam.created_at.desc()).all()
- rows=""
+ is_radiologist=session["role"]=="Radiologista"
+ if not is_radiologist:
+  exams=q.filter_by(clinic_id=session["uid"]).order_by(Exam.created_at.desc()).all()
+ else:
+  exams=q.all()
+  def pending_sort_key(e):
+   # Primeiro o prazo real de entrega; URG desempata antes dos normais.
+   due=e.due_at or datetime.max
+   return (due,0 if (e.priority or "NORMAL")=="URG" else 1,e.created_at or datetime.max)
+  pending_exams=sorted([e for e in exams if e.status!="Liberado"],key=pending_sort_key)
+  completed_exams=sorted([e for e in exams if e.status=="Liberado"],key=lambda e:(e.released_at or e.created_at or datetime.min,e.id or 0),reverse=True)
+  exams=pending_exams+completed_exams
  clinics={}
- if session["role"]=="Radiologista":
+ if is_radiologist:
   clinic_ids=list({e.clinic_id for e in exams if e.clinic_id})
   clinics={u.id:u for u in User.query.filter(User.id.in_(clinic_ids)).all()} if clinic_ids else {}
- for e in exams:
+
+ headers="<tr><th>Protocolo</th><th>Paciente</th><th>Clínica</th><th>Exame</th><th>Entrega</th><th>Status</th><th>Ação</th></tr>" if is_radiologist else "<tr><th>Protocolo</th><th>Paciente</th><th>Exame</th><th>Entrega</th><th>Status</th><th>Ação</th></tr>"
+ colspan=7 if is_radiologist else 6
+
+ def exam_row(e):
   blocked=ExamFile.query.filter(ExamFile.exam_id==e.id,ExamFile.scan_status.in_(["SUSPEITO","INFECTADO"])).first()
   if session["role"]=="Clinica" and blocked:
    action="<span style='display:inline-block;background:#b42318;color:white;font-weight:800;padding:9px 12px;border-radius:8px'>SUSPEITO/INFECTADO</span>"
   else:
-   action=(f'<a class="btn" href="/report/{e.id}">Laudar</a>' if session["role"]=="Radiologista" and e.status!="Liberado" else (f'<a class="btn" href="/result/{e.id}">Resultado</a>' if e.status=="Liberado" else ""))
-  if session["role"]=="Radiologista":
+   primary_action=(f'<a class="btn" href="/report/{e.id}">Laudar</a>' if is_radiologist and e.status!="Liberado" else (f'<a class="btn" href="/result/{e.id}">Resultado</a>' if e.status=="Liberado" else ""))
+   delete_action=(f'<form method="post" action="/exam/{e.id}/excluir" style="display:inline" onsubmit="return confirm(\'Excluir definitivamente este exame, seus arquivos e o lançamento financeiro vinculado? Esta ação não pode ser desfeita.\')">{csrf_field()}<button type="submit" style="background:#b42318">Excluir</button></form>' if is_radiologist else "")
+   action=primary_action+delete_action
+  delivery=("<b style='color:#b42318'>URG</b><br>" if (e.priority or "NORMAL")=="URG" else "")+due_date_label(e.due_at,e.priority or "NORMAL")
+  if is_radiologist:
    clinic=clinics.get(e.clinic_id)
    if clinic and clinic.logo:
     clinic_cell=f"<div class='clinic-cell'><img src='/clinic-logo/{clinic.id}' alt='' loading='lazy'><span>{html_escape(clinic.name)}</span></div>"
    else:
     clinic_cell=html_escape(clinic.name if clinic else "Clínica não identificada")
-   rows+=f"<tr><td>{html_escape(e.protocol)}</td><td>{html_escape(e.patient)}</td><td>{clinic_cell}</td><td>{html_escape(e.exam_type)}</td><td>{("<b style='color:#b42318'>URG</b><br>" if (e.priority or "NORMAL")=="URG" else "")+due_date_label(e.due_at,e.priority or "NORMAL")}</td><td><span class='badge'>{html_escape(e.status)}</span></td><td>{action}</td></tr>"
-  else:
-   rows+=f"<tr><td>{html_escape(e.protocol)}</td><td>{html_escape(e.patient)}</td><td>{html_escape(e.exam_type)}</td><td>{("<b style='color:#b42318'>URG</b><br>" if (e.priority or "NORMAL")=="URG" else "")+due_date_label(e.due_at,e.priority or "NORMAL")}</td><td><span class='badge'>{html_escape(e.status)}</span></td><td>{action}</td></tr>"
- headers="<tr><th>Protocolo</th><th>Paciente</th><th>Clínica</th><th>Exame</th><th>Entrega</th><th>Status</th><th>Ação</th></tr>" if session["role"]=="Radiologista" else "<tr><th>Protocolo</th><th>Paciente</th><th>Exame</th><th>Entrega</th><th>Status</th><th>Ação</th></tr>"
- colspan=7 if session["role"]=="Radiologista" else 6
- body=f'''<h1>Painel {'da Clínica' if session["role"]=="Clinica" else 'da Radiologista'}</h1><p>Olá, {html_escape(session["name"])}.</p>{'<a class="btn gold" href="/new">+ Novo Exame</a><a class="btn" href="/modelo-laudo">Modelo de laudo</a>' if session["role"]=="Clinica" else ''}<div class="card"><h2>Exames</h2><table>{headers}{rows or f'<tr><td colspan={colspan}>Nenhum exame.</td></tr>'}</table></div>'''
+   return f"<tr><td>{html_escape(e.protocol)}</td><td>{html_escape(e.patient)}</td><td>{clinic_cell}</td><td>{html_escape(e.exam_type)}</td><td>{delivery}</td><td><span class='badge'>{html_escape(e.status)}</span></td><td>{action}</td></tr>"
+  return f"<tr><td>{html_escape(e.protocol)}</td><td>{html_escape(e.patient)}</td><td>{html_escape(e.exam_type)}</td><td>{delivery}</td><td><span class='badge'>{html_escape(e.status)}</span></td><td>{action}</td></tr>"
+
+ if is_radiologist:
+  pending_rows="".join(exam_row(e) for e in pending_exams)
+  completed_rows="".join(exam_row(e) for e in completed_exams)
+  body=f'''<h1>Painel da Radiologista</h1><p>Olá, {html_escape(session["name"])}.</p>
+  <div class="card"><h2>Exames a fazer</h2><p style="color:#60747d">Ordenados pela prioridade de entrega: os prazos mais próximos aparecem primeiro.</p><table>{headers}{pending_rows or f'<tr><td colspan={colspan}>Nenhum exame pendente.</td></tr>'}</table></div>
+  <div class="card" style="margin-top:24px"><h2>Exames já realizados</h2><table>{headers}{completed_rows or f'<tr><td colspan={colspan}>Nenhum exame realizado.</td></tr>'}</table></div>'''
+ else:
+  rows="".join(exam_row(e) for e in exams)
+  body=f'''<h1>Painel da Clínica</h1><p>Olá, {html_escape(session["name"])}.</p><a class="btn gold" href="/new">+ Novo Exame</a><a class="btn" href="/modelo-laudo">Modelo de laudo</a><div class="card"><h2>Exames</h2><table>{headers}{rows or f'<tr><td colspan={colspan}>Nenhum exame.</td></tr>'}</table></div>'''
  return page(body)
+
+@app.post("/exam/<int:eid>/excluir")
+def delete_exam(eid):
+ if session.get("role")!="Radiologista": return redirect("/")
+ e=Exam.query.get_or_404(eid)
+ files=ExamFile.query.filter_by(exam_id=e.id).all()
+ stored_keys=[item.stored for item in files if item.stored]
+ protocol=e.protocol
+ try:
+  Finance.query.filter_by(description=f"Laudo {protocol}").delete(synchronize_session=False)
+  for item in files: db.session.delete(item)
+  db.session.delete(e)
+  db.session.commit()
+ except Exception as exc:
+  db.session.rollback()
+  app.logger.error("exam_delete_failed exam_id=%s error_type=%s",eid,type(exc).__name__)
+  flash("Não foi possível excluir o exame. Tente novamente.")
+  return redirect("/dashboard")
+ storage_failures=0
+ for key in stored_keys:
+  try: storage_delete(key)
+  except Exception as exc:
+   storage_failures+=1
+   app.logger.error("exam_file_storage_delete_failed exam_id=%s error_type=%s",eid,type(exc).__name__)
+ if storage_failures:
+  flash("Exame excluído do painel. Alguns arquivos não puderam ser removidos do armazenamento e serão tratados pela rotina de retenção.")
+ else:
+  flash("Exame, arquivos e lançamento financeiro vinculado excluídos.")
+ return redirect("/dashboard")
 
 @app.route("/clinic-logo/<int:uid>")
 def clinic_logo(uid):
@@ -613,16 +670,11 @@ def report_model():
     flash("A logomarca deve estar em JPG ou PNG."); return redirect("/modelo-laudo")
    scan_status,scan_detail=malware_scan(logo,logo_name)
    if scan_status in {"SUSPEITO","INFECTADO"}:
-    flash("SUSPEITO/INFECTADO — a logomarca foi bloqueada e não foi armazenada.")
-    return redirect("/modelo-laudo")
+    flash("SUSPEITO/INFECTADO — a logomarca foi bloqueada e não foi armazenada."); return redirect("/modelo-laudo")
    if scan_status=="ERRO" and MALWARE_SCAN_REQUIRED:
-    flash("A varredura de segurança está indisponível. O arquivo não foi armazenado.")
-    return redirect("/modelo-laudo")
-   logo_stored="logo_"+str(u.id)+"_"+uuid.uuid4().hex+logo_ext
-   store_upload(logo,logo_stored,logo.mimetype)
-   old_logo=u.logo
-   u.logo=logo_stored; u.logo_name=logo_name
-   db.session.commit()
+    flash("A varredura de segurança está indisponível. O arquivo não foi armazenado."); return redirect("/modelo-laudo")
+   stored="logo_"+str(u.id)+"_"+uuid.uuid4().hex+logo_ext; store_upload(logo,stored,logo.mimetype)
+   old_logo=u.logo; u.logo=stored; u.logo_name=logo_name; db.session.commit()
    if old_logo:
     try: storage_delete(old_logo)
     except Exception: pass
@@ -633,23 +685,48 @@ def report_model():
    if ext not in {".pdf",".docx",".jpg",".jpeg",".png"}: flash("Use PDF, DOCX, JPG ou PNG."); return redirect("/modelo-laudo")
    scan_status,scan_detail=malware_scan(file,name)
    if scan_status in {"SUSPEITO","INFECTADO"}:
-    flash("SUSPEITO/INFECTADO — o modelo de laudo foi bloqueado e não foi armazenado.")
-    return redirect("/modelo-laudo")
+    flash("SUSPEITO/INFECTADO — o modelo de laudo foi bloqueado e não foi armazenado."); return redirect("/modelo-laudo")
    if scan_status=="ERRO" and MALWARE_SCAN_REQUIRED:
-    flash("A varredura de segurança está indisponível. O arquivo não foi armazenado.")
-    return redirect("/modelo-laudo")
-   stored="modelo_"+str(u.id)+"_"+uuid.uuid4().hex+ext
-   store_upload(file,stored,file.mimetype)
-   old_model=u.report_model
-   u.report_model=stored; u.report_model_name=name; db.session.commit()
-   if old_model:
-    try: storage_delete(old_model)
-    except Exception: pass
-   flash("Modelo personalizado da clínica salvo após varredura de segurança.")
+    flash("A varredura de segurança está indisponível. O arquivo não foi armazenado."); return redirect("/modelo-laudo")
+   stored="modelo_"+str(u.id)+"_"+uuid.uuid4().hex+ext; store_upload(file,stored,file.mimetype)
+   item=ReportModel(clinic_id=u.id,name=name,stored=stored); db.session.add(item)
+   if not u.report_model:
+    u.report_model=stored; u.report_model_name=name
+   db.session.commit(); flash("Novo modelo de laudo anexado.")
+  else: db.session.commit()
   return redirect("/modelo-laudo")
- current=(f"<p><b>Modelo atual:</b> {html_escape(u.report_model_name or '')}</p><a class='btn' href='/modelo-laudo/arquivo' target='_blank'>Visualizar modelo</a>" if u.report_model else "<div class='notice'>Nenhum modelo personalizado cadastrado.</div>")
- body=f"""<h1>Identidade visual / Modelo de laudo</h1><div class='card'><p>Cadastre a identidade visual da clínica e o modelo personalizado que servirá de referência para os laudos.</p>{("<p><b>Logomarca atual:</b> "+html_escape(u.logo_name or "")+"</p>") if u.logo else "<div class='notice'>Nenhuma logomarca cadastrada.</div>"}{current}<form method='post' enctype='multipart/form-data'>{csrf_field()}<label>Logomarca da clínica (JPG ou PNG)<input type='file' name='logo' accept='.jpg,.jpeg,.png,image/jpeg,image/png'></label><label>Modelo personalizado (PDF, DOCX, JPG ou PNG)<input type='file' name='report_model' accept='.pdf,.docx,.jpg,.jpeg,.png,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png'></label><div class='grid'><label>Margem superior do conteúdo (mm)<input type='number' name='report_top_mm' min='20' max='120' value='{u.report_top_mm or 72}'></label><label>Margem inferior (mm)<input type='number' name='report_bottom_mm' min='15' max='100' value='{u.report_bottom_mm or 42}'></label></div><p class='muted'>Ajuste estes valores quando o papel timbrado tiver cabeçalho ou rodapé maiores.</p><button class='gold' type='submit'>Salvar modelo e posicionamento</button></form></div>"""
+ models=ReportModel.query.filter_by(clinic_id=u.id).order_by(ReportModel.created_at.desc()).all()
+ if u.report_model and not any(x.stored==u.report_model for x in models):
+  legacy=ReportModel(clinic_id=u.id,name=u.report_model_name or "Modelo atual",stored=u.report_model); db.session.add(legacy); db.session.commit(); models.insert(0,legacy)
+ rows=""
+ for m in models:
+  active=(m.stored==u.report_model)
+  rows+=f"<tr><td>{html_escape(m.name)}</td><td>{'<span class=badge>Em uso</span>' if active else ''}</td><td><a class='btn' href='/modelo-laudo/arquivo?model={m.id}' target='_blank'>Visualizar</a>{'' if active else f'<form method=post action=/modelo-laudo/{m.id}/usar style=display:inline>{csrf_field()}<button type=submit>Usar este modelo</button></form>'}<form method=post action=/modelo-laudo/{m.id}/excluir style=display:inline onsubmit=\"return confirm('Excluir este modelo de laudo?')\">{csrf_field()}<button type=submit style='background:#b42318'>Excluir</button></form></td></tr>"
+ models_html=f"<table><tr><th>Modelo</th><th>Status</th><th>Ação</th></tr>{rows}</table>" if rows else "<div class='notice'>Nenhum modelo cadastrado.</div>"
+ body=f"""<h1>Identidade visual / Modelos de laudo</h1><div class='card'><p>Cadastre a identidade visual da clínica e mantenha vários modelos de laudo. O modelo marcado como <b>Em uso</b> será aplicado aos novos laudos.</p>{("<p><b>Logomarca atual:</b> "+html_escape(u.logo_name or "")+"</p>") if u.logo else "<div class='notice'>Nenhuma logomarca cadastrada.</div>"}<h3>Modelos cadastrados</h3>{models_html}<hr><form method='post' enctype='multipart/form-data'>{csrf_field()}<label>Trocar logomarca da clínica (JPG ou PNG)<input type='file' name='logo' accept='.jpg,.jpeg,.png,image/jpeg,image/png'></label><label>Anexar outro modelo (PDF, DOCX, JPG ou PNG)<input type='file' name='report_model' accept='.pdf,.docx,.jpg,.jpeg,.png,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png'></label><div class='grid'><label>Margem superior do conteúdo (mm)<input type='number' name='report_top_mm' min='20' max='120' value='{u.report_top_mm or 72}'></label><label>Margem inferior (mm)<input type='number' name='report_bottom_mm' min='15' max='100' value='{u.report_bottom_mm or 42}'></label></div><p class='muted'>Ajuste estes valores quando o papel timbrado tiver cabeçalho ou rodapé maiores.</p><button class='gold' type='submit'>Salvar / anexar modelo</button></form></div>"""
  return page(body)
+
+@app.post("/modelo-laudo/<int:mid>/usar")
+def use_report_model(mid):
+ if session.get("role")!="Clinica": return redirect("/dashboard")
+ u=User.query.get_or_404(session["uid"]); item=ReportModel.query.filter_by(id=mid,clinic_id=u.id).first_or_404()
+ u.report_model=item.stored; u.report_model_name=item.name; db.session.commit(); flash("Modelo de laudo selecionado.")
+ return redirect("/modelo-laudo")
+
+@app.post("/modelo-laudo/<int:mid>/excluir")
+def delete_report_model(mid):
+ if session.get("role")!="Clinica": return redirect("/dashboard")
+ u=User.query.get_or_404(session["uid"]); item=ReportModel.query.filter_by(id=mid,clinic_id=u.id).first_or_404()
+ was_active=(u.report_model==item.stored); stored=item.stored
+ db.session.delete(item)
+ if was_active:
+  replacement=ReportModel.query.filter(ReportModel.clinic_id==u.id,ReportModel.id!=item.id).order_by(ReportModel.created_at.desc()).first()
+  u.report_model=replacement.stored if replacement else None; u.report_model_name=replacement.name if replacement else None
+ db.session.commit()
+ try: storage_delete(stored)
+ except Exception: pass
+ flash("Modelo excluído."+(" Outro modelo foi selecionado automaticamente." if was_active and u.report_model else ""))
+ return redirect("/modelo-laudo")
 
 @app.route("/modelo-laudo/arquivo")
 def report_model_file():
@@ -659,14 +736,15 @@ def report_model_file():
   eid=request.args.get("exam",type=int)
   if not eid: return redirect("/dashboard")
   e=Exam.query.get_or_404(eid); uid=e.clinic_id
- elif session.get("role")!="Clinica":
-  return redirect("/")
- u=User.query.get_or_404(uid)
- if not u.report_model: return redirect("/dashboard")
- if not storage_exists(u.report_model):
-  flash("O modelo de laudo não está disponível no armazenamento atual. Envie o modelo novamente.")
-  return redirect("/modelo-laudo" if session.get("role")=="Clinica" else "/dashboard")
- return storage_response(u.report_model,u.report_model_name,False)
+ elif session.get("role")!="Clinica": return redirect("/")
+ u=User.query.get_or_404(uid); stored=u.report_model; name=u.report_model_name
+ mid=request.args.get("model",type=int)
+ if mid and session.get("role")=="Clinica":
+  item=ReportModel.query.filter_by(id=mid,clinic_id=u.id).first_or_404(); stored=item.stored; name=item.name
+ if not stored: return redirect("/dashboard")
+ if not storage_exists(stored):
+  flash("O modelo de laudo não está disponível no armazenamento atual."); return redirect("/modelo-laudo" if session.get("role")=="Clinica" else "/dashboard")
+ return storage_response(stored,name,False)
 
 @app.post("/new/direct-upload-url")
 def direct_upload_url():
@@ -676,18 +754,28 @@ def direct_upload_url():
  name=secure_filename(str(data.get("name","")))
  content_type=str(data.get("content_type") or "application/octet-stream")[:120]
  if not name or Path(name).suffix.lower() not in {".jpg",".jpeg",".png",".pdf",".dcm",".zip",".rar"}: return {"error":"invalid_file"},400
- key="exames/"+uuid.uuid4().hex+"_"+name
- pending=session.get("_pending_direct_uploads",{})
- now=int(time.time())
- pending={k:v for k,v in pending.items() if isinstance(v,dict) and now-int(v.get("created",0))<1800}
  upload_kind=str(data.get("kind","exam")).strip().lower()
  if upload_kind not in {"exam","request"}: return {"error":"invalid_kind"},400
  if upload_kind=="request" and Path(name).suffix.lower() not in {".jpg",".jpeg",".png",".pdf"}: return {"error":"invalid_request_file"},400
- pending[key]={"name":name,"created":now,"kind":upload_kind}
- session["_pending_direct_uploads"]=pending
+ key="exames/"+uuid.uuid4().hex+"_"+name
+ grant=DIRECT_UPLOAD_SIGNER.dumps({"key":key,"name":name,"kind":upload_kind,"uid":session["uid"]})
  url=r2_client().generate_presigned_url("put_object",Params={"Bucket":R2_BUCKET,"Key":key,"ContentType":content_type},ExpiresIn=900)
  app.logger.warning("DIRECT_UPLOAD_URL_OK")
- return {"key":key,"url":url,"content_type":content_type},200
+ return {"key":key,"url":url,"content_type":content_type,"grant":grant},200
+
+def verify_direct_upload_grant(item,expected_kind):
+ key=str(item.get("key","")); name=secure_filename(str(item.get("name",""))); token=str(item.get("grant",""))
+ if not key or not name or not token: raise ValueError("missing upload grant")
+ try:
+  grant=DIRECT_UPLOAD_SIGNER.loads(token,max_age=1800)
+ except (BadSignature,SignatureExpired) as exc:
+  raise ValueError("invalid upload grant") from exc
+ if grant.get("key")!=key or grant.get("name")!=name or grant.get("kind")!=expected_kind or grant.get("uid")!=session.get("uid"):
+  raise ValueError("upload grant mismatch")
+ if expected_kind=="request" and Path(name).suffix.lower() not in {".jpg",".jpeg",".png",".pdf"}:
+  raise ValueError("invalid request file")
+ r2_client().head_object(Bucket=R2_BUCKET,Key=key)
+ return key,name
 
 @app.post("/new/direct-finalize")
 def direct_upload_finalize():
@@ -698,27 +786,17 @@ def direct_upload_finalize():
  price=ClinicPrice.query.filter_by(clinic_id=session["uid"],exam_type=exam_type,active=True).first()
  if not price: return {"error":"invalid_exam_type"},400
  if priority not in {"NORMAL","URG"}: return {"error":"invalid_priority"},400
- verified=[]; pending=session.get("_pending_direct_uploads",{}); now=int(time.time())
  try:
-  for item in files:
-   key=str(item.get("key","")); name=secure_filename(str(item.get("name",""))); grant=pending.get(key)
-   if not key or not name or not isinstance(grant,dict) or grant.get("name")!=name or grant.get("kind","exam")!="exam" or now-int(grant.get("created",0))>1800: raise ValueError("invalid upload grant")
-   r2_client().head_object(Bucket=R2_BUCKET,Key=key); verified.append((key,name))
-  verified_requests=[]
-  for item in request_files:
-   request_key=str(item.get("key","")); request_name=secure_filename(str(item.get("name",""))); request_grant=pending.get(request_key)
-   if not request_key or not request_name or Path(request_name).suffix.lower() not in {".jpg",".jpeg",".png",".pdf"} or not isinstance(request_grant,dict) or request_grant.get("name")!=request_name or request_grant.get("kind")!="request" or now-int(request_grant.get("created",0))>1800: raise ValueError("invalid request grant")
-   r2_client().head_object(Bucket=R2_BUCKET,Key=request_key); verified_requests.append((request_key,request_name))
+  verified=[verify_direct_upload_grant(item,"exam") for item in files]
+  verified_requests=[verify_direct_upload_grant(item,"request") for item in request_files]
   e=Exam(protocol="MB"+datetime.now().strftime("%y%m%d%H%M%S"),patient=patient,sex=str(data.get("sex","Não informado")).strip(),birth=str(data.get("birth",""))[:20],dentist=dentist,exam_date=str(data.get("exam_date",""))[:20],exam_type=exam_type,observation=str(data.get("observation","")).strip()[:500],priority=priority,contracted_amount=round(price.amount*(1.5 if priority=="URG" else 1.0),2),clinic_id=session["uid"],status="Aguardando laudo",due_at=(datetime.utcnow()+timedelta(hours=24) if priority=="URG" else add_business_days_utc(datetime.utcnow(),2)))
   db.session.add(e); db.session.flush()
   for key,name in verified: db.session.add(ExamFile(exam_id=e.id,name=name,stored=key,scan_status="NAO_VERIFICADO",scan_detail="Verificação antivírus opcional pela radiologista."))
   for request_key,request_name in verified_requests:
    db.session.add(ExamFile(exam_id=e.id,name=request_name,stored=request_key,kind="requisicao",scan_status="NAO_VERIFICADO",scan_detail="Requisição/pedido do dentista."))
   db.session.commit()
-  for key,_ in verified: pending.pop(key,None)
-  for request_key,_ in verified_requests: pending.pop(request_key,None)
-  session["_pending_direct_uploads"]=pending
-  app.logger.warning("DIRECT_UPLOAD_FINALIZE_OK file_count=%s",len(verified))
+  session.pop("_pending_direct_uploads",None)
+  app.logger.warning("DIRECT_UPLOAD_FINALIZE_OK file_count=%s request_count=%s",len(verified),len(verified_requests))
   return {"status":"ok","redirect":"/dashboard"},200
  except Exception as exc:
   db.session.rollback(); app.logger.error("direct_upload_finalize_failed error_type=%s",type(exc).__name__); return {"error":"finalize_failed"},500
@@ -832,14 +910,14 @@ def new():
    for(let ri=0;ri<selectedRequests.length;ri++){{
     const req=selectedRequests[ri];requestStatus.textContent="Enviando requisição "+(ri+1)+" de "+selectedRequests.length+"...";
     const ra=await fetch("/new/direct-upload-url",{{method:"POST",headers:{{"Content-Type":"application/json","X-CSRF-Token":csrf}},body:JSON.stringify({{name:req.name,content_type:req.type||"application/octet-stream",kind:"request"}})}});if(!ra.ok)throw new Error("request_auth");const rs=await ra.json();
-    const rp=await fetch(rs.url,{{method:"PUT",headers:{{"Content-Type":rs.content_type}},body:req}});if(!rp.ok)throw new Error("request_put");requestFiles.push({{key:rs.key,name:req.name}});
+    const rp=await fetch(rs.url,{{method:"PUT",headers:{{"Content-Type":rs.content_type}},body:req}});if(!rp.ok)throw new Error("request_put");requestFiles.push({{key:rs.key,name:req.name,grant:rs.grant}});
    }}
    requestStatus.textContent=selectedRequests.length+" arquivo(s) da requisição enviado(s).";
    const uploaded=[];
    for(let i=0;i<selected.length;i++){{
     const file=selected[i].file;box.textContent="Enviando arquivo "+(i+1)+" de "+selected.length+" • "+fmt(file.size);
     const a=await fetch("/new/direct-upload-url",{{method:"POST",headers:{{"Content-Type":"application/json","X-CSRF-Token":csrf}},body:JSON.stringify({{name:file.name,content_type:file.type||"application/octet-stream",kind:"exam"}})}});if(!a.ok)throw new Error("auth");const s=await a.json();
-    const p=await fetch(s.url,{{method:"PUT",headers:{{"Content-Type":s.content_type}},body:file}});if(!p.ok)throw new Error("put");uploaded.push({{key:s.key,name:file.name}});
+    const p=await fetch(s.url,{{method:"PUT",headers:{{"Content-Type":s.content_type}},body:file}});if(!p.ok)throw new Error("put");uploaded.push({{key:s.key,name:file.name,grant:s.grant}});
    }}
    box.textContent="Finalizando envio...";const fd=new FormData(form),payload={{files:uploaded,request_files:requestFiles}};["patient","sex","birth","dentist","exam_date","exam_type","priority","observation"].forEach(k=>payload[k]=fd.get(k)||"");
    const d=await fetch("/new/direct-finalize",{{method:"POST",headers:{{"Content-Type":"application/json","X-CSRF-Token":csrf}},body:JSON.stringify(payload)}});if(!d.ok)throw new Error("finalize");const r=await d.json();location.href=r.redirect||"/dashboard";
@@ -953,6 +1031,93 @@ def delete_ready_exam_file(eid,fid):
   flash("Não foi possível excluir o anexo. Tente novamente.")
  return redirect(url_for("report",eid=e.id))
 
+# Rich text limitado a marcação tipográfica, sem scripts, URLs ou imagens.
+def clean_report_html(raw):
+ from html.parser import HTMLParser
+ from html import escape as esc
+ class Cleaner(HTMLParser):
+  def __init__(self):
+   super().__init__(convert_charrefs=True); self.parts=[]; self.stack=[]
+  def handle_starttag(self,tag,attrs):
+   allowed={"b","strong","i","em","u","p","div","br","ul","ol","li","font","span"}
+   if tag not in allowed: self.stack.append(None); return
+   props=dict(attrs); attributes=""
+   if tag=="font":
+    face=props.get("face","").lower()
+    if face in ("arial","times new roman","courier new"): attributes+=' face="'+esc(face,quote=True)+'"'
+    size=props.get("size","")
+    if size in ("1","2","3","4","5","6","7"): attributes+=' size="'+size+'"'
+   if tag in ("p","div"):
+    align=props.get("align","").lower()
+    if align in ("left","center","right","justify"): attributes+=' align="'+align+'"'
+   if tag=="span":
+    import re
+    style=props.get("style","").lower()
+    match=re.search(r"font-size:\s*(\d{1,2})px",style)
+    if match and 8<=int(match.group(1))<=30: attributes+=' data-size="'+match.group(1)+'"'
+    match=re.search(r"font-family:\s*([^;]+)",style)
+    if match and match.group(1).strip(" '\\\"") in ("arial","times new roman","courier new"): attributes+=' data-font="'+esc(match.group(1).strip(" '\\\""),quote=True)+'"'
+   self.parts.append("<"+tag+attributes+("/>" if tag=="br" else ">"))
+   if tag!="br": self.stack.append(tag)
+  def handle_endtag(self,tag):
+   if tag in self.stack:
+    while self.stack:
+     t=self.stack.pop()
+     if t: self.parts.append("</"+t+">")
+     if t==tag: break
+  def handle_data(self,data): self.parts.append(esc(data))
+  def result(self):
+   while self.stack:
+    t=self.stack.pop()
+    if t:self.parts.append("</"+t+">")
+   return "".join(self.parts)[:100000]
+ p=Cleaner(); p.feed((raw or "")[:100000]); return p.result()
+
+def rich_report_blocks(raw_html, plain):
+ from html.parser import HTMLParser
+ from html import escape as esc
+ class Blocks(HTMLParser):
+  def __init__(self):
+   super().__init__(convert_charrefs=True);self.blocks=[];self.parts=[];self.tags=[];self.align="left";self.list_stack=[];self.counter=0;self.pending_break=False
+  def flush(self,force=False):
+   content="".join(self.parts).strip()
+   if content or force:self.blocks.append((content or "&nbsp;",self.align))
+   self.parts=[];self.align="left"
+  def handle_starttag(self,tag,attrs):
+   d=dict(attrs)
+   if tag in ("p","div","li"):
+    self.flush();self.align=d.get("align","left")
+    if tag=="li":
+     if self.list_stack and self.list_stack[-1]=="ol":self.counter+=1;self.parts.append(str(self.counter)+". ")
+     else:self.parts.append("&#8226; ")
+   elif tag in ("ul","ol"):self.flush();self.list_stack.append(tag);self.counter=0
+   elif tag=="br":self.flush(force=True)
+   elif tag in ("b","strong","i","em","u"):
+    mapped={"strong":"b","em":"i"}.get(tag,tag);self.parts.append("<"+mapped+">");self.tags.append((tag,mapped))
+   elif tag in ("font","span"):
+    face=d.get("face",d.get("data-font","")).lower()
+    family={"arial":"Helvetica","times new roman":"Times-Roman","courier new":"Courier"}.get(face)
+    size=d.get("data-size","")
+    if not size:
+     size={"1":"8","2":"9","3":"10","4":"12","5":"15","6":"18","7":"22"}.get(d.get("size",""),"")
+    attributes=(" name='"+family+"'" if family else "")+(" size='"+size+"'" if size else "")
+    self.parts.append("<font"+attributes+">");self.tags.append((tag,"font"))
+  def handle_endtag(self,tag):
+   if tag in ("p","div","li"):self.flush(force=True)
+   elif tag in ("ul","ol"):
+    self.flush()
+    if self.list_stack:self.list_stack.pop()
+   elif tag in ("b","strong","i","em","u","font","span"):
+    if self.tags and self.tags[-1][0]==tag:
+     self.parts.append("</"+self.tags.pop()[1]+">")
+  def handle_data(self,data):self.parts.append(esc(data))
+ p=Blocks()
+ if raw_html:
+  p.feed(clean_report_html(raw_html));p.flush()
+ if not p.blocks:
+  p.blocks=[(esc(line) if line else "&nbsp;","left") for line in (plain or "").splitlines()]
+ return p.blocks or [("&nbsp;","left")]
+
 @app.route("/report/<int:eid>",methods=["GET","POST"])
 def report(eid):
  if session.get("role")!="Radiologista": return redirect("/")
@@ -982,7 +1147,7 @@ def report(eid):
   except (TypeError,ValueError):
    flash("Informe o valor do laudo. Para evitar cobrança incorreta, o valor deve ser maior que R$ 0,00.")
    return redirect(url_for("report",eid=e.id))
-  e.report=report_text; e.status="Liberado"; e.released_at=datetime.utcnow(); e.signed_by=session.get("name") or "Dra. Marina"; e.signed_at=datetime.utcnow()
+  e.report=report_text; e.report_html=clean_report_html(request.form.get("report_html","")); e.status="Liberado"; e.released_at=datetime.utcnow(); e.signed_by=session.get("name") or "Dra. Marina"; e.signed_at=datetime.utcnow()
   db.session.flush()
   check=result_pdf(e.id)
   if getattr(check,"status_code",200) >= 400:
@@ -997,7 +1162,7 @@ def report(eid):
  request_html="".join((f"<div class='exam-file'><div class='filebar'><b>{html_escape(f.name)}</b><a class='btn' href='/exam-file/{f.id}' target='_blank'>Abrir</a><a class='btn gold' href='/exam-file/{f.id}?download=1'>Baixar</a></div>" + (f"<img src='/exam-file/{f.id}' alt='{html_escape(f.name)}'>" if f.name.lower().endswith(('.jpg','.jpeg','.png')) else f"<iframe src='/exam-file/{f.id}' title='{html_escape(f.name)}'></iframe>") + "</div>") for f in request_files)
  ready_html="".join((f"<div class='exam-file'><div class='filebar'><b>{html_escape(f.name)}</b><a class='btn' href='/exam-file/{f.id}' target='_blank'>Abrir</a><a class='btn gold' href='/exam-file/{f.id}?download=1'>Baixar</a><form method='post' action='/report/{e.id}/exame-pronto/{f.id}/excluir' style='display:inline-block;margin:0' onsubmit=\"return confirm('Excluir este anexo individualmente? Esta ação não pode ser desfeita.')\">{csrf_field()}<button type='submit'>Excluir</button></form></div>" + (f"<img src='/exam-file/{f.id}'>" if f.name.lower().endswith(('.jpg','.jpeg')) else f"<iframe src='/exam-file/{f.id}'></iframe>") + "</div>") for f in ready_files)
  clinic=User.query.get(e.clinic_id); price=ClinicPrice.query.filter_by(clinic_id=e.clinic_id,exam_type=e.exam_type,active=True).first(); suggested_amount=(e.contracted_amount if e.contracted_amount is not None else ((price.amount*(1.5 if (e.priority or "NORMAL")=="URG" else 1.0)) if price else None)); model_link=(f"<a class='btn' href='/modelo-laudo/arquivo?exam={e.id}' target='_blank'>Ver modelo de laudo da clínica</a>" if clinic and clinic.report_model else "<span class='muted'>Clínica sem modelo de laudo cadastrado.</span>")
- body=f'''<h1>Ambiente da Radiologista — {html_escape(e.protocol)}</h1><div style="margin-bottom:12px">{model_link}</div><div class="card"><b>{html_escape(e.patient)}</b> · {html_escape(e.exam_type)} · <b>{'URG — até 24h (+50%)' if (e.priority or 'NORMAL')=='URG' else 'Normal — até 2 dias úteis'}</b><br><span class="muted">{html_escape(e.observation or 'Sem observação clínica.')}</span></div><div class="workspace"><section class="card viewer"><h2>Requisição / pedido do dentista</h2><p class="muted">Documento(s) enviado(s) pela clínica com a solicitação do profissional.</p>{request_html or '<div class="notice">Nenhuma requisição anexada. Exames anteriores à obrigatoriedade podem não possuir este documento.</div>'}<hr style="margin:24px 0;border:0;border-top:1px solid #dce8ec"><h2>Imagens / arquivos do exame</h2>{imgs or 'Nenhum anexo.'}<hr style="margin:24px 0;border:0;border-top:1px solid #dce8ec"><h2>Exame pronto / Templates</h2><p class="muted">Anexe o exame final produzido pela radiologista em JPG/JPEG e/ou PDF. Os arquivos ficarão vinculados a este exame.</p><form method="post" action="/report/{e.id}/exame-pronto" enctype="multipart/form-data">{csrf_field()}<input type="file" name="finished_files" accept=".jpg,.jpeg,.pdf,image/jpeg,application/pdf" multiple required><button class="gold" type="submit">Anexar exame pronto</button></form>{ready_html or '<div class="notice">Nenhum template/exame pronto anexado ainda.</div>'}</section><section class="card editor"><h2>Laudo escrito</h2><form method="post">{csrf_field()}<textarea name="report" placeholder="Digite o laudo..." required>{html_escape(e.report or '')}</textarea><label>Valor do laudo (R$)<input type="number" min="0.01" step="0.01" name="amount" value="{format(suggested_amount,'.2f') if suggested_amount is not None else ''}" placeholder="0,00" required></label><p class="muted">{'Valor contratado desta clínica para este tipo de exame, preenchido automaticamente.' if suggested_amount is not None else 'Sem preço contratado para este tipo de exame. Informe o valor antes de liberar.'} O valor será usado no Financeiro e no relatório de cobrança da clínica.</p><div class="editor-actions"><button type="button" onclick="localStorage.setItem('malibub_draft_{e.id}',document.querySelector('[name=report]').value);this.textContent='Rascunho salvo ✓'">Salvar rascunho</button><button type="submit" formaction="/report/{e.id}/preview-pdf" formmethod="post" formtarget="_blank">Visualizar laudo</button><button class="gold" type="submit">Finalizar e liberar</button></div></form><script>const ta=document.querySelector('[name=report]');if(!ta.value)ta.value=localStorage.getItem('malibub_draft_{e.id}')||'';</script></section></div>'''
+ body=f'''<h1>Ambiente da Radiologista — {html_escape(e.protocol)}</h1><div style="margin-bottom:12px">{model_link}</div><div class="card"><h3 style="margin-top:0">Dados do paciente</h3><div class="grid"><div><b>Paciente</b><br>{html_escape(e.patient or '—')}</div><div><b>Sexo</b><br>{html_escape(e.sex or 'Não informado')}</div><div><b>Data de nascimento</b><br>{html_escape(br_date(e.birth) or '—')}</div><div><b>Dentista solicitante</b><br>{html_escape(e.dentist or '—')}</div><div><b>Data do exame</b><br>{html_escape(br_date(e.exam_date) or '—')}</div><div><b>Tipo de exame</b><br>{html_escape(e.exam_type or '—')}</div></div><p style="margin-bottom:0"><b>Prazo:</b> {'URG — até 24h (+50%)' if (e.priority or 'NORMAL')=='URG' else 'Normal — até 2 dias úteis'}<br><b>Observação / motivo:</b> <span class="muted">{html_escape(e.observation or 'Sem observação clínica.')}</span></p></div><div class="workspace"><section class="card viewer"><h2>Requisição / pedido do dentista</h2><p class="muted">Documento(s) enviado(s) pela clínica com a solicitação do profissional.</p>{request_html or '<div class="notice">Nenhuma requisição anexada. Exames anteriores à obrigatoriedade podem não possuir este documento.</div>'}<hr style="margin:24px 0;border:0;border-top:1px solid #dce8ec"><h2>Imagens / arquivos do exame</h2>{imgs or 'Nenhum anexo.'}<hr style="margin:24px 0;border:0;border-top:1px solid #dce8ec"><h2>Exame pronto / Templates</h2><p class="muted">Anexe o exame final produzido pela radiologista em JPG/JPEG e/ou PDF. Os arquivos ficarão vinculados a este exame.</p><form method="post" action="/report/{e.id}/exame-pronto" enctype="multipart/form-data">{csrf_field()}<input type="file" name="finished_files" accept=".jpg,.jpeg,.pdf,image/jpeg,application/pdf" multiple required><button class="gold" type="submit">Anexar exame pronto</button></form>{ready_html or '<div class="notice">Nenhum template/exame pronto anexado ainda.</div>'}</section><section class="card editor"><h2>Laudo escrito</h2><div class="laudo-toolbar" role="toolbar" aria-label="Ferramentas de edição" style="display:flex;flex-direction:column;gap:5px;margin:8px 0 10px;width:100%;min-width:0"><div class="laudo-select-row" style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;width:100%"><select style="width:100%;min-width:0;height:32px;padding:3px 7px;font-size:12px" aria-label="Fonte" onchange="formatReport('fontName',this.value)"><option value="Arial">Arial</option><option value="Times New Roman">Times New Roman</option><option value="Courier New">Courier New</option></select><select style="width:100%;min-width:0;height:32px;padding:3px 7px;font-size:12px" aria-label="Tamanho" onchange="formatReport('fontSize',this.value)"><option value="2">Pequena</option><option value="3" selected>Normal</option><option value="4">Média</option><option value="5">Grande</option></select></div><div class="laudo-actions-row" style="display:flex;flex-wrap:nowrap;align-items:center;gap:3px;width:100%;min-width:0;overflow-x:auto;padding-bottom:2px"><button style="flex:1 0 0;min-width:27px;height:30px;padding:3px 2px;font-size:11px;white-space:nowrap" type="button" onclick="formatReport('bold')" title="Negrito"><b>N</b></button><button style="flex:1 0 0;min-width:27px;height:30px;padding:3px 2px;font-size:11px;white-space:nowrap" type="button" onclick="formatReport('italic')" title="Itálico"><i>I</i></button><button style="flex:1 0 0;min-width:27px;height:30px;padding:3px 2px;font-size:11px;white-space:nowrap" type="button" onclick="formatReport('underline')" title="Sublinhado"><u>S</u></button><button style="flex:1 0 0;min-width:27px;height:30px;padding:3px 2px;font-size:11px;white-space:nowrap" type="button" onclick="formatReport('insertUnorderedList')" title="Marcadores">•</button><button style="flex:1 0 0;min-width:27px;height:30px;padding:3px 2px;font-size:11px;white-space:nowrap" type="button" onclick="formatReport('insertOrderedList')" title="Numeração">1.</button><button style="flex:1 0 0;min-width:27px;height:30px;padding:3px 2px;font-size:11px;white-space:nowrap" type="button" onclick="formatReport('justifyLeft')" title="Esquerda">≡</button><button style="flex:1 0 0;min-width:27px;height:30px;padding:3px 2px;font-size:11px;white-space:nowrap" type="button" onclick="formatReport('justifyCenter')" title="Centro">☰</button><button style="flex:1 0 0;min-width:27px;height:30px;padding:3px 2px;font-size:11px;white-space:nowrap" type="button" onclick="formatReport('justifyRight')" title="Direita">≡</button><button style="flex:1 0 0;min-width:27px;height:30px;padding:3px 2px;font-size:11px;white-space:nowrap" type="button" onclick="formatReport('justifyFull')" title="Justificado">▤</button><button style="flex:1 0 0;min-width:27px;height:30px;padding:3px 2px;font-size:11px;white-space:nowrap" type="button" onclick="formatReport('undo')" title="Desfazer">↶</button><button style="flex:1 0 0;min-width:27px;height:30px;padding:3px 2px;font-size:11px;white-space:nowrap" type="button" onclick="formatReport('redo')" title="Refazer">↷</button></div></div><form method="post">{csrf_field()}<div id="report-rich" contenteditable="true" role="textbox" aria-label="Laudo escrito" aria-multiline="true" style="background:white;border:1px solid #cbdde3;border-radius:7px;min-height:340px;padding:12px;line-height:1.5;overflow:auto;white-space:pre-wrap"></div><textarea name="report" id="report-plain" hidden required>{html_escape(e.report or '')}</textarea><textarea name="report_html" id="report-html" hidden>{html_escape(e.report_html or '')}</textarea><label>Valor do laudo (R$)<input type="number" min="0.01" step="0.01" name="amount" value="{format(suggested_amount,'.2f') if suggested_amount is not None else ''}" placeholder="0,00" required></label><p class="muted">{'Valor contratado desta clínica para este tipo de exame, preenchido automaticamente.' if suggested_amount is not None else 'Sem preço contratado para este tipo de exame. Informe o valor antes de liberar.'} O valor será usado no Financeiro e no relatório de cobrança da clínica.</p><div class="editor-actions"><button type="button" onclick="localStorage.setItem('malibub_draft_{e.id}',document.querySelector('[name=report]').value);this.textContent='Rascunho salvo ✓'">Salvar rascunho</button><button type="submit" formaction="/report/{e.id}/preview-pdf" formmethod="post" formtarget="_blank">Visualizar laudo</button><button class="gold" type="submit">Finalizar e liberar</button></div></form><script>(function(){{const rich=document.getElementById('report-rich'),plain=document.getElementById('report-plain'),key='malibub_draft_{e.id}';const htmlField=document.getElementById('report-html');const saved=plain.value||localStorage.getItem(key)||'';if(htmlField.value){{rich.innerHTML=htmlField.value;}}else{{rich.textContent=saved;}}function sync(){{plain.value=rich.innerText.replace(/\\u00a0/g,' ').replace(/\\r\\n/g,'\\n');htmlField.value=rich.innerHTML;}}rich.addEventListener('input',sync);document.querySelectorAll('.editor form').forEach(form=>form.addEventListener('submit',sync));window.formatReport=function(command,value){{rich.focus();document.execCommand(command,false,value||null);sync();}};window.editReport=function(command){{rich.focus();if(command==='undo'||command==='redo'){{document.execCommand(command);sync();return;}}let selection=window.getSelection();if(!selection.rangeCount)return;let str=selection.toString();if(command==='upper')str=str.toUpperCase();else if(command==='lower')str=str.toLowerCase();else if(command==='bullet')str=str.split('\\n').map(x=>'• '+x).join('\\n');else if(command==='number')str=str.split('\\n').map((x,i)=>(i+1)+'. '+x).join('\\n');else if(command==='indent')str=str.split('\\n').map(x=>'    '+x).join('\\n');document.execCommand('insertText',false,str);sync();}};const save=document.querySelector('.editor-actions button[type=button]');if(save)save.onclick=function(){{sync();localStorage.setItem(key,plain.value);this.textContent='Rascunho salvo ✓';}};sync();}})();</script></section></div>'''
  return page(body)
 
 @app.route("/report/<int:eid>/preview-pdf",methods=["POST"])
@@ -1005,14 +1170,15 @@ def preview_report_pdf(eid):
  if session.get("role")!="Radiologista": return redirect("/")
  e=Exam.query.get_or_404(eid)
  # Salva somente uma prévia temporária do texto no registro para reutilizar o mesmo gerador.
- old_report=e.report; old_status=e.status; old_signed_by=e.signed_by; old_signed_at=e.signed_at; old_released=e.released_at
+ old_report=e.report; old_report_html=e.report_html; old_status=e.status; old_signed_by=e.signed_by; old_signed_at=e.signed_at; old_released=e.released_at
  e.report=request.form.get("report","")
+ e.report_html=clean_report_html(request.form.get("report_html",""))
  e.status="Liberado"; e.signed_by=session.get("name") or "Dra. Marina"; e.signed_at=datetime.utcnow(); e.released_at=e.signed_at
  db.session.flush()
  try:
   response=result_pdf(eid)
  finally:
-  e.report=old_report; e.status=old_status; e.signed_by=old_signed_by; e.signed_at=old_signed_at; e.released_at=old_released
+  e.report=old_report; e.report_html=old_report_html; e.status=old_status; e.signed_by=old_signed_by; e.signed_at=old_signed_at; e.released_at=old_released
   db.session.rollback()
  if hasattr(response,"headers"):
   response.headers["Content-Disposition"]=f'inline; filename="{e.protocol}_previa.pdf"'
@@ -1058,18 +1224,66 @@ def result_pdf(eid):
  if e.status!="Liberado": return redirect("/dashboard")
  from reportlab.lib.pagesizes import A4
  from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
- from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
  from reportlab.lib import colors
  from reportlab.lib.enums import TA_CENTER
  from reportlab.lib.units import mm
  from xml.sax.saxutils import escape
  buf=io.BytesIO(); clinic=User.query.get(e.clinic_id)
  model_name=(clinic.report_model_name or "").lower() if clinic else ""
+ # O gerador TMJ reconstruído é permitido somente quando não há PDF ativo.
+ # Se a clínica cadastrou um PDF, preservar o arquivo escolhido no fluxo personalizado.
  is_tmj_model=("laudotmj" in model_name or "tmj" in model_name)
  has_pdf_model=bool(clinic and clinic.report_model and Path(clinic.report_model).suffix.lower()==".pdf")
  # O modelo TMJ é reconstruído como documento fluido: o texto digitado no laudo
  # passa a fazer parte do fluxo do documento, empurrando o conteúdo seguinte e
  # criando novas páginas automaticamente, em vez de ser desenhado por cima do PDF.
+ # Assinatura vetorial reutilizável para todos os formatos de laudo.
+ signature_paths=["599,10 590,1 574,0 550,12 533,28 523,43 521,56 528,75 539,89 504,118 496,120 493,116 508,82 508,74 499,71 438,118 424,125 422,119 434,96 432,88 424,89 400,110 394,96 381,92 416,55 418,44 413,40 402,42 377,57 334,97 335,87 330,81 324,81 305,90 296,89 363,22 366,15 363,7 348,6 320,30 295,57 284,84 217,146 203,148 200,139 210,106 244,73 265,44 266,33 263,29 255,27 241,40 208,85 199,102 70,209 31,234 0,244 2,255 31,246 68,224 136,171 191,123 193,124 190,147 195,156 203,159 215,158 235,146 287,97 294,101 305,101 320,95 295,150 296,156 303,158 311,151 340,106 372,75 393,60 395,61 356,101 356,107 360,110 379,103 387,105 388,118 348,151 349,161 360,162 373,158 391,141 396,127 411,115 415,133 425,137 450,123 488,93 490,94 483,109 483,120 491,130 504,130 515,124 549,95 577,112 581,118 569,126 544,133 544,143 569,138 589,126 592,113 584,103 556,85 594,35 599,23","587,12 589,19 579,38 549,77 545,78 533,60 534,46 562,17 579,10"]
+ def draw_report_signature(cv,page_width,baseline=20*mm):
+  cv.saveState()
+  try:
+   cv.setFillColor(colors.HexColor("#41499A"))
+   p=cv.beginPath(); sw=23*mm; sh=sw*256/600; x0=(page_width-sw)/2
+   for contour in signature_paths:
+    for i,xy in enumerate(contour.split()):
+     x,y=map(int,xy.split(",")); px=x0+x*sw/600; py=baseline+(256-y)*sh/256
+     if i==0: p.moveTo(px,py)
+     else: p.lineTo(px,py)
+    p.close()
+   cv.drawPath(p,stroke=0,fill=1,fillMode=0)
+  finally: cv.restoreState()
+ from reportlab.platypus import Flowable, KeepTogether
+ class ReportSignature(Flowable):
+  def __init__(self):
+   super().__init__(); self.width=150*mm; self.height=24*mm; self.hAlign="CENTER"
+  def draw(self):
+   w=self.width
+   draw_report_signature(self.canv,w,baseline=12*mm)
+   self.canv.setFillColor(colors.HexColor("#06394C")); self.canv.setFont("Helvetica-Bold",9)
+   self.canv.drawCentredString(w/2,8*mm,"Dra. Marina L. Bub")
+   self.canv.setFillColor(colors.HexColor("#52666E")); self.canv.setFont("Helvetica",7.8)
+   self.canv.drawCentredString(w/2,4*mm,"Radiologista responsável - CRO-SP 113752")
+ def apply_final_footer(pdf_bytes):
+  # Rodapé institucional exclusivamente na última página.
+  from pypdf import PdfReader, PdfWriter
+  from reportlab.pdfgen import canvas
+  reader=PdfReader(io.BytesIO(pdf_bytes)); writer=PdfWriter()
+  total=len(reader.pages)
+  for index,page in enumerate(reader.pages):
+   if index==total-1:
+    width=float(page.mediabox.width); height=float(page.mediabox.height)
+    overlay=io.BytesIO(); cv=canvas.Canvas(overlay,pagesize=(width,height))
+    cv.setStrokeColor(colors.HexColor("#DCE8EC")); cv.line(22*mm,24*mm,width-22*mm,24*mm)
+    cv.setFillColor(colors.HexColor("#06394C")); cv.setFont("Helvetica-Bold",7.8)
+    cv.drawCentredString(width/2,18*mm,"MALIBUB Imaginologia Odontológica")
+    cv.setFillColor(colors.HexColor("#52666E")); cv.setFont("Helvetica",7.2)
+    cv.drawCentredString(width/2,14*mm,"Assinado eletronicamente por Marina Bub - CRO-SP 113752")
+    cv.setFont("Helvetica",6.8)
+    cv.drawCentredString(width/2,9*mm,f"Data: {brasilia_stamp(e.signed_at or e.released_at)} - Protocolo {e.protocol or ''}")
+    cv.save(); overlay.seek(0); page.merge_page(PdfReader(overlay).pages[0])
+   writer.add_page(page)
+  out=io.BytesIO(); writer.write(out); out.seek(0); return out
  if is_tmj_model:
   from reportlab.platypus import BaseDocTemplate, PageTemplate, Frame, Paragraph, Spacer, KeepTogether
   from reportlab.lib.styles import ParagraphStyle
@@ -1079,6 +1293,12 @@ def result_pdf(eid):
   from xml.sax.saxutils import escape
   signed=brasilia_stamp(e.signed_at or e.released_at)
   W,H=A4
+  from reportlab.platypus import Flowable
+  class TMJInlineSignature(Flowable):
+   def __init__(self):
+    super().__init__(); self.width=W-44*mm; self.height=10*mm
+   def draw(self):
+    draw_report_signature(self.canv,self.width,baseline=0)
   def tmj_header_footer(canv,docobj):
    canv.saveState()
    navy=colors.HexColor("#06394C"); teal=colors.HexColor("#087B9B"); gold=colors.HexColor("#C99B3B")
@@ -1095,34 +1315,24 @@ def result_pdf(eid):
    canv.drawString(22*mm,H-45*mm,f"Dentista solicitante: {e.dentist or ''}")
    canv.setStrokeColor(colors.HexColor("#DCE8EC")); canv.setLineWidth(.5)
    canv.line(22*mm,H-49*mm,W-22*mm,H-49*mm)
-   # Rodapé em três linhas independentes, com área exclusiva.
-   canv.setStrokeColor(colors.HexColor("#DCE8EC")); canv.setLineWidth(.5)
-   canv.line(22*mm,18*mm,W-22*mm,18*mm)
-   canv.setFillColor(navy); canv.setFont("Helvetica-Bold",7.8)
-   canv.drawCentredString(W/2,14*mm,"MALIBUB Imaginologia Odontológica")
-   canv.setFillColor(colors.HexColor("#52666E")); canv.setFont("Helvetica-Bold",7.3)
-   canv.drawCentredString(W/2,10.5*mm,"Assinado eletronicamente por Marina Bub · CROSP 113752")
-   canv.setFont("Helvetica",6.8)
-   canv.drawCentredString(W/2,7*mm,f"Data: {signed} · Protocolo {e.protocol or ''}")
-   canv.setFillColor(colors.HexColor("#7B8C93")); canv.setFont("Helvetica",6.5)
-   canv.drawRightString(W-22*mm,7*mm,f"Página {docobj.page}")
    canv.restoreState()
-  frame=Frame(22*mm,23*mm,W-44*mm,H-84*mm,leftPadding=0,rightPadding=0,topPadding=0,bottomPadding=0,id="tmj_body")
-  tdoc=BaseDocTemplate(buf,pagesize=A4,leftMargin=22*mm,rightMargin=22*mm,topMargin=61*mm,bottomMargin=23*mm,title=f"{e.protocol} - Laudo TMJ",author="MALIBUB Imaginologia Odontológica")
+  frame=Frame(22*mm,48*mm,W-44*mm,H-109*mm,leftPadding=0,rightPadding=0,topPadding=0,bottomPadding=0,id="tmj_body")
+  tdoc=BaseDocTemplate(buf,pagesize=A4,leftMargin=22*mm,rightMargin=22*mm,topMargin=61*mm,bottomMargin=48*mm,title=f"{e.protocol} - Laudo TMJ",author="MALIBUB Imaginologia Odontológica")
   tdoc.addPageTemplates(PageTemplate(id="TMJ",frames=[frame],onPage=tmj_header_footer))
   normal=ParagraphStyle("tmjn",fontName="Helvetica",fontSize=9.2,leading=14,spaceAfter=4,textColor=colors.black)
   bold=ParagraphStyle("tmjb",parent=normal,fontName="Helvetica-Bold")
   center=ParagraphStyle("tmjc",parent=bold,alignment=TA_CENTER,fontSize=10,leading=13,spaceAfter=9)
   italic=ParagraphStyle("tmji",parent=normal,fontName="Helvetica-Oblique",spaceBefore=5,spaceAfter=7)
   story_tmj=[
-   Paragraph("<u>TOMOGRAFIA COMPUTADORIZADA POR FEIXE CÔNICO DA MANDÍBULA</u>",center),
+   Paragraph("<u>TOMOGRAFIA COMPUTADORIZADA POR FEIXE CÔNICO</u>",center),
    Spacer(1,3*mm),
-   Paragraph("<b>Técnica:</b> Estudo realizado por aquisição volumétrica cone beam da região solicitada, em cortes axiais de 0,12 mm de espessura, paralelos ao rebordo alveolar e sem contraste. Realizadas reformatações panorâmicas e transversais com 2,0mm de distância entre os cortes (pode ser alterado para se obter melhor imagem) e reconstruções em 3D.",normal),
+    Paragraph("<b>Técnica:</b> Estudo realizado por aquisição volumétrica cone beam da região solicitada, em cortes axiais paralelos ao rebordo alveolar e sem contraste. Realizadas reformatações panorâmicas e transversais e reconstruções em 3D.",normal),
    Spacer(1,4*mm),
    Paragraph("<b>Descrição do exame:</b>",bold)
   ]
-  for raw in (e.report or "").splitlines():
-   story_tmj.append(Paragraph(escape(raw) if raw.strip() else "&nbsp;",normal))
+  for markup,alignment in rich_report_blocks(e.report_html,e.report):
+   sty=ParagraphStyle("rich_tmj",parent=normal,alignment={"left":0,"center":1,"right":2,"justify":4}.get(alignment,0))
+   story_tmj.append(Paragraph(markup,sty))
   story_tmj += [
    Spacer(1,5*mm),
    Paragraph("Este relatório foi baseado em imagens axiais, tangenciais, interseccionais (transaxiais ou parassagitais) de acordo com volume obtido.",normal),
@@ -1134,10 +1344,13 @@ def result_pdf(eid):
    Paragraph("“Há dados do paciente que somente o profissional solicitante do exame possui, confirmando ou não a interpretação das imagens pelo radiologista”",italic),
    Spacer(1,3*mm)
   ]
+  tmj_signature_style=ParagraphStyle("tmj_signer",parent=normal,alignment=TA_CENTER,fontName="Helvetica-Bold",fontSize=10,leading=12,spaceAfter=2)
+  tmj_sub_style=ParagraphStyle("tmj_sub",parent=normal,alignment=TA_CENTER,fontSize=8,leading=11,textColor=colors.HexColor("#657F89"),spaceAfter=1)
+  story_tmj.append(KeepTogether([Spacer(1,3*mm),ReportSignature()]))
   tdoc.build(story_tmj)
-  buf.seek(0)
+  buf=apply_final_footer(buf.getvalue())
   return send_file(buf,mimetype="application/pdf",as_attachment=True,download_name=f"{e.protocol}_laudo.pdf")
- doc=SimpleDocTemplate(buf,pagesize=A4,rightMargin=22*mm,leftMargin=22*mm,topMargin=((clinic.report_top_mm or 72)*mm if has_pdf_model else 16*mm),bottomMargin=((clinic.report_bottom_mm or 42)*mm if has_pdf_model else 18*mm),title=f"{e.protocol} - Laudo MALIBUB",author="MALIBUB Imaginologia Odontológica")
+ doc=SimpleDocTemplate(buf,pagesize=A4,rightMargin=22*mm,leftMargin=22*mm,topMargin=((clinic.report_top_mm or 72)*mm if has_pdf_model else 16*mm),bottomMargin=((clinic.report_bottom_mm or 48)*mm if has_pdf_model else 48*mm),title=f"{e.protocol} - Laudo MALIBUB",author="MALIBUB Imaginologia Odontológica")
  styles=getSampleStyleSheet(); navy=colors.HexColor("#06394C"); teal=colors.HexColor("#087B9B"); gold=colors.HexColor("#C99B3B")
  title=ParagraphStyle("t",parent=styles["Heading1"],alignment=TA_CENTER,textColor=navy,fontSize=16,leading=20); body=ParagraphStyle("b",parent=styles["BodyText"],fontSize=10,leading=15,textColor=colors.HexColor("#26383D"))
  story=[]
@@ -1168,22 +1381,21 @@ def result_pdf(eid):
   try:
    bg=Image(str(model_path)); bg._restrictSize(170*mm,48*mm); story += [bg,Spacer(1,4*mm)]
   except Exception: pass
- if not story and not has_pdf_model: story=[Paragraph("MALIBUB",title),Paragraph("Imaginologia Odontológica",ParagraphStyle("s",parent=styles["Normal"],alignment=TA_CENTER,textColor=teal,fontSize=10)),Spacer(1,6*mm)]
+ if not story and not has_pdf_model:
+  clinic_title=escape((clinic.name if clinic and clinic.name else "Clínica solicitante"))
+  story=[Paragraph(clinic_title,title),Spacer(1,6*mm)]
  if not has_pdf_model:
-  data=[["Protocolo",escape(e.protocol or "")],["Paciente",escape(e.patient or "")],["Exame",escape(e.exam_type or "")],["Dentista solicitante",escape(e.dentist or "")],["Data do exame",escape(br_date(e.exam_date))]]
+  data=[["Protocolo",escape(e.protocol or "")],["Paciente",escape(e.patient or "")],["Sexo",escape(e.sex or "Não informado")],["Data de nascimento",escape(br_date(e.birth))],["Exame",escape(e.exam_type or "")],["Dentista solicitante",escape(e.dentist or "")],["Data do exame",escape(br_date(e.exam_date))]]
   t=Table(data,colWidths=[42*mm,120*mm]); t.setStyle(TableStyle([("GRID",(0,0),(-1,-1),.4,colors.HexColor("#DCE8EC")),("BACKGROUND",(0,0),(0,-1),colors.HexColor("#F1F6F7")),("FONTNAME",(0,0),(0,-1),"Helvetica-Bold"),("FONTSIZE",(0,0),(-1,-1),9),("PADDING",(0,0),(-1,-1),6)])); story += [t,Spacer(1,7*mm),Paragraph("LAUDO RADIOLÓGICO",ParagraphStyle("h",parent=title,alignment=0,fontSize=12,textColor=navy)),Spacer(1,2*mm)]
  if not has_pdf_model:
-  for line in (e.report or "").splitlines(): story.append(Paragraph(escape(line) or "&nbsp;",body))
+  for markup,alignment in rich_report_blocks(e.report_html,e.report):
+   sty=ParagraphStyle("rich_body",parent=body,alignment={"left":0,"center":1,"right":2,"justify":4}.get(alignment,0))
+   story.append(Paragraph(markup,sty))
  signer=escape(e.signed_by or "Dra. Marina"); signed=brasilia_stamp(e.signed_at or e.released_at)
  if not has_pdf_model:
-  story += [Spacer(1,12*mm),Table([[""]],colWidths=[70*mm],style=TableStyle([("LINEABOVE",(0,0),(-1,-1),.6,navy)])),Paragraph(f"<b>{signer}</b>",ParagraphStyle("sig",parent=body,alignment=TA_CENTER,textColor=navy)),Paragraph("Radiologista responsável",ParagraphStyle("sig2",parent=styles["Normal"],alignment=TA_CENTER,fontSize=8,textColor=colors.HexColor("#657F89"))),Spacer(1,3*mm),Paragraph(f"Assinado eletronicamente em {escape(signed)}",ParagraphStyle("f",parent=styles["Normal"],fontSize=8,textColor=colors.HexColor("#657F89"))),Paragraph(f"Validação MALIBUB · Protocolo {escape(e.protocol or '')}",ParagraphStyle("f3",parent=styles["Normal"],fontSize=7.5,textColor=colors.HexColor("#657F89"))),Spacer(1,2*mm),Paragraph((escape(clinic.name)+" · MALIBUB Imaginologia Odontológica") if clinic else "MALIBUB Imaginologia Odontológica",ParagraphStyle("f2",parent=styles["Normal"],fontSize=8,textColor=gold))]
- else:
-  # No modelo personalizado, a confirmação da assinatura é aplicada depois,
-  # como rodapé fixo em todas as páginas do PDF final.
-  pass
- if not has_pdf_model:
+  story.append(KeepTogether([Spacer(1,5*mm),ReportSignature()]))
   doc.build(story)
-  buf.seek(0)
+  buf=apply_final_footer(buf.getvalue())
  # Modelo PDF da clínica: o texto do campo "Laudo radiológico" deve ocupar
  # uma área própria logo após a descrição fixa, sem sobrepor o restante do modelo.
  # Para modelos que já contêm texto fixo abaixo da descrição (ex.: TMJ), o sistema
@@ -1193,44 +1405,52 @@ def result_pdf(eid):
    from pypdf import PdfReader, PdfWriter
    from reportlab.pdfgen import canvas
    base_reader=PdfReader(str(model_path)); final_writer=PdfWriter()
-   report_lines=[]; max_chars=92
-   for raw in (e.report or "").splitlines():
-    words=raw.split(); line=""
-    if not words: report_lines.append(""); continue
-    for word in words:
-     test=(line+" "+word).strip()
-     if len(test)>max_chars and line: report_lines.append(line); line=word
-     else: line=test
-    report_lines.append(line)
-   # Primeira página TMJ: somente o espaço livre entre a descrição fixa e o texto técnico seguinte.
-   first=base_reader.pages[0]; width=float(first.mediabox.width); height=float(first.mediabox.height)
-   overlay=io.BytesIO(); cv=canvas.Canvas(overlay,pagesize=(width,height))
-   left=22*mm; y=height-119*mm; min_y=height-139*mm
-   cv.setFont("Helvetica",9); cv.setFillColor(colors.HexColor("#111111"))
-   line_index=0
-   while line_index<len(report_lines) and y>min_y:
-    cv.drawString(left,y,report_lines[line_index][:max_chars]); line_index+=1; y-=4.4*mm
-   cv.setFont("Helvetica",7.5); cv.setFillColor(colors.HexColor("#52666E"))
-   cv.drawCentredString(width/2,10*mm,f"Assinado eletronicamente por {e.signed_by or 'Dra. Marina'}")
-   cv.drawCentredString(width/2,6.5*mm,f"Data: {signed} · Protocolo {e.protocol or ''}")
-   cv.save(); overlay.seek(0); first.merge_page(PdfReader(overlay).pages[0]); final_writer.add_page(first)
-   # Mantém eventuais páginas originais seguintes.
-   for original_page in list(base_reader.pages)[1:]: final_writer.add_page(original_page)
-   # Continuação: página limpa com cabeçalho textual da clínica, sem repetir os parágrafos fixos.
-   while line_index<len(report_lines):
-    extra=io.BytesIO(); cv=canvas.Canvas(extra,pagesize=A4); width,height=A4
-    cv.setFont("Helvetica-Bold",11); cv.setFillColor(colors.HexColor("#111111"))
-    cv.drawCentredString(width/2,height-20*mm,"LAUDO RADIOLÓGICO — CONTINUAÇÃO")
-    cv.setFont("Helvetica",8); cv.drawString(22*mm,height-27*mm,f"Paciente: {e.patient}")
-    cv.line(22*mm,height-31*mm,width-22*mm,height-31*mm)
-    y=height-40*mm; cv.setFont("Helvetica",9)
-    while line_index<len(report_lines) and y>25*mm:
-     cv.drawString(22*mm,y,report_lines[line_index][:max_chars]); line_index+=1; y-=4.4*mm
-    cv.setFont("Helvetica",7.5); cv.setFillColor(colors.HexColor("#52666E"))
-    cv.drawCentredString(width/2,10*mm,f"Assinado eletronicamente por {e.signed_by or 'Dra. Marina'}")
-    cv.drawCentredString(width/2,6.5*mm,f"Data: {signed} · Protocolo {e.protocol or ''}")
-    cv.save(); extra.seek(0); final_writer.add_page(PdfReader(extra).pages[0])
-   merged=io.BytesIO(); final_writer.write(merged); merged.seek(0); buf=merged
+   # Renderização com os mesmos parágrafos estilizados dos demais laudos.
+   blocks=rich_report_blocks(e.report_html,e.report)
+   from reportlab.platypus import Paragraph
+   from reportlab.lib.styles import ParagraphStyle
+   from reportlab.lib.enums import TA_LEFT,TA_CENTER,TA_RIGHT,TA_JUSTIFY
+   def make_block(markup,alignment,available_width):
+    style=ParagraphStyle("clinic_rich",fontName="Helvetica",fontSize=9,leading=12,textColor=colors.HexColor("#111111"),alignment={"left":TA_LEFT,"center":TA_CENTER,"right":TA_RIGHT,"justify":TA_JUSTIFY}.get(alignment,TA_LEFT))
+    p=Paragraph(markup,style);_,h=p.wrap(available_width,700*mm);return p,h
+   first=base_reader.pages[0];width=float(first.mediabox.width);height=float(first.mediabox.height)
+   left=22*mm; available_width=width-44*mm
+   rendered=[make_block(markup,align,available_width) for markup,align in blocks]
+   index=0;signature_done=False
+   overlay=io.BytesIO();cv=canvas.Canvas(overlay,pagesize=(width,height))
+   y=height-119*mm;min_y=height-139*mm
+   while index<len(rendered):
+    para,h=rendered[index]
+    if y-h<min_y:break
+    y-=h;para.drawOn(cv,left,y);y-=2*mm;index+=1
+   # O modelo da clínica pode ter texto fixo abaixo da área editável.
+   # Por segurança, a assinatura vai para a folha de continuação.
+   cv.save();overlay.seek(0);first.merge_page(PdfReader(overlay).pages[0]);final_writer.add_page(first)
+   for original_page in list(base_reader.pages)[1:]:final_writer.add_page(original_page)
+   while index<len(rendered) or not signature_done:
+    extra=io.BytesIO();cv=canvas.Canvas(extra,pagesize=A4);width,height=A4
+    cv.setFont("Helvetica-Bold",11);cv.setFillColor(colors.HexColor("#111111"))
+    cv.drawCentredString(width/2,height-20*mm,"LAUDO RADIOLÓGICO - CONTINUAÇÃO")
+    cv.setFont("Helvetica",8)
+    cv.drawString(22*mm,height-27*mm,f"Paciente: {(e.patient or '')[:60]}  |  Sexo: {(e.sex or '')[:20]}  |  Nascimento: {br_date(e.birth)}")
+    cv.drawString(22*mm,height-31*mm,f"Dentista: {(e.dentist or '')[:45]}  |  Data do exame: {br_date(e.exam_date)}")
+    cv.line(22*mm,height-34*mm,width-22*mm,height-34*mm)
+    y=height-42*mm;available_width=width-44*mm
+    while index<len(rendered):
+     para,h=make_block(blocks[index][0],blocks[index][1],available_width)
+     if y-h<66*mm:break
+     y-=h;para.drawOn(cv,22*mm,y);y-=2*mm;index+=1
+    if index==len(rendered) and y>=66*mm:
+     draw_report_signature(cv,width,baseline=y-12*mm)
+     cv.setFillColor(colors.HexColor("#06394C"));cv.setFont("Helvetica-Bold",9)
+     cv.drawCentredString(width/2,y-16*mm,"Dra. Marina L. Bub")
+     cv.setFillColor(colors.HexColor("#52666E"));cv.setFont("Helvetica",7.8)
+     cv.drawCentredString(width/2,y-20*mm,"Radiologista responsável - CRO-SP 113752")
+     signature_done=True
+    if index<len(rendered) and y==height-42*mm:
+     raise ValueError("Parágrafo do laudo excede a altura de uma página")
+    cv.save();extra.seek(0);final_writer.add_page(PdfReader(extra).pages[0])
+   merged=io.BytesIO(); final_writer.write(merged); merged.seek(0); buf=apply_final_footer(merged.getvalue())
   except Exception:
    return "Não foi possível gerar o PDF personalizado. Verifique o modelo de laudo cadastrado.",500
  print_mode=request.args.get("print")=="1"
@@ -1254,7 +1474,7 @@ def result(eid):
  ready=ExamFile.query.filter_by(exam_id=e.id,kind="exame_pronto").all()
  ready_html="".join((f"<div class='exam-file'><div class='filebar'><b>{html_escape(f.name)}</b><a class='btn' href='/exam-file/{f.id}' target='_blank'>Abrir</a><a class='btn gold' href='/exam-file/{f.id}?download=1'>Baixar</a></div>" + (f"<img src='/exam-file/{f.id}' alt='{html_escape(f.name)}'>" if f.name.lower().endswith(('.jpg','.jpeg')) else f"<iframe src='/exam-file/{f.id}' title='{html_escape(f.name)}'></iframe>") + "</div>") for f in ready)
  signed=brasilia_stamp(e.signed_at)
- body=f'''<section class="print-result"><h1>Resultado — {html_escape(e.protocol)}</h1><div class="card"><div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap"><div><h2 style="margin:0 0 6px">{html_escape(e.patient)}</h2><div class="muted">{html_escape(e.exam_type)} · {html_escape(e.dentist or 'Dentista não informado')}</div></div><span class="badge">{html_escape(e.status)}</span></div><hr><h3>Laudo radiológico</h3><div style="white-space:pre-wrap;min-height:220px;line-height:1.6">{html_escape(e.report or 'Laudo não informado.')}</div><div style="margin-top:22px;padding-top:16px;border-top:1px solid #dce8ec"><b>{html_escape(e.signed_by or 'Dra. Marina')}</b><br><span class="muted">Radiologista responsável · Assinado eletronicamente {signed}</span></div><hr><div class="no-print"><a class="btn gold" href="/result/{e.id}/pdf">Baixar laudo assinado em PDF</a><a class="btn" href="/result/{e.id}/pdf?print=1" target="_blank">Imprimir</a></div></div></section><section class="card viewer no-print"><h2>Exame pronto / Templates</h2><p class="muted">Arquivos finais disponibilizados pela radiologista.</p>{ready_html or '<div class="notice">Nenhum arquivo final foi anexado.</div>'}</section>'''
+ body=f'''<section class="print-result"><h1>Resultado — {html_escape(e.protocol)}</h1><div class="card"><div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap"><div><h2 style="margin:0 0 6px">{html_escape(e.patient)}</h2><div class="muted"><b>Sexo:</b> {html_escape(e.sex or 'Não informado')} · <b>Nascimento:</b> {html_escape(br_date(e.birth) or '—')} · <b>Exame:</b> {html_escape(e.exam_type)} · <b>Dentista:</b> {html_escape(e.dentist or 'Dentista não informado')} · <b>Data do exame:</b> {html_escape(br_date(e.exam_date) or '—')}</div></div><span class="badge">{html_escape(e.status)}</span></div><hr><h3>Laudo radiológico</h3><div style="white-space:pre-wrap;min-height:220px;line-height:1.6">{html_escape(e.report or 'Laudo não informado.')}</div><div style="margin-top:22px;padding-top:16px;border-top:1px solid #dce8ec"><b>{html_escape(e.signed_by or 'Dra. Marina')}</b><br><span class="muted">Radiologista responsável · Assinado eletronicamente {signed}</span></div><hr><div class="no-print"><a class="btn gold" href="/result/{e.id}/pdf">Baixar laudo assinado em PDF</a><a class="btn" href="/result/{e.id}/pdf?print=1" target="_blank">Imprimir</a></div></div></section><section class="card viewer no-print"><h2>Exame pronto / Templates</h2><p class="muted">Arquivos finais disponibilizados pela radiologista.</p>{ready_html or '<div class="notice">Nenhum arquivo final foi anexado.</div>'}</section>'''
  return page(body)
 
 @app.route("/finance",methods=["GET","POST"])
