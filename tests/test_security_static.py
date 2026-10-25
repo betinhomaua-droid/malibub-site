@@ -17,6 +17,14 @@ class SecuritySourceChecks(unittest.TestCase):
         self.assertNotIn("DIRECT_UPLOAD_MAX_BYTES", SOURCE)
         self.assertIn('if size<=0: raise ValueError("empty upload")', SOURCE)
 
+    def test_admin_unlock_is_post_only_and_csrf_protected(self):
+        self.assertIn('@app.route("/admin/usuarios/<int:uid>/desbloquear",methods=["POST"])', SOURCE)
+        self.assertIn('def admin_unlock_clinic(uid):', SOURCE)
+        self.assertIn('u.access_locked=False', SOURCE)
+        self.assertIn('u.failed_login_count=0', SOURCE)
+        self.assertIn("action='/admin/usuarios/{u.id}/desbloquear'", SOURCE)
+        self.assertIn("{csrf_field()}<button type='submit' {'disabled' if not u.access_locked else ''}>Desbloquear</button>", SOURCE)
+
     def test_three_attempt_clinic_lock(self):
         self.assertIn('if u.failed_login_count>=3:', SOURCE)
         self.assertIn('CONTATE A MALIBUB PELO WHATSAPP.', SOURCE)
