@@ -1,0 +1,22 @@
+name: Validate MALIBUB security branch
+on:
+  push:
+    branches:
+      - operacao/continuidade-malibub-2026-10
+  pull_request:
+    branches:
+      - main
+jobs:
+  static-validation:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Python syntax
+        run: python -m py_compile app.py
+      - name: Security regression checks
+        run: python -m unittest discover -s tests -p 'test_security_static.py' -v
