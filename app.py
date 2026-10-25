@@ -31,6 +31,21 @@ app.config["SESSION_COOKIE_HTTPONLY"]=True
 app.config["SESSION_COOKIE_SAMESITE"]="Lax"
 app.config["SESSION_COOKIE_SECURE"]=APP_ENV=="production"
 app.config["PERMANENT_SESSION_LIFETIME"]=timedelta(hours=8)
+TURNSTILE_SITE_KEY=os.getenv("TURNSTILE_SITE_KEY","").strip()
+TURNSTILE_SECRET_KEY=os.getenv("TURNSTILE_SECRET_KEY","").strip()
+if APP_ENV=="production" and bool(TURNSTILE_SITE_KEY)!=bool(TURNSTILE_SECRET_KEY):
+ raise RuntimeError("Both Turnstile keys must be configured together")
+
+def verify_turnstile(token):
+ if not TURNSTILE_SECRET_KEY: return APP_ENV!="production" or not TURNSTILE_SITE_KEY
+ if not isinstance(token,str) or not token or len(token)>2048: return False
+ try:
+  response=requests.post("https://challenges.cloudflare.com/turnstile/v0/siteverify",data={"secret":TURNSTILE_SECRET_KEY,"response":token,"remoteip":request.remote_addr},timeout=8)
+  return response.ok and response.json().get("success") is True
+ except (requests.RequestException,ValueError):
+  app.logger.warning("turnstile_verification_unavailable")
+  return False
+
 DIRECT_UPLOAD_SIGNER=URLSafeTimedSerializer(app.config["SECRET_KEY"],salt="malibub-direct-upload-v2")
 db=SQLAlchemy(app)
 UPLOAD=Path(app.instance_path)/"uploads"; UPLOAD.mkdir(parents=True,exist_ok=True)
@@ -185,7 +200,7 @@ def security_headers(response):
  response.headers["X-Frame-Options"]="SAMEORIGIN"
  response.headers["Referrer-Policy"]="no-referrer"
  response.headers["Permissions-Policy"]="camera=(), microphone=(), geolocation=()"
- response.headers["Content-Security-Policy"]="default-src 'self'; img-src 'self' data:; frame-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' https://*.r2.cloudflarestorage.com; form-action 'self'; base-uri 'self'; frame-ancestors 'self'"
+ response.headers["Content-Security-Policy"]="default-src 'self'; img-src 'self' data:; frame-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; connect-src 'self' https://*.r2.cloudflarestorage.com https://challenges.cloudflare.com; form-action 'self'; base-uri 'self'; frame-ancestors 'self'"
  response.headers["Cache-Control"]="no-store"
  if request.is_secure: response.headers["Strict-Transport-Security"]="max-age=31536000; includeSubDomains"
  return response
@@ -812,6 +827,7 @@ def verify_direct_upload_grant(item,expected_kind):
 def direct_upload_finalize():
  if session.get("role")!="Clinica": return {"error":"unauthorized"},403
  data=request.get_json(silent=True) or {}; files=data.get("files") or []; request_files=data.get("request_files") or []
+ if TURNSTILE_SECRET_KEY and not verify_turnstile(data.get("turnstile_token","")): return {"error":"human_verification_failed"},403
  patient=str(data.get("patient","")).strip()[:120]; dentist=str(data.get("dentist","")).strip()[:120]; exam_type=str(data.get("exam_type","")).strip()[:80]; priority=str(data.get("priority","NORMAL")).strip().upper()
  if not files or not request_files or not patient or not dentist or not exam_type: return {"error":"required_fields"},400
  price=ClinicPrice.query.filter_by(clinic_id=session["uid"],exam_type=exam_type,active=True).first()
@@ -837,6 +853,9 @@ def new():
  if session.get("role")!="Clinica": return redirect("/dashboard")
  allowed_ext={".jpg",".jpeg",".png",".pdf",".dcm",".zip",".rar"}
  if request.method=="POST":
+  if TURNSTILE_SECRET_KEY and not verify_turnstile(request.form.get("cf-turnstile-response","")):
+   flash("Não foi possível confirmar a verificação de segurança. Tente novamente.")
+   return redirect("/new")
   incoming=[f for f in request.files.getlist("files") if f and f.filename]
   dentist_requests=[f for f in request.files.getlist("dentist_request") if f and f.filename]
   if not incoming:
@@ -909,6 +928,7 @@ def new():
  exam_type_options="".join(f"<option value='{html_escape(x.exam_type)}'>{html_escape(x.exam_type)}</option>" for x in clinic_exam_types)
  if not exam_type_options:
   exam_type_options="<option value='' disabled selected>Nenhum exame cadastrado para esta clínica</option>"
+ turnstile_widget=(f'<div class="cf-turnstile" data-sitekey="{html_escape(TURNSTILE_SITE_KEY)}" data-theme="light"></div><script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>' if TURNSTILE_SITE_KEY else "")
  body=f'''<h1>Novo Exame</h1><div class="card"><form id="exam-form" method="post" enctype="multipart/form-data">{csrf_field()}<div class="grid"><label>Nome do paciente<input name="patient" required></label><label>Sexo<select name="sex"><option>Feminino</option><option>Masculino</option><option>Não informado</option></select></label><label>Data de nascimento<input type="date" name="birth" required></label><label>Dentista solicitante<input name="dentist" required></label><label>Data do exame<input type="date" name="exam_date" required></label><div class="grid"><label>Tipo de exame<select name="exam_type" required>{exam_type_options}</select></label><label>Prazo<select name="priority" required><option value="NORMAL">Normal — até 2 dias úteis</option><option value="URG">URG — até 24h (+50% do valor do exame)</option></select></label></div></div><label>Observação / motivo <span class="muted">(Avaliação de Maxila/Mandíbula, Exodontia dos 38 e 48, Implante na região do dente XX, ATM etc.)</span><textarea name="observation" maxlength="500"></textarea></label>
 <div class="card" style="margin-top:18px"><h3>Requisição / pedido do dentista <span style="color:#b42318">*</span></h3><p class="muted">Obrigatório para enviar o exame. Se o pedido tiver mais de uma página, selecione todos os arquivos. Formatos: PDF, JPG ou PNG.</p><input id="dentist-request" type="file" name="dentist_request" multiple accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" style="display:none"><div style="display:flex;gap:10px;flex-wrap:wrap"><button type="button" class="blue" id="pick-request">Selecionar arquivos</button><button type="button" class="blue" id="pick-request-more">Adicionar mais arquivos</button></div><div id="request-status" class="notice" style="display:none;margin-top:10px"></div><div id="request-list" style="margin-top:10px"></div></div>
 <div class="card" style="margin-top:18px"><h3>Arquivos do exame</h3><p class="muted">Adicione imagens, DICOM, PDF, ZIP ou RAR. Você pode combinar vários arquivos no mesmo exame.</p>
@@ -916,7 +936,7 @@ def new():
 <input id="exam-folder" type="file" multiple webkitdirectory directory style="display:none">
 <div style="display:flex;gap:10px;flex-wrap:wrap"><button type="button" class="blue" id="pick-files">Selecionar arquivos</button><button type="button" class="blue" id="pick-folder">Selecionar pasta</button><button type="button" class="blue" id="pick-more">Adicionar mais arquivos</button></div>
 <div id="file-summary" class="notice" style="display:none;margin-top:12px"></div><div id="file-list" style="margin-top:10px"></div></div>
-<div id="upload-progress" class="notice" style="display:none"></div><p class="muted" style="margin-top:14px">Ao enviar, a Clínica confirma que está autorizada a encaminhar os dados e arquivos necessários à execução do serviço solicitado.</p><button id="send-exam" class="gold">Enviar exame</button></form></div>
+<div id="upload-progress" class="notice" style="display:none"></div><p class="muted" style="margin-top:14px">Ao enviar, a Clínica confirma que está autorizada a encaminhar os dados e arquivos necessários à execução do serviço solicitado.</p>{turnstile_widget}<button id="send-exam" class="gold">Enviar exame</button></form></div>
 <script>
 (function(){{
  const form=document.getElementById("exam-form"), requestInput=document.getElementById("dentist-request"), requestStatus=document.getElementById("request-status"), input=document.getElementById("exam-files"), folder=document.getElementById("exam-folder"), list=document.getElementById("file-list"), summary=document.getElementById("file-summary"), box=document.getElementById("upload-progress"), btn=document.getElementById("send-exam");
