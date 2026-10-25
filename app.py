@@ -788,11 +788,26 @@ def report_model_file():
   flash("O modelo de laudo não está disponível no armazenamento atual."); return redirect("/modelo-laudo" if session.get("role")=="Clinica" else "/dashboard")
  return storage_response(stored,name,False)
 
+@app.post("/new/verify-human")
+def verify_human_for_upload():
+ if session.get("role")!="Clinica": return {"error":"unauthorized"},403
+ if not TURNSTILE_SECRET_KEY: return {"proof":""},200
+ data=request.get_json(silent=True) or {}
+ if not verify_turnstile(data.get("turnstile_token","")): return {"error":"human_verification_failed"},403
+ proof=secrets.token_urlsafe(32)
+ session["turnstile_proof"]=proof
+ session["turnstile_proof_uid"]=session["uid"]
+ return {"proof":proof},200
+
 @app.post("/new/direct-upload-url")
 def direct_upload_url():
  if session.get("role")!="Clinica": return {"error":"unauthorized"},403
  if not object_storage_enabled(): return {"error":"storage_unavailable"},503
  data=request.get_json(silent=True) or {}
+ if TURNSTILE_SECRET_KEY:
+  proof=str(data.get("turnstile_proof",""))
+  if not proof or session.get("turnstile_proof")!=proof or session.get("turnstile_proof_uid")!=session.get("uid"):
+   return {"error":"human_verification_required"},403
  name=secure_filename(str(data.get("name","")))
  content_type=str(data.get("content_type") or "application/octet-stream")[:120]
  if not name or Path(name).suffix.lower() not in {".jpg",".jpeg",".png",".pdf",".dcm",".zip",".rar"}: return {"error":"invalid_file"},400
@@ -827,7 +842,12 @@ def verify_direct_upload_grant(item,expected_kind):
 def direct_upload_finalize():
  if session.get("role")!="Clinica": return {"error":"unauthorized"},403
  data=request.get_json(silent=True) or {}; files=data.get("files") or []; request_files=data.get("request_files") or []
- if TURNSTILE_SECRET_KEY and not verify_turnstile(data.get("turnstile_token","")): return {"error":"human_verification_failed"},403
+ if TURNSTILE_SECRET_KEY:
+  proof=str(data.get("turnstile_proof",""))
+  if not proof or session.get("turnstile_proof")!=proof or session.get("turnstile_proof_uid")!=session.get("uid"):
+   return {"error":"human_verification_failed"},403
+  session.pop("turnstile_proof",None)
+  session.pop("turnstile_proof_uid",None)
  patient=str(data.get("patient","")).strip()[:120]; dentist=str(data.get("dentist","")).strip()[:120]; exam_type=str(data.get("exam_type","")).strip()[:80]; priority=str(data.get("priority","NORMAL")).strip().upper()
  if not files or not request_files or not patient or not dentist or not exam_type: return {"error":"required_fields"},400
  price=ClinicPrice.query.filter_by(clinic_id=session["uid"],exam_type=exam_type,active=True).first()
@@ -956,21 +976,26 @@ def new():
   if(!window.fetch||!selected.length){{if(!selected.length){{ev.preventDefault();box.style.display="block";box.textContent="Adicione ao menos um arquivo do exame.";}}return;}}
   ev.preventDefault();btn.disabled=true;box.style.display="block";
   try{{
+   let humanProof="";
+   const turnstileToken=new FormData(form).get("cf-turnstile-response")||"";
+   const verification=await fetch("/new/verify-human",{{method:"POST",headers:{{"Content-Type":"application/json","X-CSRF-Token":csrf}},body:JSON.stringify({{turnstile_token:turnstileToken}})}});
+   if(!verification.ok)throw new Error("human_verification_failed");
+   humanProof=(await verification.json()).proof||"";
    const requestFiles=[];
    requestStatus.style.display="block";
    for(let ri=0;ri<selectedRequests.length;ri++){{
     const req=selectedRequests[ri];requestStatus.textContent="Enviando requisição "+(ri+1)+" de "+selectedRequests.length+"...";
-    const ra=await fetch("/new/direct-upload-url",{{method:"POST",headers:{{"Content-Type":"application/json","X-CSRF-Token":csrf}},body:JSON.stringify({{name:req.name,content_type:req.type||"application/octet-stream",kind:"request"}})}});if(!ra.ok)throw new Error("request_auth");const rs=await ra.json();
+    const ra=await fetch("/new/direct-upload-url",{{method:"POST",headers:{{"Content-Type":"application/json","X-CSRF-Token":csrf}},body:JSON.stringify({{name:req.name,content_type:req.type||"application/octet-stream",kind:"request",turnstile_proof:humanProof}})}});if(!ra.ok)throw new Error("request_auth");const rs=await ra.json();
     const rp=await fetch(rs.url,{{method:"PUT",headers:{{"Content-Type":rs.content_type}},body:req}});if(!rp.ok)throw new Error("request_put");requestFiles.push({{key:rs.key,name:req.name,grant:rs.grant}});
    }}
    requestStatus.textContent=selectedRequests.length+" arquivo(s) da requisição enviado(s).";
    const uploaded=[];
    for(let i=0;i<selected.length;i++){{
     const file=selected[i].file;box.textContent="Enviando arquivo "+(i+1)+" de "+selected.length+" • "+fmt(file.size);
-    const a=await fetch("/new/direct-upload-url",{{method:"POST",headers:{{"Content-Type":"application/json","X-CSRF-Token":csrf}},body:JSON.stringify({{name:file.name,content_type:file.type||"application/octet-stream",kind:"exam"}})}});if(!a.ok)throw new Error("auth");const s=await a.json();
+    const a=await fetch("/new/direct-upload-url",{{method:"POST",headers:{{"Content-Type":"application/json","X-CSRF-Token":csrf}},body:JSON.stringify({{name:file.name,content_type:file.type||"application/octet-stream",kind:"exam",turnstile_proof:humanProof}})}});if(!a.ok)throw new Error("auth");const s=await a.json();
     const p=await fetch(s.url,{{method:"PUT",headers:{{"Content-Type":s.content_type}},body:file}});if(!p.ok)throw new Error("put");uploaded.push({{key:s.key,name:file.name,grant:s.grant}});
    }}
-   box.textContent="Finalizando envio...";const fd=new FormData(form),payload={{files:uploaded,request_files:requestFiles,turnstile_token:fd.get("cf-turnstile-response")||""}};["patient","sex","birth","dentist","exam_date","exam_type","priority","observation"].forEach(k=>payload[k]=fd.get(k)||"");
+   box.textContent="Finalizando envio...";const fd=new FormData(form),payload={{files:uploaded,request_files:requestFiles,turnstile_proof:humanProof}};["patient","sex","birth","dentist","exam_date","exam_type","priority","observation"].forEach(k=>payload[k]=fd.get(k)||"");
    const d=await fetch("/new/direct-finalize",{{method:"POST",headers:{{"Content-Type":"application/json","X-CSRF-Token":csrf}},body:JSON.stringify(payload)}});if(!d.ok)throw new Error("finalize");const r=await d.json();location.href=r.redirect||"/dashboard";
   }}catch(e){{box.textContent="O envio direto não pôde ser concluído. Tente novamente.";btn.disabled=false;}}
  }});
