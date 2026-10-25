@@ -832,10 +832,8 @@ def verify_direct_upload_grant(item,expected_kind):
  if expected_kind=="request" and Path(name).suffix.lower() not in {".jpg",".jpeg",".png",".pdf"}:
   raise ValueError("invalid request file")
  metadata=r2_client().head_object(Bucket=R2_BUCKET,Key=key)
- max_bytes=int(os.getenv("DIRECT_UPLOAD_MAX_BYTES",str(250*1024*1024)))
- if max_bytes<=0: raise ValueError("invalid upload size configuration")
  size=int(metadata.get("ContentLength",0))
- if size<=0 or size>max_bytes: raise ValueError("invalid upload size")
+ if size<=0: raise ValueError("empty upload")
  return key,name
 
 @app.post("/new/direct-finalize")
