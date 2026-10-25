@@ -17,6 +17,11 @@ class SecuritySourceChecks(unittest.TestCase):
         self.assertNotIn("DIRECT_UPLOAD_MAX_BYTES", SOURCE)
         self.assertIn('if size<=0: raise ValueError("empty upload")', SOURCE)
 
+    def test_upload_expiry_policy_unchanged(self):
+        self.assertEqual(SOURCE.count("<=1800"), 2)
+        self.assertIn("DIRECT_UPLOAD_SIGNER.loads(token,max_age=1800)", SOURCE)
+        self.assertIn("ExpiresIn=900", SOURCE)
+
     def test_admin_unlock_is_post_only_and_csrf_protected(self):
         self.assertIn('@app.route("/admin/usuarios/<int:uid>/desbloquear",methods=["POST"])', SOURCE)
         self.assertIn('def admin_unlock_clinic(uid):', SOURCE)
