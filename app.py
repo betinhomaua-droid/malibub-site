@@ -252,7 +252,7 @@ def assets(filename):
  return send_from_directory(Path(app.root_path)/"assets", filename)
 
 class User(db.Model):
- id=db.Column(db.Integer,primary_key=True); name=db.Column(db.String(100)); email=db.Column(db.String(120),unique=True); password=db.Column(db.String(255)); role=db.Column(db.String(30)); active=db.Column(db.Boolean,default=True); logo=db.Column(db.String(255)); logo_name=db.Column(db.String(255)); report_model=db.Column(db.String(255)); report_model_name=db.Column(db.String(255)); report_top_mm=db.Column(db.Integer,default=72); report_bottom_mm=db.Column(db.Integer,default=42); privacy_version=db.Column(db.String(20)); privacy_ack_at=db.Column(db.DateTime)
+ id=db.Column(db.Integer,primary_key=True); name=db.Column(db.String(100)); email=db.Column(db.String(120),unique=True); password=db.Column(db.String(255)); role=db.Column(db.String(30)); active=db.Column(db.Boolean,default=True); logo=db.Column(db.String(255)); logo_name=db.Column(db.String(255)); report_model=db.Column(db.String(255)); report_model_name=db.Column(db.String(255)); report_top_mm=db.Column(db.Integer,default=72); report_bottom_mm=db.Column(db.Integer,default=42); privacy_version=db.Column(db.String(20)); privacy_ack_at=db.Column(db.DateTime); failed_login_count=db.Column(db.Integer,default=0,nullable=False); access_locked=db.Column(db.Boolean,default=False,nullable=False)
 class ReportModel(db.Model):
  id=db.Column(db.Integer,primary_key=True); clinic_id=db.Column(db.Integer,index=True,nullable=False); name=db.Column(db.String(255)); stored=db.Column(db.String(255)); created_at=db.Column(db.DateTime,default=datetime.utcnow)
 class Exam(db.Model):
@@ -362,6 +362,8 @@ def init():
    db.session.execute(db.text("ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE"))
    db.session.execute(db.text("ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS privacy_version VARCHAR(20)"))
    db.session.execute(db.text("ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS privacy_ack_at TIMESTAMP"))
+   db.session.execute(db.text("ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS failed_login_count INTEGER NOT NULL DEFAULT 0"))
+   db.session.execute(db.text("ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS access_locked BOOLEAN NOT NULL DEFAULT FALSE"))
    db.session.execute(db.text("ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS logo VARCHAR(255)"))
    db.session.execute(db.text("ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS logo_name VARCHAR(255)"))
    db.session.execute(db.text("ALTER TABLE exam_file ADD COLUMN IF NOT EXISTS scan_status VARCHAR(20) DEFAULT 'PENDENTE'"))
@@ -432,11 +434,25 @@ def login():
   email=request.form.get("email","").strip().lower()[:120]
   password=request.form.get("password","")[:256]
   u=User.query.filter_by(email=email).first()
+  if u and u.role=="Clinica" and u.access_locked:
+   flash("CONTATE A MALIBUB PELO WHATSAPP.")
+   return redirect("/")
   if u and u.active is not False and password and check_password_hash(u.password,password):
+   if u.role=="Clinica":
+    u.failed_login_count=0
+    db.session.commit()
    clear_login_failures(client_key)
    session.clear(); session.permanent=True
    session.update(uid=u.id,role=u.role,name=u.name,_csrf_token=secrets.token_urlsafe(32)); return redirect("/dashboard")
   record_login_failure(client_key)
+  if u and u.role=="Clinica" and u.active is not False:
+   u.failed_login_count=(u.failed_login_count or 0)+1
+   if u.failed_login_count>=3:
+    u.access_locked=True
+    db.session.commit()
+    flash("CONTATE A MALIBUB PELO WHATSAPP.")
+    return redirect("/")
+   db.session.commit()
   flash("E-mail ou senha inválidos.")
  msgs="".join(f'<div class="login-flash">{html_escape(m)}</div>' for m in __import__("flask").get_flashed_messages())
  body=f'''<div class="login-approved">
@@ -561,6 +577,17 @@ def admin_user_status(uid):
  u.active=not (u.active is not False)
  db.session.commit()
  flash("Acesso da clínica ativado." if u.active else "Acesso da clínica desativado.")
+ return redirect("/admin/usuarios")
+
+@app.route("/admin/usuarios/<int:uid>/desbloquear",methods=["POST"])
+def admin_unlock_clinic(uid):
+ if session.get("role")!="Radiologista": return redirect("/")
+ u=User.query.get_or_404(uid)
+ if u.role!="Clinica": return redirect("/admin/usuarios")
+ u.access_locked=False
+ u.failed_login_count=0
+ db.session.commit()
+ flash("Acesso da clínica desbloqueado.")
  return redirect("/admin/usuarios")
 
 @app.route("/dashboard")
