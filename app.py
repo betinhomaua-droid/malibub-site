@@ -31,6 +31,21 @@ app.config["SESSION_COOKIE_HTTPONLY"]=True
 app.config["SESSION_COOKIE_SAMESITE"]="Lax"
 app.config["SESSION_COOKIE_SECURE"]=APP_ENV=="production"
 app.config["PERMANENT_SESSION_LIFETIME"]=timedelta(hours=8)
+TURNSTILE_SITE_KEY=os.getenv("TURNSTILE_SITE_KEY","").strip()
+TURNSTILE_SECRET_KEY=os.getenv("TURNSTILE_SECRET_KEY","").strip()
+if APP_ENV=="production" and bool(TURNSTILE_SITE_KEY)!=bool(TURNSTILE_SECRET_KEY):
+ raise RuntimeError("Both Turnstile keys must be configured together")
+
+def verify_turnstile(token):
+ if not TURNSTILE_SECRET_KEY: return APP_ENV!="production" or not TURNSTILE_SITE_KEY
+ if not isinstance(token,str) or not token or len(token)>2048: return False
+ try:
+  response=requests.post("https://challenges.cloudflare.com/turnstile/v0/siteverify",data={"secret":TURNSTILE_SECRET_KEY,"response":token,"remoteip":request.remote_addr},timeout=8)
+  return response.ok and response.json().get("success") is True
+ except (requests.RequestException,ValueError):
+  app.logger.warning("turnstile_verification_unavailable")
+  return False
+
 DIRECT_UPLOAD_SIGNER=URLSafeTimedSerializer(app.config["SECRET_KEY"],salt="malibub-direct-upload-v2")
 db=SQLAlchemy(app)
 UPLOAD=Path(app.instance_path)/"uploads"; UPLOAD.mkdir(parents=True,exist_ok=True)
@@ -185,7 +200,7 @@ def security_headers(response):
  response.headers["X-Frame-Options"]="SAMEORIGIN"
  response.headers["Referrer-Policy"]="no-referrer"
  response.headers["Permissions-Policy"]="camera=(), microphone=(), geolocation=()"
- response.headers["Content-Security-Policy"]="default-src 'self'; img-src 'self' data:; frame-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' https://*.r2.cloudflarestorage.com; form-action 'self'; base-uri 'self'; frame-ancestors 'self'"
+ response.headers["Content-Security-Policy"]="default-src 'self'; img-src 'self' data:; frame-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; connect-src 'self' https://*.r2.cloudflarestorage.com https://challenges.cloudflare.com; form-action 'self'; base-uri 'self'; frame-ancestors 'self'"
  response.headers["Cache-Control"]="no-store"
  if request.is_secure: response.headers["Strict-Transport-Security"]="max-age=31536000; includeSubDomains"
  return response
@@ -252,7 +267,7 @@ def assets(filename):
  return send_from_directory(Path(app.root_path)/"assets", filename)
 
 class User(db.Model):
- id=db.Column(db.Integer,primary_key=True); name=db.Column(db.String(100)); email=db.Column(db.String(120),unique=True); password=db.Column(db.String(255)); role=db.Column(db.String(30)); active=db.Column(db.Boolean,default=True); logo=db.Column(db.String(255)); logo_name=db.Column(db.String(255)); report_model=db.Column(db.String(255)); report_model_name=db.Column(db.String(255)); report_top_mm=db.Column(db.Integer,default=72); report_bottom_mm=db.Column(db.Integer,default=42); privacy_version=db.Column(db.String(20)); privacy_ack_at=db.Column(db.DateTime)
+ id=db.Column(db.Integer,primary_key=True); name=db.Column(db.String(100)); email=db.Column(db.String(120),unique=True); password=db.Column(db.String(255)); role=db.Column(db.String(30)); active=db.Column(db.Boolean,default=True); logo=db.Column(db.String(255)); logo_name=db.Column(db.String(255)); report_model=db.Column(db.String(255)); report_model_name=db.Column(db.String(255)); report_top_mm=db.Column(db.Integer,default=72); report_bottom_mm=db.Column(db.Integer,default=42); privacy_version=db.Column(db.String(20)); privacy_ack_at=db.Column(db.DateTime); failed_login_count=db.Column(db.Integer,default=0,nullable=False); access_locked=db.Column(db.Boolean,default=False,nullable=False)
 class ReportModel(db.Model):
  id=db.Column(db.Integer,primary_key=True); clinic_id=db.Column(db.Integer,index=True,nullable=False); name=db.Column(db.String(255)); stored=db.Column(db.String(255)); created_at=db.Column(db.DateTime,default=datetime.utcnow)
 class Exam(db.Model):
@@ -362,6 +377,8 @@ def init():
    db.session.execute(db.text("ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE"))
    db.session.execute(db.text("ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS privacy_version VARCHAR(20)"))
    db.session.execute(db.text("ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS privacy_ack_at TIMESTAMP"))
+   db.session.execute(db.text("ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS failed_login_count INTEGER NOT NULL DEFAULT 0"))
+   db.session.execute(db.text("ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS access_locked BOOLEAN NOT NULL DEFAULT FALSE"))
    db.session.execute(db.text("ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS logo VARCHAR(255)"))
    db.session.execute(db.text("ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS logo_name VARCHAR(255)"))
    db.session.execute(db.text("ALTER TABLE exam_file ADD COLUMN IF NOT EXISTS scan_status VARCHAR(20) DEFAULT 'PENDENTE'"))
@@ -432,11 +449,25 @@ def login():
   email=request.form.get("email","").strip().lower()[:120]
   password=request.form.get("password","")[:256]
   u=User.query.filter_by(email=email).first()
+  if u and u.role=="Clinica" and u.access_locked:
+   flash("CONTATE A MALIBUB PELO WHATSAPP.")
+   return redirect("/")
   if u and u.active is not False and password and check_password_hash(u.password,password):
+   if u.role=="Clinica":
+    u.failed_login_count=0
+    db.session.commit()
    clear_login_failures(client_key)
    session.clear(); session.permanent=True
    session.update(uid=u.id,role=u.role,name=u.name,_csrf_token=secrets.token_urlsafe(32)); return redirect("/dashboard")
   record_login_failure(client_key)
+  if u and u.role=="Clinica" and u.active is not False:
+   u.failed_login_count=(u.failed_login_count or 0)+1
+   if u.failed_login_count>=3:
+    u.access_locked=True
+    db.session.commit()
+    flash("CONTATE A MALIBUB PELO WHATSAPP.")
+    return redirect("/")
+   db.session.commit()
   flash("E-mail ou senha inválidos.")
  msgs="".join(f'<div class="login-flash">{html_escape(m)}</div>' for m in __import__("flask").get_flashed_messages())
  body=f'''<div class="login-approved">
@@ -466,7 +497,7 @@ def admin_users():
   flash("Clínica cadastrada com acesso ativo.")
   return redirect("/admin/usuarios")
  clinics=User.query.filter_by(role="Clinica").order_by(User.name).all()
- rows="".join(f"<tr><td>{html_escape(u.name)}</td><td>{html_escape(u.email)}</td><td>{'Ativo' if u.active is not False else 'Inativo'}</td><td><a class='btn' href='/admin/usuarios/{u.id}/editar'>Editar</a> <a class='btn' href='/admin/usuarios/{u.id}/precos'>Preços</a> <form method='post' action='/admin/usuarios/{u.id}/status' style='display:inline-block;margin:0'>{csrf_field()}<button type='submit'>{'Desativar' if u.active is not False else 'Ativar'}</button></form></td></tr>" for u in clinics)
+ rows="".join(f"<tr><td>{html_escape(u.name)}</td><td>{html_escape(u.email)}</td><td>{'Bloqueado' if u.access_locked else ('Ativo' if u.active is not False else 'Inativo')}</td><td><a class='btn' href='/admin/usuarios/{u.id}/editar'>Editar</a> <a class='btn' href='/admin/usuarios/{u.id}/precos'>Preços</a> <form method='post' action='/admin/usuarios/{u.id}/desbloquear' style='display:inline-block;margin:0'>{csrf_field()}<button type='submit' {'disabled' if not u.access_locked else ''}>Desbloquear</button></form> <form method='post' action='/admin/usuarios/{u.id}/status' style='display:inline-block;margin:0'>{csrf_field()}<button type='submit'>{'Desativar' if u.active is not False else 'Ativar'}</button></form></td></tr>" for u in clinics)
  body=f"""<h1>Administração</h1><div class='card'><h2>Cadastrar clínica</h2><form method='post'>{csrf_field()}<label>Nome da clínica<input name='name' maxlength='100' required></label><label>E-mail de acesso<input type='email' name='email' maxlength='120' required></label><label>Senha inicial<input type='password' name='password' minlength='10' maxlength='256' required></label><button class='gold' type='submit'>Criar acesso</button></form></div><div class='card'><h2>Clínicas cadastradas</h2><table><tr><th>Clínica</th><th>E-mail</th><th>Status</th><th>Ação</th></tr>{rows or '<tr><td colspan=4>Nenhuma clínica cadastrada.</td></tr>'}</table></div>"""
  return page(body)
 
@@ -561,6 +592,17 @@ def admin_user_status(uid):
  u.active=not (u.active is not False)
  db.session.commit()
  flash("Acesso da clínica ativado." if u.active else "Acesso da clínica desativado.")
+ return redirect("/admin/usuarios")
+
+@app.route("/admin/usuarios/<int:uid>/desbloquear",methods=["POST"])
+def admin_unlock_clinic(uid):
+ if session.get("role")!="Radiologista": return redirect("/")
+ u=User.query.get_or_404(uid)
+ if u.role!="Clinica": return redirect("/admin/usuarios")
+ u.access_locked=False
+ u.failed_login_count=0
+ db.session.commit()
+ flash("Acesso da clínica desbloqueado.")
  return redirect("/admin/usuarios")
 
 @app.route("/dashboard")
@@ -746,11 +788,27 @@ def report_model_file():
   flash("O modelo de laudo não está disponível no armazenamento atual."); return redirect("/modelo-laudo" if session.get("role")=="Clinica" else "/dashboard")
  return storage_response(stored,name,False)
 
+@app.post("/new/verify-human")
+def verify_human_for_upload():
+ if session.get("role")!="Clinica": return {"error":"unauthorized"},403
+ if not TURNSTILE_SECRET_KEY: return {"proof":""},200
+ data=request.get_json(silent=True) or {}
+ if not verify_turnstile(data.get("turnstile_token","")): return {"error":"human_verification_failed"},403
+ proof=secrets.token_urlsafe(32)
+ session["turnstile_proof"]=proof
+ session["turnstile_proof_uid"]=session["uid"]
+ session["turnstile_proof_at"]=int(time.time())
+ return {"proof":proof},200
+
 @app.post("/new/direct-upload-url")
 def direct_upload_url():
  if session.get("role")!="Clinica": return {"error":"unauthorized"},403
  if not object_storage_enabled(): return {"error":"storage_unavailable"},503
  data=request.get_json(silent=True) or {}
+ if TURNSTILE_SECRET_KEY:
+  proof=str(data.get("turnstile_proof",""))
+  if not proof or session.get("turnstile_proof")!=proof or session.get("turnstile_proof_uid")!=session.get("uid") or not (0<=int(time.time())-int(session.get("turnstile_proof_at") or 0)<=1800):
+   return {"error":"human_verification_required"},403
  name=secure_filename(str(data.get("name","")))
  content_type=str(data.get("content_type") or "application/octet-stream")[:120]
  if not name or Path(name).suffix.lower() not in {".jpg",".jpeg",".png",".pdf",".dcm",".zip",".rar"}: return {"error":"invalid_file"},400
@@ -774,13 +832,22 @@ def verify_direct_upload_grant(item,expected_kind):
   raise ValueError("upload grant mismatch")
  if expected_kind=="request" and Path(name).suffix.lower() not in {".jpg",".jpeg",".png",".pdf"}:
   raise ValueError("invalid request file")
- r2_client().head_object(Bucket=R2_BUCKET,Key=key)
+ metadata=r2_client().head_object(Bucket=R2_BUCKET,Key=key)
+ size=int(metadata.get("ContentLength",0))
+ if size<=0: raise ValueError("empty upload")
  return key,name
 
 @app.post("/new/direct-finalize")
 def direct_upload_finalize():
  if session.get("role")!="Clinica": return {"error":"unauthorized"},403
  data=request.get_json(silent=True) or {}; files=data.get("files") or []; request_files=data.get("request_files") or []
+ if TURNSTILE_SECRET_KEY:
+  proof=str(data.get("turnstile_proof",""))
+  if not proof or session.get("turnstile_proof")!=proof or session.get("turnstile_proof_uid")!=session.get("uid") or not (0<=int(time.time())-int(session.get("turnstile_proof_at") or 0)<=1800):
+   return {"error":"human_verification_failed"},403
+  session.pop("turnstile_proof",None)
+  session.pop("turnstile_proof_uid",None)
+  session.pop("turnstile_proof_at",None)
  patient=str(data.get("patient","")).strip()[:120]; dentist=str(data.get("dentist","")).strip()[:120]; exam_type=str(data.get("exam_type","")).strip()[:80]; priority=str(data.get("priority","NORMAL")).strip().upper()
  if not files or not request_files or not patient or not dentist or not exam_type: return {"error":"required_fields"},400
  price=ClinicPrice.query.filter_by(clinic_id=session["uid"],exam_type=exam_type,active=True).first()
@@ -806,6 +873,9 @@ def new():
  if session.get("role")!="Clinica": return redirect("/dashboard")
  allowed_ext={".jpg",".jpeg",".png",".pdf",".dcm",".zip",".rar"}
  if request.method=="POST":
+  if TURNSTILE_SECRET_KEY and not verify_turnstile(request.form.get("cf-turnstile-response","")):
+   flash("Não foi possível confirmar a verificação de segurança. Tente novamente.")
+   return redirect("/new")
   incoming=[f for f in request.files.getlist("files") if f and f.filename]
   dentist_requests=[f for f in request.files.getlist("dentist_request") if f and f.filename]
   if not incoming:
@@ -878,6 +948,7 @@ def new():
  exam_type_options="".join(f"<option value='{html_escape(x.exam_type)}'>{html_escape(x.exam_type)}</option>" for x in clinic_exam_types)
  if not exam_type_options:
   exam_type_options="<option value='' disabled selected>Nenhum exame cadastrado para esta clínica</option>"
+ turnstile_widget=(f'<div class="cf-turnstile" data-sitekey="{html_escape(TURNSTILE_SITE_KEY)}" data-theme="light"></div><script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>' if TURNSTILE_SITE_KEY else "")
  body=f'''<h1>Novo Exame</h1><div class="card"><form id="exam-form" method="post" enctype="multipart/form-data">{csrf_field()}<div class="grid"><label>Nome do paciente<input name="patient" required></label><label>Sexo<select name="sex"><option>Feminino</option><option>Masculino</option><option>Não informado</option></select></label><label>Data de nascimento<input type="date" name="birth" required></label><label>Dentista solicitante<input name="dentist" required></label><label>Data do exame<input type="date" name="exam_date" required></label><div class="grid"><label>Tipo de exame<select name="exam_type" required>{exam_type_options}</select></label><label>Prazo<select name="priority" required><option value="NORMAL">Normal — até 2 dias úteis</option><option value="URG">URG — até 24h (+50% do valor do exame)</option></select></label></div></div><label>Observação / motivo <span class="muted">(Avaliação de Maxila/Mandíbula, Exodontia dos 38 e 48, Implante na região do dente XX, ATM etc.)</span><textarea name="observation" maxlength="500"></textarea></label>
 <div class="card" style="margin-top:18px"><h3>Requisição / pedido do dentista <span style="color:#b42318">*</span></h3><p class="muted">Obrigatório para enviar o exame. Se o pedido tiver mais de uma página, selecione todos os arquivos. Formatos: PDF, JPG ou PNG.</p><input id="dentist-request" type="file" name="dentist_request" multiple accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" style="display:none"><div style="display:flex;gap:10px;flex-wrap:wrap"><button type="button" class="blue" id="pick-request">Selecionar arquivos</button><button type="button" class="blue" id="pick-request-more">Adicionar mais arquivos</button></div><div id="request-status" class="notice" style="display:none;margin-top:10px"></div><div id="request-list" style="margin-top:10px"></div></div>
 <div class="card" style="margin-top:18px"><h3>Arquivos do exame</h3><p class="muted">Adicione imagens, DICOM, PDF, ZIP ou RAR. Você pode combinar vários arquivos no mesmo exame.</p>
@@ -885,7 +956,7 @@ def new():
 <input id="exam-folder" type="file" multiple webkitdirectory directory style="display:none">
 <div style="display:flex;gap:10px;flex-wrap:wrap"><button type="button" class="blue" id="pick-files">Selecionar arquivos</button><button type="button" class="blue" id="pick-folder">Selecionar pasta</button><button type="button" class="blue" id="pick-more">Adicionar mais arquivos</button></div>
 <div id="file-summary" class="notice" style="display:none;margin-top:12px"></div><div id="file-list" style="margin-top:10px"></div></div>
-<div id="upload-progress" class="notice" style="display:none"></div><p class="muted" style="margin-top:14px">Ao enviar, a Clínica confirma que está autorizada a encaminhar os dados e arquivos necessários à execução do serviço solicitado.</p><button id="send-exam" class="gold">Enviar exame</button></form></div>
+<div id="upload-progress" class="notice" style="display:none"></div><p class="muted" style="margin-top:14px">Ao enviar, a Clínica confirma que está autorizada a encaminhar os dados e arquivos necessários à execução do serviço solicitado.</p>{turnstile_widget}<button id="send-exam" class="gold">Enviar exame</button></form></div>
 <script>
 (function(){{
  const form=document.getElementById("exam-form"), requestInput=document.getElementById("dentist-request"), requestStatus=document.getElementById("request-status"), input=document.getElementById("exam-files"), folder=document.getElementById("exam-folder"), list=document.getElementById("file-list"), summary=document.getElementById("file-summary"), box=document.getElementById("upload-progress"), btn=document.getElementById("send-exam");
@@ -905,21 +976,26 @@ def new():
   if(!window.fetch||!selected.length){{if(!selected.length){{ev.preventDefault();box.style.display="block";box.textContent="Adicione ao menos um arquivo do exame.";}}return;}}
   ev.preventDefault();btn.disabled=true;box.style.display="block";
   try{{
+   let humanProof="";
+   const turnstileToken=new FormData(form).get("cf-turnstile-response")||"";
+   const verification=await fetch("/new/verify-human",{{method:"POST",headers:{{"Content-Type":"application/json","X-CSRF-Token":csrf}},body:JSON.stringify({{turnstile_token:turnstileToken}})}});
+   if(!verification.ok)throw new Error("human_verification_failed");
+   humanProof=(await verification.json()).proof||"";
    const requestFiles=[];
    requestStatus.style.display="block";
    for(let ri=0;ri<selectedRequests.length;ri++){{
     const req=selectedRequests[ri];requestStatus.textContent="Enviando requisição "+(ri+1)+" de "+selectedRequests.length+"...";
-    const ra=await fetch("/new/direct-upload-url",{{method:"POST",headers:{{"Content-Type":"application/json","X-CSRF-Token":csrf}},body:JSON.stringify({{name:req.name,content_type:req.type||"application/octet-stream",kind:"request"}})}});if(!ra.ok)throw new Error("request_auth");const rs=await ra.json();
+    const ra=await fetch("/new/direct-upload-url",{{method:"POST",headers:{{"Content-Type":"application/json","X-CSRF-Token":csrf}},body:JSON.stringify({{name:req.name,content_type:req.type||"application/octet-stream",kind:"request",turnstile_proof:humanProof}})}});if(!ra.ok)throw new Error("request_auth");const rs=await ra.json();
     const rp=await fetch(rs.url,{{method:"PUT",headers:{{"Content-Type":rs.content_type}},body:req}});if(!rp.ok)throw new Error("request_put");requestFiles.push({{key:rs.key,name:req.name,grant:rs.grant}});
    }}
    requestStatus.textContent=selectedRequests.length+" arquivo(s) da requisição enviado(s).";
    const uploaded=[];
    for(let i=0;i<selected.length;i++){{
     const file=selected[i].file;box.textContent="Enviando arquivo "+(i+1)+" de "+selected.length+" • "+fmt(file.size);
-    const a=await fetch("/new/direct-upload-url",{{method:"POST",headers:{{"Content-Type":"application/json","X-CSRF-Token":csrf}},body:JSON.stringify({{name:file.name,content_type:file.type||"application/octet-stream",kind:"exam"}})}});if(!a.ok)throw new Error("auth");const s=await a.json();
+    const a=await fetch("/new/direct-upload-url",{{method:"POST",headers:{{"Content-Type":"application/json","X-CSRF-Token":csrf}},body:JSON.stringify({{name:file.name,content_type:file.type||"application/octet-stream",kind:"exam",turnstile_proof:humanProof}})}});if(!a.ok)throw new Error("auth");const s=await a.json();
     const p=await fetch(s.url,{{method:"PUT",headers:{{"Content-Type":s.content_type}},body:file}});if(!p.ok)throw new Error("put");uploaded.push({{key:s.key,name:file.name,grant:s.grant}});
    }}
-   box.textContent="Finalizando envio...";const fd=new FormData(form),payload={{files:uploaded,request_files:requestFiles}};["patient","sex","birth","dentist","exam_date","exam_type","priority","observation"].forEach(k=>payload[k]=fd.get(k)||"");
+   box.textContent="Finalizando envio...";const fd=new FormData(form),payload={{files:uploaded,request_files:requestFiles,turnstile_proof:humanProof}};["patient","sex","birth","dentist","exam_date","exam_type","priority","observation"].forEach(k=>payload[k]=fd.get(k)||"");
    const d=await fetch("/new/direct-finalize",{{method:"POST",headers:{{"Content-Type":"application/json","X-CSRF-Token":csrf}},body:JSON.stringify(payload)}});if(!d.ok)throw new Error("finalize");const r=await d.json();location.href=r.redirect||"/dashboard";
   }}catch(e){{box.textContent="O envio direto não pôde ser concluído. Tente novamente.";btn.disabled=false;}}
  }});
