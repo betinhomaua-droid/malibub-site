@@ -797,6 +797,7 @@ def verify_human_for_upload():
  proof=secrets.token_urlsafe(32)
  session["turnstile_proof"]=proof
  session["turnstile_proof_uid"]=session["uid"]
+ session["turnstile_proof_at"]=int(time.time())
  return {"proof":proof},200
 
 @app.post("/new/direct-upload-url")
@@ -806,7 +807,7 @@ def direct_upload_url():
  data=request.get_json(silent=True) or {}
  if TURNSTILE_SECRET_KEY:
   proof=str(data.get("turnstile_proof",""))
-  if not proof or session.get("turnstile_proof")!=proof or session.get("turnstile_proof_uid")!=session.get("uid"):
+  if not proof or session.get("turnstile_proof")!=proof or session.get("turnstile_proof_uid")!=session.get("uid") or not (0<=int(time.time())-int(session.get("turnstile_proof_at") or 0)<=1800):
    return {"error":"human_verification_required"},403
  name=secure_filename(str(data.get("name","")))
  content_type=str(data.get("content_type") or "application/octet-stream")[:120]
@@ -846,6 +847,7 @@ def direct_upload_finalize():
    return {"error":"human_verification_failed"},403
   session.pop("turnstile_proof",None)
   session.pop("turnstile_proof_uid",None)
+  session.pop("turnstile_proof_at",None)
  patient=str(data.get("patient","")).strip()[:120]; dentist=str(data.get("dentist","")).strip()[:120]; exam_type=str(data.get("exam_type","")).strip()[:80]; priority=str(data.get("priority","NORMAL")).strip().upper()
  if not files or not request_files or not patient or not dentist or not exam_type: return {"error":"required_fields"},400
  price=ClinicPrice.query.filter_by(clinic_id=session["uid"],exam_type=exam_type,active=True).first()
