@@ -843,7 +843,7 @@ def direct_upload_finalize():
  data=request.get_json(silent=True) or {}; files=data.get("files") or []; request_files=data.get("request_files") or []
  if TURNSTILE_SECRET_KEY:
   proof=str(data.get("turnstile_proof",""))
-  if not proof or session.get("turnstile_proof")!=proof or session.get("turnstile_proof_uid")!=session.get("uid"):
+  if not proof or session.get("turnstile_proof")!=proof or session.get("turnstile_proof_uid")!=session.get("uid") or not (0<=int(time.time())-int(session.get("turnstile_proof_at") or 0)<=1800):
    return {"error":"human_verification_failed"},403
   session.pop("turnstile_proof",None)
   session.pop("turnstile_proof_uid",None)
