@@ -766,8 +766,12 @@ def use_report_model(mid):
  if session.get("role")!="Clinica": return redirect("/dashboard")
  u=User.query.get_or_404(session["uid"]); item=ReportModel.query.filter_by(id=mid,clinic_id=u.id).first_or_404()
  u.report_model=item.stored; u.report_model_name=item.name
- if item.top_mm is not None: u.report_top_mm=item.top_mm
- if item.bottom_mm is not None: u.report_bottom_mm=item.bottom_mm
+ # Modelos antigos sem margens próprias recebem os valores atuais apenas como base inicial.
+ # Isso evita que uma troca posterior reutilize inadvertidamente a configuração de outro modelo.
+ if item.top_mm is None: item.top_mm=u.report_top_mm or 72
+ if item.bottom_mm is None: item.bottom_mm=u.report_bottom_mm or 42
+ u.report_top_mm=item.top_mm
+ u.report_bottom_mm=item.bottom_mm
  db.session.commit(); flash("Modelo de laudo selecionado. Confira as margens antes de gerar o PDF.")
  return redirect("/modelo-laudo")
 
