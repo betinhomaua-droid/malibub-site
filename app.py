@@ -1515,8 +1515,11 @@ def result_pdf(eid):
    overlay=io.BytesIO();cv=canvas.Canvas(overlay,pagesize=(width,height))
    # Respeitar as margens configuradas pela clínica para o papel timbrado.
    # Nunca escrever sobre o rodapé e preservar uma faixa mínima de segurança.
-   top_margin_mm=max(20,min(120,int(clinic.report_top_mm or 72)))
-   bottom_margin_mm=max(15,min(100,int(clinic.report_bottom_mm or 42)))
+   active_template=ReportModel.query.filter_by(clinic_id=clinic.id,stored=clinic.report_model).first()
+   configured_top=active_template.top_mm if active_template and active_template.top_mm is not None else clinic.report_top_mm
+   configured_bottom=active_template.bottom_mm if active_template and active_template.bottom_mm is not None else clinic.report_bottom_mm
+   top_margin_mm=max(20,min(120,int(configured_top or 72)))
+   bottom_margin_mm=max(15,min(100,int(configured_bottom or 42)))
    y=height-top_margin_mm*mm
    min_y=bottom_margin_mm*mm
    if y-min_y<20*mm:
