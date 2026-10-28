@@ -1551,7 +1551,8 @@ def result_pdf(eid):
    # Por segurança, a assinatura vai para a folha de continuação.
    cv.save();overlay.seek(0);first.merge_page(PdfReader(overlay).pages[0]);final_writer.add_page(first)
    for original_page in list(base_reader.pages)[1:]:final_writer.add_page(original_page)
-   while index<len(rendered) or not signature_done:
+   pending=[p for p,h in rendered[index:]]
+   while pending or not signature_done:
     extra=io.BytesIO();cv=canvas.Canvas(extra,pagesize=A4);width,height=A4
     cv.setFont("Helvetica-Bold",11);cv.setFillColor(colors.HexColor("#111111"))
     cv.drawCentredString(width/2,height-20*mm,"LAUDO RADIOLÓGICO - CONTINUAÇÃO")
@@ -1568,21 +1569,33 @@ def result_pdf(eid):
     divider_y=indication_top-indication_height-4*mm
     cv.line(22*mm,divider_y,width-22*mm,divider_y)
     y=divider_y-8*mm;available_width=width-44*mm
-    continuation_start_index=index
-    while index<len(rendered):
-     para,h=make_block(blocks[index][0],blocks[index][1],available_width)
-     if y-h<66*mm:break
-     y-=h;para.drawOn(cv,22*mm,y);y-=2*mm;index+=1
+    page_progress=False
+    while pending:
+     para=pending[0]
+     _,h=para.wrap(available_width,700*mm)
+     available_height=y-66*mm-2*mm
+     if h>available_height:
+      pieces=para.split(available_width,available_height)
+      if not pieces:break
+      part=pieces[0]
+      _,part_height=part.wrap(available_width,available_height)
+      if part_height<=0 or part_height>available_height:break
+      y-=part_height;part.drawOn(cv,22*mm,y);y-=2*mm
+      pending=pieces[1:]+pending[1:]
+      page_progress=True
+      continue
+     y-=h;para.drawOn(cv,22*mm,y);y-=2*mm
+     pending.pop(0);page_progress=True
     # Reservar 24 mm para assinatura, identificação e afastamento do rodapé.
-    if index==len(rendered) and y>=90*mm:
+    if not pending and y>=90*mm:
      draw_report_signature(cv,width,baseline=y-12*mm)
      cv.setFillColor(colors.HexColor("#06394C"));cv.setFont("Helvetica-Bold",9)
      cv.drawCentredString(width/2,y-16*mm,"Dra. Marina L. Bub")
      cv.setFillColor(colors.HexColor("#52666E"));cv.setFont("Helvetica",7.8)
      cv.drawCentredString(width/2,y-20*mm,"Radiologista responsável - CRO-SP 113752")
      signature_done=True
-    if index<len(rendered) and index==continuation_start_index:
-     raise ValueError("Parágrafo do laudo excede a área disponível da página de continuação")
+    if pending and not page_progress:
+     raise ValueError("Não foi possível dividir o parágrafo na área disponível da página de continuação")
     cv.save();extra.seek(0);final_writer.add_page(PdfReader(extra).pages[0])
    merged=io.BytesIO(); final_writer.write(merged); merged.seek(0); buf=apply_final_footer(merged.getvalue())
   except Exception:
