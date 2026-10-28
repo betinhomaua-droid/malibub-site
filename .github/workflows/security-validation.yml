@@ -20,3 +20,5 @@ jobs:
         run: python -m py_compile app.py
       - name: Security regression checks
         run: python -m unittest discover -s tests -p 'test_security_static.py' -v
+      - name: Clinical editor and PDF privacy regression checks
+        run: python -m unittest discover -s tests -p 'test_clinical_editor_static.py' -v
