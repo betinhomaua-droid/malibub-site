@@ -1524,10 +1524,16 @@ def result_pdf(eid):
     cv.setFont("Helvetica",8)
     cv.drawString(22*mm,height-27*mm,f"Paciente: {(e.patient or '')[:60]}  |  Sexo: {(e.sex or '')[:20]}  |  Nascimento: {br_date(e.birth)}")
     cv.drawString(22*mm,height-31*mm,f"Dentista: {(e.dentist or '')[:45]}  |  Data do exame: {br_date(e.exam_date)}")
-    cv.setFont("Helvetica",8)
-    cv.drawString(22*mm,height-35*mm,f"Indicação clínica: {(e.observation or '')[:95]}")
-    cv.line(22*mm,height-39*mm,width-22*mm,height-39*mm)
-    y=height-47*mm;available_width=width-44*mm
+    # Indicação clínica com quebra automática, sem truncamento ou invasão da margem.
+    indication_text=escape((e.observation or "").strip() or "Não informada")
+    indication_style=ParagraphStyle("indication_continuation",fontName="Helvetica",fontSize=8,leading=11)
+    indication_para=Paragraph("<b>Indicação clínica:</b> "+indication_text,indication_style)
+    _,indication_height=indication_para.wrap(width-44*mm,200*mm)
+    indication_top=height-35*mm
+    indication_para.drawOn(cv,22*mm,indication_top-indication_height)
+    divider_y=indication_top-indication_height-4*mm
+    cv.line(22*mm,divider_y,width-22*mm,divider_y)
+    y=divider_y-8*mm;available_width=width-44*mm
     while index<len(rendered):
      para,h=make_block(blocks[index][0],blocks[index][1],available_width)
      if y-h<66*mm:break
