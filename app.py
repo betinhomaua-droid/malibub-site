@@ -743,6 +743,12 @@ def report_model():
     u.report_model=stored; u.report_model_name=name
    db.session.commit(); flash("Novo modelo de laudo anexado.")
   else: db.session.commit()
+  # Salvar as margens também no modelo atualmente ativo, sem alterar os demais.
+  active_model=ReportModel.query.filter_by(clinic_id=u.id,stored=u.report_model).first() if u.report_model else None
+  if active_model:
+   active_model.top_mm=u.report_top_mm
+   active_model.bottom_mm=u.report_bottom_mm
+   db.session.commit()
   return redirect("/modelo-laudo")
  models=ReportModel.query.filter_by(clinic_id=u.id).order_by(ReportModel.created_at.desc()).all()
  if u.report_model and not any(x.stored==u.report_model for x in models):
@@ -759,7 +765,10 @@ def report_model():
 def use_report_model(mid):
  if session.get("role")!="Clinica": return redirect("/dashboard")
  u=User.query.get_or_404(session["uid"]); item=ReportModel.query.filter_by(id=mid,clinic_id=u.id).first_or_404()
- u.report_model=item.stored; u.report_model_name=item.name; db.session.commit(); flash("Modelo de laudo selecionado.")
+ u.report_model=item.stored; u.report_model_name=item.name
+ if item.top_mm is not None: u.report_top_mm=item.top_mm
+ if item.bottom_mm is not None: u.report_bottom_mm=item.bottom_mm
+ db.session.commit(); flash("Modelo de laudo selecionado. Confira as margens antes de gerar o PDF.")
  return redirect("/modelo-laudo")
 
 @app.post("/modelo-laudo/<int:mid>/excluir")
