@@ -647,7 +647,7 @@ def dashboard():
   else:
    primary_action=(f'<a class="btn" href="/report/{e.id}">Laudar</a>' if is_radiologist and e.status!="Liberado" else (f'<a class="btn" href="/result/{e.id}">Resultado</a>' if e.status=="Liberado" else ""))
    delete_action=(f'<form method="post" action="/exam/{e.id}/excluir" style="display:inline" onsubmit="return confirm(\'Excluir definitivamente este exame, seus arquivos e o lançamento financeiro vinculado? Esta ação não pode ser desfeita.\')">{csrf_field()}<button type="submit" style="background:#b42318">Excluir</button></form>' if is_radiologist else "")
-   review_action=(f'<a class="btn" style="margin-left:6px;background:#fff;color:#b97700;border:1px solid #d69c27" href="/exam/{e.id}/revisao">Revisão</a>' if not is_radiologist and e.status=="Liberado" else "")
+   review_action=(f'<a class="btn" style="margin-left:6px;background:#fff;color:#b97700;border:1px solid #d69c27" href="#revisao" data-exam-id="{e.id}" data-protocol="{html_escape(e.protocol)}" data-patient="{html_escape(e.patient)}" onclick="openRevisionDialog(this);return false">Revisão</a>' if not is_radiologist and e.status=="Liberado" else "")
    action=primary_action+review_action+delete_action
   delivery=("<b style='color:#b42318'>URG</b><br>" if (e.priority or "NORMAL")=="URG" else "")+due_date_label(e.due_at,e.priority or "NORMAL")
   if is_radiologist:
@@ -668,6 +668,17 @@ def dashboard():
  else:
   rows="".join(exam_row(e) for e in exams)
   body=f'''<h1>Painel da Clínica</h1><p>Olá, {html_escape(session["name"])}.</p><a class="btn gold" href="/new">+ Novo Exame</a><a class="btn" href="/modelo-laudo">Modelo de laudo</a><div class="card"><h2>Exames</h2><table>{headers}{rows or f'<tr><td colspan={colspan}>Nenhum exame.</td></tr>'}</table></div>'''
+ if not is_radiologist:
+  body+='''<dialog id="revision-dialog" style="width:min(94vw,560px);border:1px solid #cbd5dc;border-radius:12px;padding:24px;box-shadow:0 15px 45px #0003"><h2>Solicitar revisão</h2><p id="revision-exam-label"></p><p>Explique se a correção é no laudo, no template ou em ambos.</p><form id="revision-form" method="post"><input type="hidden" name="csrf_token" value="''' + html_escape(session.get("csrf_token","")) + '''"><label for="revision-reason">Motivo da devolução (obrigatório)</label><textarea id="revision-reason" name="revision_reason" minlength="10" maxlength="2000" rows="6" required style="width:100%" placeholder="Descreva o que precisa ser corrigido"></textarea><div style="display:flex;gap:10px;margin-top:12px"><button type="submit">Enviar para revisão</button><button type="button" onclick="document.getElementById('revision-dialog').close()">Cancelar</button></div></form></dialog><script>
+function openRevisionDialog(el){
+ const dlg=document.getElementById('revision-dialog');
+ document.getElementById('revision-exam-label').textContent='Protocolo: '+el.dataset.protocol+' — Paciente: '+el.dataset.patient;
+ document.getElementById('revision-form').action='/exam/'+encodeURIComponent(el.dataset.examId)+'/revisao';
+ document.getElementById('revision-reason').value='';
+ dlg.showModal();
+ document.getElementById('revision-reason').focus();
+}
+</script>'''
  return page(body)
 
 @app.post("/exam/<int:eid>/excluir")
