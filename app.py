@@ -1172,9 +1172,14 @@ def rich_report_blocks(raw_html, plain):
   def __init__(self):
    super().__init__(convert_charrefs=True);self.blocks=[];self.parts=[];self.tags=[];self.align="left";self.list_stack=[];self.counter=0;self.pending_break=False
   def flush(self,force=False):
+   # Fecha as tags de formatação antes de enviar cada parágrafo ao ReportLab.
+   # Tags abertas podem atravessar <div>, <p> ou <br> no HTML do editor.
    content="".join(self.parts).strip()
-   if content or force:self.blocks.append((content or "&nbsp;",self.align))
-   self.parts=[];self.align="left"
+   if content or force:
+    closing="".join("</"+mapped+">" for _,mapped in reversed(self.tags))
+    self.blocks.append(((content+closing) if content else "&nbsp;",self.align))
+   self.parts=["<"+mapped+">" for _,mapped in self.tags]
+   self.align="left"
   def handle_starttag(self,tag,attrs):
    d=dict(attrs)
    if tag in ("p","div","li"):
