@@ -34,5 +34,15 @@ class SecuritySourceChecks(unittest.TestCase):
         self.assertIn('if u.failed_login_count>=3:', SOURCE)
         self.assertIn('CONTATE A MALIBUB PELO WHATSAPP.', SOURCE)
 
+    def test_clinic_revision_modal(self):
+        self.assertIn('function openRevisionDialog(el)', SOURCE)
+        self.assertIn('dlg.showModal()', SOURCE)
+        self.assertIn('name="revision_reason" minlength="10" maxlength="2000"', SOURCE)
+        self.assertIn('''+ csrf_field() +''', SOURCE)
+        self.assertIn('Exam.query.filter_by(id=eid,clinic_id=session["uid"]).first_or_404()', SOURCE)
+        self.assertIn('e.status="Revisão solicitada"', SOURCE)
+        self.assertIn('Revisão solicitada pela clínica', SOURCE)
+        self.assertIn('if e.status=="Revisão solicitada" and existing_revenue:', SOURCE)
+
 if __name__ == "__main__":
     unittest.main()
