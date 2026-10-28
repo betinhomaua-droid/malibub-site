@@ -19,6 +19,11 @@ class ClinicalEditorStaticTests(unittest.TestCase):
         self.assertIn('e.observation', pdf_code)
         self.assertNotIn('e.clinical_notes', pdf_code)
 
+    def test_revision_reuses_existing_financial_charge(self):
+        self.assertIn('if e.status=="Revisão solicitada" and existing_revenue:', SOURCE)
+        self.assertIn('amount=existing_revenue.amount', SOURCE)
+        self.assertIn('if not existing_revenue:', SOURCE)
+
     def test_clinic_revision_request_workflow(self):
         self.assertIn('@app.route("/exam/<int:eid>/revisao",methods=["GET","POST"])', SOURCE)
         self.assertIn('Exam.query.filter_by(id=eid,clinic_id=session["uid"]).first_or_404()', SOURCE)
