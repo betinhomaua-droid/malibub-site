@@ -1192,6 +1192,15 @@ def rich_report_blocks(raw_html, plain):
  p=Blocks()
  if raw_html:
   p.feed(clean_report_html(raw_html));p.flush()
+ # O editor pode enviar HTML em um único bloco mesmo quando o texto possui
+ # parágrafos separados. Nessa situação, preservar as quebras do texto salvo.
+ # Não substituir HTML estruturado: ele contém negrito, fonte e alinhamento.
+ if plain and len(plain.splitlines())>1 and len(p.blocks)<=1:
+  import re
+  visible=re.sub(r"<[^>]+>","",raw_html or "")
+  from html import unescape
+  if " ".join(unescape(visible).split())==" ".join(plain.split()):
+   p.blocks=[(esc(line) if line.strip() else "&nbsp;","left") for line in plain.splitlines()]
  if not p.blocks:
   p.blocks=[(esc(line) if line else "&nbsp;","left") for line in (plain or "").splitlines()]
  return p.blocks or [("&nbsp;","left")]
