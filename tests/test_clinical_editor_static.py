@@ -19,6 +19,10 @@ class ClinicalEditorStaticTests(unittest.TestCase):
         self.assertIn('e.observation', pdf_code)
         self.assertNotIn('e.clinical_notes', pdf_code)
 
+    def test_tmj_respects_active_pdf_template(self):
+        self.assertIn('if is_tmj_model and not has_pdf_model:', SOURCE)
+        self.assertIn('if model_path and model_path.exists() and model_path.suffix.lower()==".pdf":', SOURCE)
+
     def test_font_size_options_and_reload(self):
         for pt in (8, 10, 12, 14, 18):
             self.assertRegex(SOURCE, rf'<option value="{pt}"(?: selected)?>{pt} pt</option>')
