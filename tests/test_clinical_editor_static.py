@@ -21,7 +21,7 @@ class ClinicalEditorStaticTests(unittest.TestCase):
 
     def test_font_size_options_and_reload(self):
         for pt in (8, 10, 12, 14, 18):
-            self.assertIn(f'<option value="{pt}">{pt} pt</option>', SOURCE)
+            self.assertRegex(SOURCE, rf'<option value="{pt}"(?: selected)?>{pt} pt</option>')
         self.assertIn("rich.querySelectorAll('span[data-size]')", SOURCE)
 
 
