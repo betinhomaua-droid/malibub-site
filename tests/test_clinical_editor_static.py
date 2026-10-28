@@ -28,9 +28,18 @@ class ClinicalEditorStaticTests(unittest.TestCase):
         self.assertIn("ao trocar de modelo, revise os valores para evitar sobreposição", SOURCE)
         self.assertIn("margens são da clínica", SOURCE)
 
+    def test_model_specific_margins_with_legacy_fallback(self):
+        self.assertIn("top_mm=db.Column(db.Integer,nullable=True)", SOURCE)
+        self.assertIn("bottom_mm=db.Column(db.Integer,nullable=True)", SOURCE)
+        self.assertIn("ALTER TABLE report_model ADD COLUMN IF NOT EXISTS top_mm INTEGER", SOURCE)
+        self.assertIn("ALTER TABLE report_model ADD COLUMN IF NOT EXISTS bottom_mm INTEGER", SOURCE)
+        self.assertIn("active_template=ReportModel.query.filter_by(clinic_id=clinic.id,stored=clinic.report_model).first()", SOURCE)
+        self.assertIn("active_model.top_mm=u.report_top_mm", SOURCE)
+        self.assertIn("active_model.bottom_mm=u.report_bottom_mm", SOURCE)
+
     def test_custom_pdf_uses_clinic_configured_margins(self):
-        self.assertIn("top_margin_mm=max(20,min(120,int(clinic.report_top_mm or 72)))", SOURCE)
-        self.assertIn("bottom_margin_mm=max(15,min(100,int(clinic.report_bottom_mm or 42)))", SOURCE)
+        self.assertIn("top_margin_mm=max(20,min(120,int(configured_top or 72)))", SOURCE)
+        self.assertIn("bottom_margin_mm=max(15,min(100,int(configured_bottom or 42)))", SOURCE)
         self.assertIn("y=height-top_margin_mm*mm", SOURCE)
         self.assertIn("min_y=bottom_margin_mm*mm", SOURCE)
 
