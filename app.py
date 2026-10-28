@@ -1362,7 +1362,7 @@ def result_pdf(eid):
     cv.save(); overlay.seek(0); page.merge_page(PdfReader(overlay).pages[0])
    writer.add_page(page)
   out=io.BytesIO(); writer.write(out); out.seek(0); return out
- if is_tmj_model:
+ if is_tmj_model and not has_pdf_model:
   from reportlab.platypus import BaseDocTemplate, PageTemplate, Frame, Paragraph, Spacer, KeepTogether
   from reportlab.lib.styles import ParagraphStyle
   from reportlab.lib.enums import TA_CENTER
