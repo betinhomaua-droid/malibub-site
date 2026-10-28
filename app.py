@@ -1207,7 +1207,13 @@ def rich_report_blocks(raw_html, plain):
    elif tag in ("b","strong","i","em","u","font","span"):
     if self.tags and self.tags[-1][0]==tag:
      self.parts.append("</"+self.tags.pop()[1]+">")
-  def handle_data(self,data):self.parts.append(esc(data))
+  def handle_data(self,data):
+   # Preserve quebras de linha reais do editor, inclusive linhas vazias.
+   # Evita transformar vários parágrafos em um único bloco no PDF.
+   lines=data.replace("\\r\\n","\\n").replace("\\r","\\n").split("\\n")
+   for index,line in enumerate(lines):
+    if index:self.flush(force=True)
+    if line:self.parts.append(esc(line))
  p=Blocks()
  if raw_html:
   p.feed(clean_report_html(raw_html));p.flush()
