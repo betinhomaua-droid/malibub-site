@@ -28,6 +28,11 @@ class ClinicalEditorStaticTests(unittest.TestCase):
         self.assertIn("ao trocar de modelo, revise os valores para evitar sobreposição", SOURCE)
         self.assertIn("margens são da clínica", SOURCE)
 
+    def test_invalid_margin_submission_is_rejected(self):
+        self.assertIn('if not 20<=top_input<=120 or not 15<=bottom_input<=100:', SOURCE)
+        self.assertIn('flash("Margens inválidas.', SOURCE)
+        self.assertIn('except (ValueError,TypeError):', SOURCE)
+
     def test_legacy_model_margins_are_initialized_once(self):
         self.assertIn("if item.top_mm is None: item.top_mm=u.report_top_mm or 72", SOURCE)
         self.assertIn("if item.bottom_mm is None: item.bottom_mm=u.report_bottom_mm or 42", SOURCE)
