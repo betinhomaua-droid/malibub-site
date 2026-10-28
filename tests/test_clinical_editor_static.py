@@ -19,6 +19,11 @@ class ClinicalEditorStaticTests(unittest.TestCase):
         self.assertIn('e.observation', pdf_code)
         self.assertNotIn('e.clinical_notes', pdf_code)
 
+    def test_continuation_indication_wraps_without_truncation(self):
+        self.assertIn('indication_para.wrap(width-44*mm,200*mm)', SOURCE)
+        self.assertIn('indication_para.drawOn(cv,22*mm,indication_top-indication_height)', SOURCE)
+        self.assertNotIn("(e.observation or '')[:95]", SOURCE)
+
     def test_tmj_respects_active_pdf_template(self):
         self.assertIn('if is_tmj_model and not has_pdf_model:', SOURCE)
         self.assertIn('if model_path and model_path.exists() and model_path.suffix.lower()==".pdf":', SOURCE)
