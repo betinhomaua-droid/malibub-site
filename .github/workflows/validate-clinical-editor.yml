@@ -1,0 +1,32 @@
+name: Validate MALIBUB clinical fields and editor
+on:
+  push:
+    branches:
+      - feat/separate-clinical-notes-20261028
+  workflow_dispatch:
+jobs:
+  static-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile application
+        run: python -m py_compile app.py
+      - name: Check clinical separation and editor
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path("app.py").read_text()
+          assert "clinical_notes=db.Column(db.Text" in s
+          assert 'ALTER TABLE exam ADD COLUMN IF NOT EXISTS clinical_notes TEXT' in s
+          assert 'ALTER TABLE exam ADD COLUMN clinical_notes TEXT' in s
+          assert 'name="clinical_notes"' in s
+          assert 'data.get("clinical_notes"' in s
+          assert 'request.form.get("clinical_notes"' in s
+          assert '<option value="8">8 pt</option>' in s
+          assert '<option value="18">18 pt</option>' in s
+          assert "rich.querySelectorAll('span[data-size]')" in s
+          print("Static checks passed")
+          PY
