@@ -47,14 +47,14 @@ class ReportFormattingTests(unittest.TestCase):
         self.assertTrue(any("Segundo" in m for m, _ in blocks))
 
     def test_raw_newlines_do_not_merge_paragraphs(self):
-        blocks = self.blocks("<div>Um\\n\\nDois</div>")
+        blocks = self.blocks("<div>Um" + chr(10) + chr(10) + "Dois</div>")
         texts = [m for m, _ in blocks]
         self.assertTrue(any("Um" in m for m in texts))
         self.assertTrue(any("Dois" in m for m in texts))
         self.assertIn("&nbsp;", texts)
 
     def test_plain_text_fallback(self):
-        blocks = self.blocks("", "Um\\n\\nDois")
+        blocks = self.blocks("", "Um" + chr(10) + chr(10) + "Dois")
         self.assertEqual([m for m, _ in blocks], ["Um", "&nbsp;", "Dois"])
 
 if __name__ == "__main__":
