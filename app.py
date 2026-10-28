@@ -1573,7 +1573,8 @@ def result_pdf(eid):
      para,h=make_block(blocks[index][0],blocks[index][1],available_width)
      if y-h<66*mm:break
      y-=h;para.drawOn(cv,22*mm,y);y-=2*mm;index+=1
-    if index==len(rendered) and y>=66*mm:
+    # Reservar 24 mm para assinatura, identificação e afastamento do rodapé.
+    if index==len(rendered) and y>=90*mm:
      draw_report_signature(cv,width,baseline=y-12*mm)
      cv.setFillColor(colors.HexColor("#06394C"));cv.setFont("Helvetica-Bold",9)
      cv.drawCentredString(width/2,y-16*mm,"Dra. Marina L. Bub")
