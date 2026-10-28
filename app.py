@@ -271,7 +271,7 @@ class User(db.Model):
 class ReportModel(db.Model):
  id=db.Column(db.Integer,primary_key=True); clinic_id=db.Column(db.Integer,index=True,nullable=False); name=db.Column(db.String(255)); stored=db.Column(db.String(255)); top_mm=db.Column(db.Integer,nullable=True); bottom_mm=db.Column(db.Integer,nullable=True); created_at=db.Column(db.DateTime,default=datetime.utcnow)
 class Exam(db.Model):
- id=db.Column(db.Integer,primary_key=True); protocol=db.Column(db.String(30),unique=True); patient=db.Column(db.String(120)); sex=db.Column(db.String(20)); birth=db.Column(db.String(20)); dentist=db.Column(db.String(120)); exam_date=db.Column(db.String(20)); exam_type=db.Column(db.String(100)); observation=db.Column(db.String(500)); clinical_notes=db.Column(db.Text,default=""); priority=db.Column(db.String(20),default="NORMAL"); contracted_amount=db.Column(db.Float); status=db.Column(db.String(50),default="Enviado"); clinic_id=db.Column(db.Integer); due_at=db.Column(db.DateTime); report=db.Column(db.Text,default=""); report_html=db.Column(db.Text,default=""); released_at=db.Column(db.DateTime); signed_by=db.Column(db.String(120)); signed_at=db.Column(db.DateTime); created_at=db.Column(db.DateTime,default=datetime.utcnow)
+ id=db.Column(db.Integer,primary_key=True); protocol=db.Column(db.String(30),unique=True); patient=db.Column(db.String(120)); sex=db.Column(db.String(20)); birth=db.Column(db.String(20)); dentist=db.Column(db.String(120)); exam_date=db.Column(db.String(20)); exam_type=db.Column(db.String(100)); observation=db.Column(db.String(500)); clinical_notes=db.Column(db.Text,default=""); priority=db.Column(db.String(20),default="NORMAL"); contracted_amount=db.Column(db.Float); status=db.Column(db.String(50),default="Enviado"); clinic_id=db.Column(db.Integer); due_at=db.Column(db.DateTime); report=db.Column(db.Text,default=""); report_html=db.Column(db.Text,default=""); revision_reason=db.Column(db.Text); revision_requested_at=db.Column(db.DateTime); released_at=db.Column(db.DateTime); signed_by=db.Column(db.String(120)); signed_at=db.Column(db.DateTime); created_at=db.Column(db.DateTime,default=datetime.utcnow)
 class ExamFile(db.Model):
  id=db.Column(db.Integer,primary_key=True); exam_id=db.Column(db.Integer); name=db.Column(db.String(255)); stored=db.Column(db.String(255)); kind=db.Column(db.String(30),default="entrada"); uploaded_by=db.Column(db.String(100)); scan_status=db.Column(db.String(20),default="PENDENTE"); scan_detail=db.Column(db.String(255))
 class Finance(db.Model):
@@ -387,6 +387,8 @@ def init():
    db.session.execute(db.text("ALTER TABLE exam ADD COLUMN IF NOT EXISTS contracted_amount DOUBLE PRECISION"))
    db.session.execute(db.text("ALTER TABLE exam ADD COLUMN IF NOT EXISTS report_html TEXT"))
    db.session.execute(db.text("ALTER TABLE exam ADD COLUMN IF NOT EXISTS clinical_notes TEXT"))
+   db.session.execute(db.text("ALTER TABLE exam ADD COLUMN IF NOT EXISTS revision_reason TEXT"))
+   db.session.execute(db.text("ALTER TABLE exam ADD COLUMN IF NOT EXISTS revision_requested_at TIMESTAMP"))
    db.session.execute(db.text("ALTER TABLE report_model ADD COLUMN IF NOT EXISTS top_mm INTEGER"))
    db.session.execute(db.text("ALTER TABLE report_model ADD COLUMN IF NOT EXISTS bottom_mm INTEGER"))
    db.session.execute(db.text("UPDATE \"user\" SET active=TRUE WHERE active IS NULL"))
@@ -400,6 +402,8 @@ def init():
    if "signed_at" not in cols: db.session.execute(db.text("ALTER TABLE exam ADD COLUMN signed_at DATETIME"))
    if "report_html" not in cols: db.session.execute(db.text("ALTER TABLE exam ADD COLUMN report_html TEXT"))
    if "clinical_notes" not in cols: db.session.execute(db.text("ALTER TABLE exam ADD COLUMN clinical_notes TEXT"))
+   if "revision_reason" not in cols: db.session.execute(db.text("ALTER TABLE exam ADD COLUMN revision_reason TEXT"))
+   if "revision_requested_at" not in cols: db.session.execute(db.text("ALTER TABLE exam ADD COLUMN revision_requested_at DATETIME"))
    model_cols=[r[1] for r in db.session.execute(db.text("PRAGMA table_info(report_model)")).fetchall()]
    if "top_mm" not in model_cols: db.session.execute(db.text("ALTER TABLE report_model ADD COLUMN top_mm INTEGER"))
    if "bottom_mm" not in model_cols: db.session.execute(db.text("ALTER TABLE report_model ADD COLUMN bottom_mm INTEGER"))
@@ -643,7 +647,8 @@ def dashboard():
   else:
    primary_action=(f'<a class="btn" href="/report/{e.id}">Laudar</a>' if is_radiologist and e.status!="Liberado" else (f'<a class="btn" href="/result/{e.id}">Resultado</a>' if e.status=="Liberado" else ""))
    delete_action=(f'<form method="post" action="/exam/{e.id}/excluir" style="display:inline" onsubmit="return confirm(\'Excluir definitivamente este exame, seus arquivos e o lançamento financeiro vinculado? Esta ação não pode ser desfeita.\')">{csrf_field()}<button type="submit" style="background:#b42318">Excluir</button></form>' if is_radiologist else "")
-   action=primary_action+delete_action
+   review_action=(f'<a class="btn" style="margin-left:6px;background:#fff;color:#b97700;border:1px solid #d69c27" href="/exam/{e.id}/revisao">Revisão</a>' if not is_radiologist and e.status=="Liberado" else "")
+   action=primary_action+review_action+delete_action
   delivery=("<b style='color:#b42318'>URG</b><br>" if (e.priority or "NORMAL")=="URG" else "")+due_date_label(e.due_at,e.priority or "NORMAL")
   if is_radiologist:
    clinic=clinics.get(e.clinic_id)
@@ -1228,6 +1233,27 @@ def rich_report_blocks(raw_html, plain):
  if not p.blocks:
   p.blocks=[(esc(line) if line else "&nbsp;","left") for line in (plain or "").splitlines()]
  return p.blocks or [("&nbsp;","left")]
+
+@app.route("/exam/<int:eid>/revisao",methods=["GET","POST"])
+def request_exam_revision(eid):
+ if session.get("role")!="Clinica": return redirect("/")
+ e=Exam.query.filter_by(id=eid,clinic_id=session["uid"]).first_or_404()
+ if e.status!="Liberado":
+  flash("A revisão só pode ser solicitada para laudos liberados.")
+  return redirect("/dashboard")
+ if request.method=="POST":
+  reason=request.form.get("revision_reason","").strip()
+  if len(reason)<10 or len(reason)>2000:
+   flash("Descreva a correção necessária entre 10 e 2000 caracteres.")
+   return redirect(url_for("request_exam_revision",eid=e.id))
+  e.revision_reason=reason
+  e.revision_requested_at=datetime.utcnow()
+  e.status="Revisão solicitada"
+  db.session.commit()
+  flash("Revisão enviada à radiologista. O laudo anterior foi preservado.")
+  return redirect("/dashboard")
+ body=f"""<h1>Solicitar revisão do laudo</h1><div class="card"><p><b>Protocolo:</b> {html_escape(e.protocol)}</p><p><b>Paciente:</b> {html_escape(e.patient)}</p><p>Indique se a correção é no conteúdo do laudo, no modelo/template ou em ambos. Descreva o que precisa ser ajustado.</p><form method="post">{csrf_field()}<label>Correções solicitadas<textarea name="revision_reason" required minlength="10" maxlength="2000" rows="6" placeholder="Descreva a revisão necessária"></textarea></label><button type="submit">Enviar para revisão</button> <a class="btn" href="/dashboard">Cancelar</a></form></div>"""
+ return page(body)
 
 @app.route("/report/<int:eid>",methods=["GET","POST"])
 def report(eid):
