@@ -83,6 +83,58 @@ class TemplateOverlayTests(unittest.TestCase):
         for line in lines:
             self.assertEqual(combined.count(line), 1, line)
 
+    def test_oversized_rich_paragraph_splits_and_preserves_text(self):
+        from reportlab.platypus import Paragraph
+        from reportlab.lib.styles import ParagraphStyle
+
+        width, height = A4
+        words = [f"Marcador{n:03d}" for n in range(1, 241)]
+        rich = "<b>" + " ".join(words[:120]) + "</b> " + " ".join(words[120:])
+        style = ParagraphStyle("large_report", fontName="Helvetica", fontSize=12, leading=17)
+        pending = [Paragraph(rich, style)]
+        writer = PdfWriter()
+        page_count = 0
+        while pending:
+            page = io.BytesIO()
+            cv = canvas.Canvas(page, pagesize=A4)
+            y = height - 45 * mm
+            floor = 95 * mm
+            progress = False
+            while pending:
+                paragraph = pending[0]
+                _, h = paragraph.wrap(width - 44 * mm, 700 * mm)
+                available = y - floor - 2 * mm
+                if h > available:
+                    pieces = paragraph.split(width - 44 * mm, available)
+                    if not pieces:
+                        break
+                    part = pieces[0]
+                    _, part_height = part.wrap(width - 44 * mm, available)
+                    y -= part_height
+                    part.drawOn(cv, 22 * mm, y)
+                    pending = pieces[1:] + pending[1:]
+                else:
+                    y -= h
+                    paragraph.drawOn(cv, 22 * mm, y)
+                    pending.pop(0)
+                y -= 2 * mm
+                progress = True
+            self.assertTrue(progress, "Paragraph could not fit on a new page")
+            cv.save()
+            page.seek(0)
+            writer.add_page(PdfReader(page).pages[0])
+            page_count += 1
+            self.assertLess(page_count, 20)
+
+        output = io.BytesIO()
+        writer.write(output)
+        output.seek(0)
+        pages = PdfReader(output).pages
+        self.assertGreater(len(pages), 1)
+        combined = " ".join(p.extract_text() for p in pages)
+        for word in words:
+            self.assertEqual(combined.count(word), 1, word)
+
 
 if __name__ == "__main__":
     unittest.main()
