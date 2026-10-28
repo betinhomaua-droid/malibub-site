@@ -1493,6 +1493,14 @@ def result_pdf(eid):
     p=Paragraph(markup,style);_,h=p.wrap(available_width,700*mm);return p,h
    first=base_reader.pages[0];width=float(first.mediabox.width);height=float(first.mediabox.height)
    left=22*mm; available_width=width-44*mm
+   # Não sobrepor a indicação ao timbre de terceiros: anexa folha de identificação clínica.
+   indication=(e.observation or "").strip()
+   if indication:
+    intro=io.BytesIO(); intro_doc=SimpleDocTemplate(intro,pagesize=A4,leftMargin=22*mm,rightMargin=22*mm,topMargin=28*mm,bottomMargin=28*mm)
+    intro_style=ParagraphStyle("indication",fontName="Helvetica",fontSize=10,leading=15)
+    intro_doc.build([Paragraph("IDENTIFICAÇÃO DO EXAME",ParagraphStyle("indication_title",parent=intro_style,fontName="Helvetica-Bold",fontSize=13,spaceAfter=12)),Paragraph("Paciente: "+escape(e.patient or ""),intro_style),Paragraph("Exame: "+escape(e.exam_type or ""),intro_style),Paragraph("Indicação clínica: "+escape(indication),intro_style)])
+    intro.seek(0)
+    for intro_page in PdfReader(intro).pages: final_writer.add_page(intro_page)
    rendered=[make_block(markup,align,available_width) for markup,align in blocks]
    index=0;signature_done=False
    overlay=io.BytesIO();cv=canvas.Canvas(overlay,pagesize=(width,height))
