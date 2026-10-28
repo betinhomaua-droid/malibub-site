@@ -1508,7 +1508,14 @@ def result_pdf(eid):
    rendered=[make_block(markup,align,available_width) for markup,align in blocks]
    index=0;signature_done=False
    overlay=io.BytesIO();cv=canvas.Canvas(overlay,pagesize=(width,height))
-   y=height-119*mm;min_y=height-139*mm
+   # Respeitar as margens configuradas pela clínica para o papel timbrado.
+   # Nunca escrever sobre o rodapé e preservar uma faixa mínima de segurança.
+   top_margin_mm=max(20,min(120,int(clinic.report_top_mm or 72)))
+   bottom_margin_mm=max(15,min(100,int(clinic.report_bottom_mm or 42)))
+   y=height-top_margin_mm*mm
+   min_y=bottom_margin_mm*mm
+   if y-min_y<20*mm:
+    y=height-119*mm;min_y=height-139*mm
    while index<len(rendered):
     para,h=rendered[index]
     if y-h<min_y:break
