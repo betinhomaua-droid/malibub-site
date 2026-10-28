@@ -24,3 +24,7 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_clinical_editor_static.py' -v
       - name: Report paragraph and formatting behavior tests
         run: python -m unittest discover -s tests -p 'test_report_formatting.py' -v
+      - name: Install PDF integration test dependencies
+        run: python -m pip install 'reportlab>=4.2,<5' 'pypdf>=5,<7'
+      - name: Generate and inspect synthetic PDF overlay
+        run: python -m unittest discover -s tests -p 'test_pdf_overlay_integration.py' -v
