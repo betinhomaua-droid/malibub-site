@@ -19,6 +19,16 @@ class ClinicalEditorStaticTests(unittest.TestCase):
         self.assertIn('e.observation', pdf_code)
         self.assertNotIn('e.clinical_notes', pdf_code)
 
+    def test_clinic_revision_request_workflow(self):
+        self.assertIn('@app.route("/exam/<int:eid>/revisao",methods=["GET","POST"])', SOURCE)
+        self.assertIn('Exam.query.filter_by(id=eid,clinic_id=session["uid"]).first_or_404()', SOURCE)
+        self.assertIn('e.status="Revisão solicitada"', SOURCE)
+        self.assertIn('revision_reason=db.Column(db.Text)', SOURCE)
+        self.assertIn('if not is_radiologist and e.status=="Liberado"', SOURCE)
+        self.assertIn('Revisão solicitada pela clínica', SOURCE)
+        self.assertIn('e.revision_reason=None; e.revision_requested_at=None;', SOURCE)
+        self.assertIn('if not existing_revenue:', SOURCE)
+
     def test_long_formatted_paragraph_splits_across_pages(self):
         self.assertIn("pieces=para.split(available_width,available_height)", SOURCE)
         self.assertIn("pending=pieces[1:]+pending[1:]", SOURCE)
