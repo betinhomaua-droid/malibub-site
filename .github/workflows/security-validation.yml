@@ -22,3 +22,5 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_security_static.py' -v
       - name: Clinical editor and PDF privacy regression checks
         run: python -m unittest discover -s tests -p 'test_clinical_editor_static.py' -v
+      - name: Report paragraph and formatting behavior tests
+        run: python -m unittest discover -s tests -p 'test_report_formatting.py' -v
