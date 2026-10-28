@@ -1541,6 +1541,7 @@ def result_pdf(eid):
     divider_y=indication_top-indication_height-4*mm
     cv.line(22*mm,divider_y,width-22*mm,divider_y)
     y=divider_y-8*mm;available_width=width-44*mm
+    continuation_start_index=index
     while index<len(rendered):
      para,h=make_block(blocks[index][0],blocks[index][1],available_width)
      if y-h<66*mm:break
@@ -1552,8 +1553,8 @@ def result_pdf(eid):
      cv.setFillColor(colors.HexColor("#52666E"));cv.setFont("Helvetica",7.8)
      cv.drawCentredString(width/2,y-20*mm,"Radiologista responsável - CRO-SP 113752")
      signature_done=True
-    if index<len(rendered) and y==height-47*mm:
-     raise ValueError("Parágrafo do laudo excede a altura de uma página")
+    if index<len(rendered) and index==continuation_start_index:
+     raise ValueError("Parágrafo do laudo excede a área disponível da página de continuação")
     cv.save();extra.seek(0);final_writer.add_page(PdfReader(extra).pages[0])
    merged=io.BytesIO(); final_writer.write(merged); merged.seek(0); buf=apply_final_footer(merged.getvalue())
   except Exception:
