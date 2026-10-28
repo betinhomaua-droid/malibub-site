@@ -19,6 +19,11 @@ class ClinicalEditorStaticTests(unittest.TestCase):
         self.assertIn('e.observation', pdf_code)
         self.assertNotIn('e.clinical_notes', pdf_code)
 
+    def test_continuation_pdf_has_progress_guard(self):
+        self.assertIn("continuation_start_index=index", SOURCE)
+        self.assertIn("if index<len(rendered) and index==continuation_start_index:", SOURCE)
+        self.assertNotIn("if index<len(rendered) and y==height-47*mm:", SOURCE)
+
     def test_custom_pdf_uses_clinic_configured_margins(self):
         self.assertIn("top_margin_mm=max(20,min(120,int(clinic.report_top_mm or 72)))", SOURCE)
         self.assertIn("bottom_margin_mm=max(15,min(100,int(clinic.report_bottom_mm or 42)))", SOURCE)
