@@ -13,19 +13,19 @@ blocks = namespace["rich_report_blocks"]
 
 class ReportFormattingTests(unittest.TestCase):
     def test_html_paragraphs_remain_separate(self):
-        result = blocks("<p>Primeira frase.</p><p>Segunda frase.</p>", "Primeira frase.\\nSegunda frase.")
+        result = blocks("<p>Primeira frase.</p><p>Segunda frase.</p>", "Primeira frase.\nSegunda frase.")
         self.assertEqual([x[0] for x in result], ["Primeira frase.", "Segunda frase."])
 
     def test_plain_text_fallback_keeps_lines(self):
-        result = blocks("", "Primeira frase.\\nSegunda frase.")
+        result = blocks("", "Primeira frase.\nSegunda frase.")
         self.assertEqual([x[0] for x in result], ["Primeira frase.", "Segunda frase."])
 
     def test_single_html_block_with_plain_newlines_recovers_paragraphs(self):
-        result = blocks("<div>Primeira frase. Segunda frase.</div>", "Primeira frase.\\nSegunda frase.")
+        result = blocks("<div>Primeira frase. Segunda frase.</div>", "Primeira frase.\nSegunda frase.")
         self.assertEqual([x[0] for x in result], ["Primeira frase.", "Segunda frase."])
 
     def test_rich_text_is_not_discarded(self):
-        result = blocks("<p><b>Achado:</b> normal.</p><p>Outra observação.</p>", "Achado: normal.\\nOutra observação.")
+        result = blocks("<p><b>Achado:</b> normal.</p><p>Outra observação.</p>", "Achado: normal.\nOutra observação.")
         self.assertIn("<b>Achado:</b>", result[0][0])
         self.assertEqual(len(result), 2)
 
