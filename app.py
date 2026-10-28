@@ -1276,14 +1276,18 @@ def report(eid):
   if not report_text:
    flash("Digite o laudo antes de finalizar.")
    return redirect(url_for("report",eid=e.id))
-  try:
-   raw_amount=request.form.get("amount","").strip()
-   if not raw_amount: raise ValueError
-   amount=float(raw_amount)
-   if amount <= 0: raise ValueError
-  except (TypeError,ValueError):
-   flash("Informe o valor do laudo. Para evitar cobrança incorreta, o valor deve ser maior que R$ 0,00.")
-   return redirect(url_for("report",eid=e.id))
+  existing_revenue=Finance.query.filter_by(description=f"Laudo {e.protocol}",kind="Entrada").first()
+  if e.status=="Revisão solicitada" and existing_revenue:
+   amount=existing_revenue.amount
+  else:
+   try:
+    raw_amount=request.form.get("amount","").strip()
+    if not raw_amount: raise ValueError
+    amount=float(raw_amount)
+    if amount <= 0: raise ValueError
+   except (TypeError,ValueError):
+    flash("Informe o valor do laudo. Para evitar cobrança incorreta, o valor deve ser maior que R$ 0,00.")
+    return redirect(url_for("report",eid=e.id))
   e.report=report_text; e.report_html=clean_report_html(request.form.get("report_html","")); e.status="Liberado"; e.revision_reason=None; e.revision_requested_at=None; e.released_at=datetime.utcnow(); e.signed_by=session.get("name") or "Dra. Marina"; e.signed_at=datetime.utcnow()
   db.session.flush()
   check=result_pdf(e.id)
@@ -1291,7 +1295,6 @@ def report(eid):
    db.session.rollback()
    flash("PDF final indisponível. O exame não foi liberado nem faturado.")
    return redirect(url_for("report",eid=e.id))
-  existing_revenue=Finance.query.filter_by(description=f"Laudo {e.protocol}",kind="Entrada").first()
   if not existing_revenue:
    db.session.add(Finance(description=f"Laudo {e.protocol}",kind="Entrada",amount=amount))
   db.session.commit(); return redirect("/dashboard")
