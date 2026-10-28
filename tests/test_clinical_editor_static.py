@@ -19,9 +19,14 @@ class ClinicalEditorStaticTests(unittest.TestCase):
         self.assertIn('e.observation', pdf_code)
         self.assertNotIn('e.clinical_notes', pdf_code)
 
+    def test_long_formatted_paragraph_splits_across_pages(self):
+        self.assertIn("pieces=para.split(available_width,available_height)", SOURCE)
+        self.assertIn("pending=pieces[1:]+pending[1:]", SOURCE)
+        self.assertIn("if not pending and y>=90*mm:", SOURCE)
+
     def test_continuation_pdf_has_progress_guard(self):
-        self.assertIn("continuation_start_index=index", SOURCE)
-        self.assertIn("if index<len(rendered) and index==continuation_start_index:", SOURCE)
+        self.assertIn("page_progress=False", SOURCE)
+        self.assertIn("if pending and not page_progress:", SOURCE)
         self.assertNotIn("if index<len(rendered) and y==height-47*mm:", SOURCE)
 
     def test_model_settings_warn_about_overlapping_content(self):
