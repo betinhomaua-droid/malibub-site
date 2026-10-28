@@ -709,9 +709,15 @@ def report_model():
  u=User.query.get_or_404(session["uid"])
  if request.method=="POST":
   try:
-   u.report_top_mm=max(20,min(120,int(request.form.get("report_top_mm",u.report_top_mm or 72))))
-   u.report_bottom_mm=max(15,min(100,int(request.form.get("report_bottom_mm",u.report_bottom_mm or 42))))
-  except Exception: pass
+   top_input=int(request.form.get("report_top_mm",u.report_top_mm or 72))
+   bottom_input=int(request.form.get("report_bottom_mm",u.report_bottom_mm or 42))
+   if not 20<=top_input<=120 or not 15<=bottom_input<=100:
+    raise ValueError("Margens fora dos limites permitidos")
+   u.report_top_mm=top_input
+   u.report_bottom_mm=bottom_input
+  except (ValueError,TypeError):
+   flash("Margens inválidas. Informe margem superior entre 20 e 120 mm e inferior entre 15 e 100 mm.")
+   return redirect("/modelo-laudo")
   logo=request.files.get("logo")
   if logo and logo.filename:
    logo_name=secure_filename(logo.filename); logo_ext=Path(logo_name).suffix.lower()
