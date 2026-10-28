@@ -44,5 +44,9 @@ class SecuritySourceChecks(unittest.TestCase):
         self.assertIn('Revisão solicitada pela clínica', SOURCE)
         self.assertIn('if e.status=="Revisão solicitada" and existing_revenue:', SOURCE)
 
+    def test_rich_report_closes_open_formatting_at_paragraph_boundaries(self):
+        self.assertIn('closing="".join("</"+mapped+">" for _,mapped in reversed(self.tags))', SOURCE)
+        self.assertIn('self.parts=["<"+mapped+">" for _,mapped in self.tags]', SOURCE)
+
 if __name__ == "__main__":
     unittest.main()

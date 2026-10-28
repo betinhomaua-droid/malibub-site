@@ -1172,9 +1172,14 @@ def rich_report_blocks(raw_html, plain):
   def __init__(self):
    super().__init__(convert_charrefs=True);self.blocks=[];self.parts=[];self.tags=[];self.align="left";self.list_stack=[];self.counter=0;self.pending_break=False
   def flush(self,force=False):
+   # Fecha as tags de formatação antes de enviar cada parágrafo ao ReportLab.
+   # Tags abertas podem atravessar <div>, <p> ou <br> no HTML do editor.
    content="".join(self.parts).strip()
-   if content or force:self.blocks.append((content or "&nbsp;",self.align))
-   self.parts=[];self.align="left"
+   if content or force:
+    closing="".join("</"+mapped+">" for _,mapped in reversed(self.tags))
+    self.blocks.append(((content+closing) if content else "&nbsp;",self.align))
+   self.parts=["<"+mapped+">" for _,mapped in self.tags]
+   self.align="left"
   def handle_starttag(self,tag,attrs):
    d=dict(attrs)
    if tag in ("p","div","li"):
@@ -1202,7 +1207,13 @@ def rich_report_blocks(raw_html, plain):
    elif tag in ("b","strong","i","em","u","font","span"):
     if self.tags and self.tags[-1][0]==tag:
      self.parts.append("</"+self.tags.pop()[1]+">")
-  def handle_data(self,data):self.parts.append(esc(data))
+  def handle_data(self,data):
+   # Preserve quebras de linha reais do editor, inclusive linhas vazias.
+   # Evita transformar vários parágrafos em um único bloco no PDF.
+   lines=data.replace("\\r\\n","\\n").replace("\\r","\\n").split("\\n")
+   for index,line in enumerate(lines):
+    if index:self.flush(force=True)
+    if line:self.parts.append(esc(line))
  p=Blocks()
  if raw_html:
   p.feed(clean_report_html(raw_html));p.flush()
