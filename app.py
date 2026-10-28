@@ -1420,6 +1420,7 @@ def result_pdf(eid):
   for markup,alignment in rich_report_blocks(e.report_html,e.report):
    sty=ParagraphStyle("rich_tmj",parent=normal,alignment={"left":0,"center":1,"right":2,"justify":4}.get(alignment,0))
    story_tmj.append(Paragraph(markup,sty))
+   story_tmj.append(Spacer(1,2*mm))
   story_tmj += [
    Spacer(1,5*mm),
    Paragraph("Este relatório foi baseado em imagens axiais, tangenciais, interseccionais (transaxiais ou parassagitais) de acordo com volume obtido.",normal),
