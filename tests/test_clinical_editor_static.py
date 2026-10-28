@@ -28,6 +28,12 @@ class ClinicalEditorStaticTests(unittest.TestCase):
         self.assertIn("ao trocar de modelo, revise os valores para evitar sobreposição", SOURCE)
         self.assertIn("margens são da clínica", SOURCE)
 
+    def test_legacy_model_margins_are_initialized_once(self):
+        self.assertIn("if item.top_mm is None: item.top_mm=u.report_top_mm or 72", SOURCE)
+        self.assertIn("if item.bottom_mm is None: item.bottom_mm=u.report_bottom_mm or 42", SOURCE)
+        self.assertIn("u.report_top_mm=item.top_mm", SOURCE)
+        self.assertIn("u.report_bottom_mm=item.bottom_mm", SOURCE)
+
     def test_model_specific_margins_with_legacy_fallback(self):
         self.assertIn("top_mm=db.Column(db.Integer,nullable=True)", SOURCE)
         self.assertIn("bottom_mm=db.Column(db.Integer,nullable=True)", SOURCE)
