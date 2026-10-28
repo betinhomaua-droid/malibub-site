@@ -1210,7 +1210,7 @@ def rich_report_blocks(raw_html, plain):
   def handle_data(self,data):
    # Preserve quebras de linha reais do editor, inclusive linhas vazias.
    # Evita transformar vários parágrafos em um único bloco no PDF.
-   lines=data.replace("\\r\\n","\\n").replace("\\r","\\n").split("\\n")
+   lines=data.replace("\r\n","\n").replace("\r","\n").split("\n")
    for index,line in enumerate(lines):
     if index:self.flush(force=True)
     if line:self.parts.append(esc(line))

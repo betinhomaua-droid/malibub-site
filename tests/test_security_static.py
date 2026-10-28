@@ -1,6 +1,8 @@
 import pathlib
 import unittest
 
+from test_report_formatting import ReportFormattingTests  # Inclui testes de formatação no CI existente.
+
 SOURCE = pathlib.Path(__file__).resolve().parents[1].joinpath("app.py").read_text(encoding="utf-8")
 
 class SecuritySourceChecks(unittest.TestCase):
