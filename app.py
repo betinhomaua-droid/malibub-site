@@ -269,7 +269,7 @@ def assets(filename):
 class User(db.Model):
  id=db.Column(db.Integer,primary_key=True); name=db.Column(db.String(100)); email=db.Column(db.String(120),unique=True); password=db.Column(db.String(255)); role=db.Column(db.String(30)); active=db.Column(db.Boolean,default=True); logo=db.Column(db.String(255)); logo_name=db.Column(db.String(255)); report_model=db.Column(db.String(255)); report_model_name=db.Column(db.String(255)); report_top_mm=db.Column(db.Integer,default=72); report_bottom_mm=db.Column(db.Integer,default=42); privacy_version=db.Column(db.String(20)); privacy_ack_at=db.Column(db.DateTime); failed_login_count=db.Column(db.Integer,default=0,nullable=False); access_locked=db.Column(db.Boolean,default=False,nullable=False)
 class ReportModel(db.Model):
- id=db.Column(db.Integer,primary_key=True); clinic_id=db.Column(db.Integer,index=True,nullable=False); name=db.Column(db.String(255)); stored=db.Column(db.String(255)); created_at=db.Column(db.DateTime,default=datetime.utcnow)
+ id=db.Column(db.Integer,primary_key=True); clinic_id=db.Column(db.Integer,index=True,nullable=False); name=db.Column(db.String(255)); stored=db.Column(db.String(255)); top_mm=db.Column(db.Integer,nullable=True); bottom_mm=db.Column(db.Integer,nullable=True); created_at=db.Column(db.DateTime,default=datetime.utcnow)
 class Exam(db.Model):
  id=db.Column(db.Integer,primary_key=True); protocol=db.Column(db.String(30),unique=True); patient=db.Column(db.String(120)); sex=db.Column(db.String(20)); birth=db.Column(db.String(20)); dentist=db.Column(db.String(120)); exam_date=db.Column(db.String(20)); exam_type=db.Column(db.String(100)); observation=db.Column(db.String(500)); clinical_notes=db.Column(db.Text,default=""); priority=db.Column(db.String(20),default="NORMAL"); contracted_amount=db.Column(db.Float); status=db.Column(db.String(50),default="Enviado"); clinic_id=db.Column(db.Integer); due_at=db.Column(db.DateTime); report=db.Column(db.Text,default=""); report_html=db.Column(db.Text,default=""); released_at=db.Column(db.DateTime); signed_by=db.Column(db.String(120)); signed_at=db.Column(db.DateTime); created_at=db.Column(db.DateTime,default=datetime.utcnow)
 class ExamFile(db.Model):
@@ -387,6 +387,8 @@ def init():
    db.session.execute(db.text("ALTER TABLE exam ADD COLUMN IF NOT EXISTS contracted_amount DOUBLE PRECISION"))
    db.session.execute(db.text("ALTER TABLE exam ADD COLUMN IF NOT EXISTS report_html TEXT"))
    db.session.execute(db.text("ALTER TABLE exam ADD COLUMN IF NOT EXISTS clinical_notes TEXT"))
+   db.session.execute(db.text("ALTER TABLE report_model ADD COLUMN IF NOT EXISTS top_mm INTEGER"))
+   db.session.execute(db.text("ALTER TABLE report_model ADD COLUMN IF NOT EXISTS bottom_mm INTEGER"))
    db.session.execute(db.text("UPDATE \"user\" SET active=TRUE WHERE active IS NULL"))
    db.session.commit()
   except Exception:
@@ -398,6 +400,9 @@ def init():
    if "signed_at" not in cols: db.session.execute(db.text("ALTER TABLE exam ADD COLUMN signed_at DATETIME"))
    if "report_html" not in cols: db.session.execute(db.text("ALTER TABLE exam ADD COLUMN report_html TEXT"))
    if "clinical_notes" not in cols: db.session.execute(db.text("ALTER TABLE exam ADD COLUMN clinical_notes TEXT"))
+   model_cols=[r[1] for r in db.session.execute(db.text("PRAGMA table_info(report_model)")).fetchall()]
+   if "top_mm" not in model_cols: db.session.execute(db.text("ALTER TABLE report_model ADD COLUMN top_mm INTEGER"))
+   if "bottom_mm" not in model_cols: db.session.execute(db.text("ALTER TABLE report_model ADD COLUMN bottom_mm INTEGER"))
    db.session.commit()
   except Exception:
    db.session.rollback()
