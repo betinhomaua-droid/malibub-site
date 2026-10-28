@@ -39,7 +39,7 @@ class ClinicalEditorStaticTests(unittest.TestCase):
         self.assertIn('except (ValueError,TypeError):', SOURCE)
 
     def test_signature_reserves_footer_clearance(self):
-        self.assertIn("if index==len(rendered) and y>=90*mm:", SOURCE)
+        self.assertIn("if not pending and y>=90*mm:", SOURCE)
         self.assertIn('draw_report_signature(cv,width,baseline=y-12*mm)', SOURCE)
 
     def test_legacy_model_margins_are_initialized_once(self):
