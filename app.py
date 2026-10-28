@@ -1512,8 +1512,10 @@ def result_pdf(eid):
     cv.setFont("Helvetica",8)
     cv.drawString(22*mm,height-27*mm,f"Paciente: {(e.patient or '')[:60]}  |  Sexo: {(e.sex or '')[:20]}  |  Nascimento: {br_date(e.birth)}")
     cv.drawString(22*mm,height-31*mm,f"Dentista: {(e.dentist or '')[:45]}  |  Data do exame: {br_date(e.exam_date)}")
-    cv.line(22*mm,height-34*mm,width-22*mm,height-34*mm)
-    y=height-42*mm;available_width=width-44*mm
+    cv.setFont("Helvetica",8)
+    cv.drawString(22*mm,height-35*mm,f"Indicação clínica: {(e.observation or '')[:95]}")
+    cv.line(22*mm,height-39*mm,width-22*mm,height-39*mm)
+    y=height-47*mm;available_width=width-44*mm
     while index<len(rendered):
      para,h=make_block(blocks[index][0],blocks[index][1],available_width)
      if y-h<66*mm:break
@@ -1525,7 +1527,7 @@ def result_pdf(eid):
      cv.setFillColor(colors.HexColor("#52666E"));cv.setFont("Helvetica",7.8)
      cv.drawCentredString(width/2,y-20*mm,"Radiologista responsável - CRO-SP 113752")
      signature_done=True
-    if index<len(rendered) and y==height-42*mm:
+    if index<len(rendered) and y==height-47*mm:
      raise ValueError("Parágrafo do laudo excede a altura de uma página")
     cv.save();extra.seek(0);final_writer.add_page(PdfReader(extra).pages[0])
    merged=io.BytesIO(); final_writer.write(merged); merged.seek(0); buf=apply_final_footer(merged.getvalue())
