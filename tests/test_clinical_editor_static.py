@@ -19,6 +19,12 @@ class ClinicalEditorStaticTests(unittest.TestCase):
         self.assertIn('e.observation', pdf_code)
         self.assertNotIn('e.clinical_notes', pdf_code)
 
+    def test_custom_pdf_uses_clinic_configured_margins(self):
+        self.assertIn("top_margin_mm=max(20,min(120,int(clinic.report_top_mm or 72)))", SOURCE)
+        self.assertIn("bottom_margin_mm=max(15,min(100,int(clinic.report_bottom_mm or 42)))", SOURCE)
+        self.assertIn("y=height-top_margin_mm*mm", SOURCE)
+        self.assertIn("min_y=bottom_margin_mm*mm", SOURCE)
+
     def test_continuation_indication_wraps_without_truncation(self):
         self.assertIn('indication_para.wrap(width-44*mm,200*mm)', SOURCE)
         self.assertIn('indication_para.drawOn(cv,22*mm,indication_top-indication_height)', SOURCE)
