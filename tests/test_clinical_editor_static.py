@@ -33,6 +33,10 @@ class ClinicalEditorStaticTests(unittest.TestCase):
         self.assertIn('flash("Margens inválidas.', SOURCE)
         self.assertIn('except (ValueError,TypeError):', SOURCE)
 
+    def test_signature_reserves_footer_clearance(self):
+        self.assertIn("if index==len(rendered) and y>=90*mm:", SOURCE)
+        self.assertIn('draw_report_signature(cv,width,baseline=y-12*mm)', SOURCE)
+
     def test_legacy_model_margins_are_initialized_once(self):
         self.assertIn("if item.top_mm is None: item.top_mm=u.report_top_mm or 72", SOURCE)
         self.assertIn("if item.bottom_mm is None: item.bottom_mm=u.report_bottom_mm or 42", SOURCE)
