@@ -1107,6 +1107,62 @@ def upload_ready_exam(eid):
   flash(f"{len(uploaded)} arquivo(s) do exame pronto anexado(s) após varredura de segurança.")
  return redirect(url_for("report",eid=e.id))
 
+@app.route("/report/<int:eid>/laudo-final",methods=["GET","POST"])
+def approved_final_pdf(eid):
+ # Substituição explícita do PDF entregue à clínica, sem refaturar o exame.
+ if session.get("role")!="Radiologista": return redirect("/")
+ e=Exam.query.get_or_404(eid)
+ if e.status!="Liberado":
+  flash("Libere o exame antes de substituir o PDF final.")
+  return redirect(url_for("report",eid=e.id))
+ if request.method=="GET":
+  current=ExamFile.query.filter_by(exam_id=e.id,kind="laudo_final").order_by(ExamFile.id.desc()).first()
+  body=f"""<section class='card'><h2>Substituir PDF final - {html_escape(e.protocol or '')}</h2>
+  <p>Somente a radiologista pode publicar uma nova versão. A substituição não altera os dados clínicos nem gera nova cobrança.</p>
+  <p>O arquivo deve estar conferido e assinado pela profissional responsável. A plataforma não assina este PDF automaticamente.</p>
+  <p>Versão atual: {html_escape(current.name) if current else 'PDF gerado pela plataforma'}</p>
+  <form method='post' enctype='multipart/form-data'>
+  {csrf_field()}<label>PDF final aprovado <input type='file' name='final_pdf' accept='application/pdf,.pdf' required></label>
+  <label><input type='checkbox' name='approved' value='yes' required> Confirmo que conferi o documento e que a assinatura final foi validada pela radiologista.</label>
+  <button type='submit' onclick="return confirm('Publicar este PDF como versão oficial para a clínica?')">Publicar PDF final</button></form></section>"""
+  return page(body)
+ if request.form.get("approved")!="yes":
+  flash("Confirme a conferência e assinatura do documento.")
+  return redirect(request.path)
+ file=request.files.get("final_pdf")
+ if not file or not file.filename or Path(secure_filename(file.filename)).suffix.lower()!=".pdf":
+  flash("Selecione um PDF válido.")
+  return redirect(request.path)
+ name=secure_filename(file.filename)
+ status,detail=malware_scan(file,name)
+ if status in {"SUSPEITO","INFECTADO"} or (status=="ERRO" and MALWARE_SCAN_REQUIRED):
+  flash("Arquivo não aprovado pela verificação de segurança.")
+  return redirect(request.path)
+ try:
+  from pypdf import PdfReader
+  file.stream.seek(0)
+  reader=PdfReader(file.stream,strict=True)
+  if len(reader.pages)<1 or reader.is_encrypted: raise ValueError("invalid PDF")
+  file.stream.seek(0)
+ except Exception:
+  flash("O PDF não pôde ser validado.")
+  return redirect(request.path)
+ stored="exames/"+uuid.uuid4().hex+".pdf"
+ try:
+  store_upload(file,stored,"application/pdf")
+  current=ExamFile.query.filter_by(exam_id=e.id,kind="laudo_final").all()
+  for previous in current:previous.kind="laudo_final_anterior"
+  db.session.add(ExamFile(exam_id=e.id,name=name,stored=stored,kind="laudo_final",uploaded_by=session.get("name"),scan_status=status,scan_detail=detail))
+  db.session.commit()
+ except Exception:
+  db.session.rollback()
+  try:storage_delete(stored)
+  except Exception:pass
+  flash("Falha ao publicar o PDF final. O documento anterior foi preservado.")
+  return redirect(request.path)
+ flash("Nova versão do PDF final publicada, sem cobrança adicional.")
+ return redirect("/dashboard")
+
 @app.route("/report/<int:eid>/exame-pronto/<int:fid>/excluir",methods=["POST"])
 def delete_ready_exam_file(eid,fid):
  if session.get("role")!="Radiologista": return redirect("/")
@@ -1347,6 +1403,9 @@ def result_pdf(eid):
  e=Exam.query.get_or_404(eid)
  if session.get("role")=="Clinica" and e.clinic_id!=session.get("uid"): return redirect("/dashboard")
  if e.status!="Liberado": return redirect("/dashboard")
+ final_file=ExamFile.query.filter_by(exam_id=e.id,kind="laudo_final").order_by(ExamFile.id.desc()).first()
+ if final_file and final_file.stored and final_file.scan_status not in {"SUSPEITO","INFECTADO"} and storage_exists(final_file.stored):
+  return storage_response(final_file.stored,final_file.name,request.args.get("print")!="1")
  from reportlab.lib.pagesizes import A4
  from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
  from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
