@@ -6,6 +6,10 @@ from test_report_formatting import ReportFormattingTests  # Inclui testes de for
 SOURCE = pathlib.Path(__file__).resolve().parents[1].joinpath("app.py").read_text(encoding="utf-8")
 
 class SecuritySourceChecks(unittest.TestCase):
+    def test_finished_pdf_preview_hides_thumbnails(self):
+        self.assertIn("/exam-file/{f.id}#navpanes=0&view=FitH", SOURCE)
+        self.assertIn("Pré-visualização do PDF sem miniaturas laterais", SOURCE)
+
     def test_turnstile_server_validation(self):
         self.assertIn("https://challenges.cloudflare.com/turnstile/v0/siteverify", SOURCE)
         self.assertIn('if not verify_turnstile(data.get("turnstile_token","")):', SOURCE)
