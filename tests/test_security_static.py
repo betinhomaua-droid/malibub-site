@@ -46,6 +46,9 @@ class SecuritySourceChecks(unittest.TestCase):
         self.assertIn('Revisão solicitada pela clínica', SOURCE)
         self.assertIn('if e.status=="Revisão solicitada" and existing_revenue:', SOURCE)
 
+    def test_tmj_obsolete_transverse_cuts_disclaimer_removed(self):
+        self.assertNotIn("Os cortes transversais apresentam numerações no canto superior esquerdo", SOURCE)
+
     def test_tmj_pdf_compact_page_layout(self):
         self.assertIn('frame=Frame(22*mm,28*mm,W-44*mm,H-89*mm', SOURCE)
         self.assertIn('topMargin=61*mm,bottomMargin=28*mm,title=f"{e.protocol} - Laudo TMJ"', SOURCE)
