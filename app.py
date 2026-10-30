@@ -641,7 +641,8 @@ def dashboard():
    primary_action=(f'<a class="btn" href="/report/{e.id}">Laudar</a>' if is_radiologist and e.status!="Liberado" else (f'<a class="btn" href="/result/{e.id}">Resultado</a>' if e.status=="Liberado" else ""))
    delete_action=(f'<form method="post" action="/exam/{e.id}/excluir" style="display:inline" onsubmit="return confirm(\'Excluir definitivamente este exame, seus arquivos e o lançamento financeiro vinculado? Esta ação não pode ser desfeita.\')">{csrf_field()}<button type="submit" style="background:#b42318">Excluir</button></form>' if is_radiologist else "")
    review_action=(f'<a class="btn" style="margin-left:6px;background:#fff;color:#b97700;border:1px solid #d69c27" href="#revisao" data-exam-id="{e.id}" data-protocol="{html_escape(e.protocol)}" data-patient="{html_escape(e.patient)}" onclick="openRevisionDialog(this);return false">Revisão</a>' if not is_radiologist and e.status=="Liberado" else "")
-   action=primary_action+review_action+delete_action
+   replace_action=(f'<a class="btn" style="margin-left:6px" href="/report/{e.id}/laudo-final">Substituir PDF final</a>' if is_radiologist and e.status=="Liberado" else "")
+   action=primary_action+review_action+replace_action+delete_action
   delivery=("<b style='color:#b42318'>URG</b><br>" if (e.priority or "NORMAL")=="URG" else "")+due_date_label(e.due_at,e.priority or "NORMAL")
   if is_radiologist:
    clinic=clinics.get(e.clinic_id)
