@@ -46,6 +46,15 @@ class SecuritySourceChecks(unittest.TestCase):
         self.assertIn('Revisão solicitada pela clínica', SOURCE)
         self.assertIn('if e.status=="Revisão solicitada" and existing_revenue:', SOURCE)
 
+    def test_tmj_obsolete_transverse_cuts_disclaimer_removed(self):
+        self.assertNotIn("Os cortes transversais apresentam numerações no canto superior esquerdo", SOURCE)
+
+    def test_tmj_pdf_compact_page_layout(self):
+        self.assertIn('frame=Frame(22*mm,28*mm,W-44*mm,H-89*mm', SOURCE)
+        self.assertIn('topMargin=61*mm,bottomMargin=28*mm,title=f"{e.protocol} - Laudo TMJ"', SOURCE)
+        tmj_fixed = SOURCE.split('story_tmj += [', 1)[1]
+        self.assertIn('Spacer(1,2*mm)', tmj_fixed.split('Este relatório foi baseado', 1)[0])
+
     def test_rich_report_closes_open_formatting_at_paragraph_boundaries(self):
         self.assertIn('closing="".join("</"+mapped+">" for _,mapped in reversed(self.tags))', SOURCE)
         self.assertIn('self.parts=["<"+mapped+">" for _,mapped in self.tags]', SOURCE)
