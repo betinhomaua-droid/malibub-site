@@ -1462,7 +1462,6 @@ def result_pdf(eid):
    Spacer(1,2*mm),
    Paragraph("Este relatório foi baseado em imagens axiais, tangenciais, interseccionais (transaxiais ou parassagitais) de acordo com volume obtido.",normal),
    Paragraph("As impressões encontram-se em escala 1:1 podendo as mensurações serem realizadas diretamente nas imagens.",normal),
-   Paragraph("Os cortes transversais apresentam numerações no canto superior esquerdo e equivalem aos números constantes na parte superior da imagem panorâmica. Utilizando-se a escala milimetrada presente no lado direito dos cortes transversais, obtém-se o valor real da região desejada.",normal),
    Paragraph("<b>As mensurações são sugestivas devendo ficar a critério clínico a escolha do local, tamanho e angulação dos implantes.</b>",normal),
    Spacer(1,3*mm),
    Paragraph("É inerente a todo exame tomográfico, especialmente o de alta definição como este recebido, que estruturas metálicas de coroas protéticas, restaurações, núcleos e também de obturações endodônticas presentes nas regiões analisadas, formem imagens em forma de raios, prejudicando a avaliação das mesmas.",normal),
