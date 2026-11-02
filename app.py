@@ -276,6 +276,9 @@ class ExamFile(db.Model):
  id=db.Column(db.Integer,primary_key=True); exam_id=db.Column(db.Integer); name=db.Column(db.String(255)); stored=db.Column(db.String(255)); kind=db.Column(db.String(30),default="entrada"); uploaded_by=db.Column(db.String(100)); scan_status=db.Column(db.String(20),default="PENDENTE"); scan_detail=db.Column(db.String(255))
 class Finance(db.Model):
  id=db.Column(db.Integer,primary_key=True); date=db.Column(db.Date,default=datetime.utcnow().date); description=db.Column(db.String(200)); kind=db.Column(db.String(20)); amount=db.Column(db.Float,default=0)
+from a1_report_model import register_signed_report_model
+SignedReport = register_signed_report_model(db)
+
 class ExamOccurrence(db.Model):
  id=db.Column(db.Integer,primary_key=True)
  exam_id=db.Column(db.Integer,index=True,nullable=False)
