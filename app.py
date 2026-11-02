@@ -1277,6 +1277,7 @@ def report(eid):
   e.report=report_text; e.report_html=clean_report_html(request.form.get("report_html","")); e.status="Liberado"; e.revision_reason=None; e.revision_requested_at=None; e.released_at=datetime.utcnow(); e.signed_by=session.get("name") or "Dra. Marina"; e.signed_at=datetime.utcnow()
   db.session.flush()
   check=result_pdf(e.id)
+  if hasattr(check,"direct_passthrough"): check.direct_passthrough=False
   if getattr(check,"status_code",200) >= 400 or not hasattr(check,"get_data") or not check.get_data().startswith(b"%PDF-"):
    db.session.rollback()
    flash("PDF final indisponível. O exame não foi liberado nem faturado.")
@@ -1479,6 +1480,7 @@ def result_pdf(eid):
   try:
    from icp_signing import sign_pdf_bytes
    buf.seek(0)
+   if request.endpoint!="preview_report_pdf":
    buf=io.BytesIO(sign_pdf_bytes(buf.getvalue()))
   except Exception:
    app.logger.exception("Falha na assinatura digital do laudo TMJ")
@@ -1591,7 +1593,8 @@ def result_pdf(eid):
  try:
   from icp_signing import sign_pdf_bytes
   buf.seek(0)
-  buf=io.BytesIO(sign_pdf_bytes(buf.getvalue()))
+  if request.endpoint!="preview_report_pdf":
+   buf=io.BytesIO(sign_pdf_bytes(buf.getvalue()))
  except Exception:
   app.logger.exception("Falha na assinatura digital do laudo")
   return "Assinatura digital indisponível. O laudo não pode ser liberado.",503
