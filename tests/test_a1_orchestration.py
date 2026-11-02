@@ -87,6 +87,40 @@ class OrchestrationTests(unittest.TestCase):
                     self.run_flow(pdf_builder=lambda invalid=invalid: invalid)
                 self.assertEqual(self.events, [])
 
+    def test_transaction_failure_occurs_only_after_signed_artifact(self):
+        def broken_transaction(**kwargs):
+            self.events.append("commit")
+            raise RuntimeError("database commit failure")
+        with self.assertRaisesRegex(RuntimeError, "database commit failure"):
+            self.run_flow(transaction=broken_transaction)
+        self.assertEqual(self.events, ["pdf", "sign", "commit"])
+
+    def test_malformed_pdf_with_valid_header_never_signs(self):
+        with self.assertRaises(Exception):
+            self.run_flow(pdf_builder=lambda: b"%PDF-1.7\\ntruncated")
+        self.assertEqual(self.events, [])
+
+    def test_encrypted_pdf_never_signs(self):
+        out = BytesIO()
+        writer = PdfWriter()
+        writer.add_blank_page(width=595, height=842)
+        writer.encrypt("password")
+        writer.write(out)
+        with self.assertRaises(Exception):
+            self.run_flow(pdf_builder=lambda: out.getvalue())
+        self.assertEqual(self.events, [])
+
+    def test_pipeline_receives_exact_generated_pdf(self):
+        pdf = sample_pdf()
+        def pipeline(**kwargs):
+            self.events.append("sign")
+            self.assertIs(kwargs["pdf_bytes"], pdf)
+            self.assertEqual(kwargs["exam_id"], self.exam.id)
+            return {"key": "signed-reports/7/test.pdf", "sha256": "a"*64, "size": 100}
+        self.assertEqual(self.run_flow(pdf_builder=lambda: (self.events.append("pdf"), pdf)[1],
+                                       signing_pipeline=pipeline), "released")
+        self.assertEqual(self.events, ["pdf", "sign", "commit"])
+
     def test_signing_failure_never_commits(self):
         def broken(**kwargs):
             self.events.append("sign")
