@@ -52,6 +52,14 @@ class LinkTests(unittest.TestCase):
                     stage_signed_version(model=Model, db_session=db, exam_id=7, artifact=artifact(7))
                 self.assertEqual(db.rows, [])
 
+    def test_corrupted_previous_id_does_not_write(self):
+        for previous_id in (None, 0, -1, True, "18"):
+            with self.subTest(previous_id=previous_id):
+                db = Session(SimpleNamespace(version=2, id=previous_id))
+                with self.assertRaises(ValueError):
+                    stage_signed_version(model=Model, db_session=db, exam_id=7, artifact=artifact(7))
+                self.assertEqual(db.rows, [])
+
     def test_wrong_exam_does_not_write(self):
         db = Session()
         with self.assertRaises(ReleaseBlocked):
