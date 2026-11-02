@@ -24,7 +24,7 @@ def validate_unsigned_pdf(pdf_bytes):
     except Exception:
         raise SignatureValidationError("PDF de origem não passou na validação estrutural.") from None
     return pdf_bytes
-from a1_transaction import commit_signed_release
+from a1_transaction import commit_signed_release, commit_signed_revision
 
 
 def sign_and_release(*, pdf_builder, model, db_session, exam, signer_name,
@@ -81,4 +81,54 @@ def sign_and_release(*, pdf_builder, model, db_session, exam, signer_name,
         finance_entry=finance_entry, occurrences=occurrences, now=signing_at,
         report_text=report_text, report_html=report_html,
         clear_revision=clear_revision,
+    )
+
+
+def sign_and_release_revision(*, pdf_builder, model, db_session, exam, signer_name,
+                              storage_client, bucket, validation_context, authorized=False,
+                              signing_at=None, signing_pipeline=prepare_signed_report,
+                              transaction=commit_signed_revision):
+    """Sign a prepared revision and atomically append it to existing history.
+
+    This function is not attached to the Flask approval route.
+    """
+    if authorized is not True:
+        raise PermissionError("Radiologista não autorizada a revisar este exame.")
+    if not isinstance(signer_name, str) or not signer_name.strip():
+        raise ValueError("Responsável pela revisão não identificado.")
+    if storage_client is None or not bucket or validation_context is None:
+        raise ValueError("Armazenamento ou validação ICP-Brasil indisponível.")
+    if not callable(pdf_builder):
+        raise TypeError("Gerador de PDF revisado indisponível.")
+    exam_id = getattr(exam, "id", None)
+    if not isinstance(exam_id, int) or isinstance(exam_id, bool) or exam_id <= 0:
+        raise ValueError("Identificação do exame inválida.")
+    if getattr(exam, "status", None) == "Liberado":
+        raise ValueError("Revisão deve estar solicitada antes da assinatura.")
+    reason = getattr(exam, "revision_reason", None)
+    if not isinstance(reason, str) or not reason.strip():
+        raise ValueError("Revisão exige justificativa registrada.")
+    if (db_session.query(model).filter_by(exam_id=exam_id)
+            .order_by(model.version.desc()).first()) is None:
+        raise ValueError("Revisão exige versão assinada anterior.")
+    moment = datetime.utcnow() if signing_at is None else signing_at
+    if not isinstance(moment, datetime) or moment.tzinfo is not None:
+        raise ValueError("Data de assinatura UTC inválida.")
+    built = pdf_builder(signer_name=signer_name.strip(), signing_at=moment)
+    if (not isinstance(built, tuple) or len(built) != 3
+            or not isinstance(built[1], str) or not built[1].strip()
+            or not isinstance(built[2], str)):
+        raise ValueError("Revisão exige PDF, texto e HTML vinculados.")
+    pdf_bytes, report_text, report_html = built
+    validate_unsigned_pdf(pdf_bytes)
+    artifact = signing_pipeline(
+        pdf_bytes=pdf_bytes, exam_id=exam_id,
+        storage_client=storage_client, bucket=bucket,
+        validation_context=validation_context, authorized=True,
+    )
+    # R2 and SQL cannot commit atomically; reconcile orphaned private objects.
+    return transaction(
+        model=model, db_session=db_session, exam=exam,
+        artifact=artifact, signer_name=signer_name.strip(),
+        report_text=report_text, report_html=report_html, now=moment,
     )
