@@ -42,6 +42,8 @@ jobs:
           python -m unittest discover -s tests -p 'test_a1_storage.py' -v
           python -m unittest discover -s tests -p 'test_a1_pipeline.py' -v
           python -m unittest discover -s tests -p 'test_a1_delivery.py' -v
+          python -m unittest discover -s tests -p 'test_a1_delivery_failures.py' -v
+          python -m unittest discover -s tests -p 'test_a1_approval_guard.py' -v
           python -m unittest discover -s tests -p 'test_a1_revisions.py' -v
           python -m unittest discover -s tests -p 'test_a1_release_gate.py' -v
           python -m unittest discover -s tests -p 'test_a1_report_link.py' -v
