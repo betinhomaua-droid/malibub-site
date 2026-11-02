@@ -143,3 +143,27 @@ class SignedHistoryPageBoundaryTests(unittest.TestCase):
         self.assertIn('if signed_versions:', self.source)
         self.assertIn('rel=\'noopener\'', self.source)
         self.assertIn('{history_html}', self.source)
+
+
+class A1ClinicalReleaseWiringTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        source = SOURCE.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        route = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "report")
+        cls.source = ast.get_source_segment(source, route)
+
+    def test_a1_route_requires_server_authorized_account(self):
+        self.assertIn('MALIBUB_A1_SIGNING_ENABLED', self.source)
+        self.assertIn('MALIBUB_A1_AUTHORIZED_USER_ID', self.source)
+        self.assertIn('actor.id!=int(authorized_uid)', self.source)
+        self.assertIn('actor.role!="Radiologista"', self.source)
+        self.assertIn('not actor.active', self.source)
+
+    def test_a1_release_uses_verified_transaction_and_fails_closed(self):
+        self.assertIn('load_icp_brasil_validation_context()', self.source)
+        self.assertIn('sign_and_release(', self.source)
+        self.assertIn('pdf_builder=make_a1_report_builder(', self.source)
+        self.assertIn('model=SignedReport,db_session=db.session,exam=e', self.source)
+        self.assertIn('db.session.rollback()', self.source)
+        self.assertIn('Exame preservado sem liberação', self.source)
