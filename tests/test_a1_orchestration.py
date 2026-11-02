@@ -89,7 +89,8 @@ class OrchestrationTests(unittest.TestCase):
             self.assertEqual(kwargs["report_html"], "<p>Laudo final</p>")
             self.assertTrue(kwargs["clear_revision"])
             return "released"
-        self.assertEqual(self.run_flow(report_text="Laudo final",
+        self.assertEqual(self.run_flow(pdf_builder=lambda **metadata: (sample_pdf(), "Laudo final", "<p>Laudo final</p>"),
+                                       report_text="Laudo final",
                                        report_html="<p>Laudo final</p>",
                                        clear_revision=True, transaction=transaction), "released")
         self.assertEqual(self.events, ["pdf", "sign", "commit"])
@@ -137,6 +138,16 @@ class OrchestrationTests(unittest.TestCase):
             return sample_pdf(), "Texto final", "<p>Texto final</p>"
         with self.assertRaises(ValueError):
             self.run_flow(pdf_builder=builder, report_text="Texto diferente")
+        self.assertEqual(self.events, ["pdf"])
+
+    def test_raw_pdf_cannot_bypass_final_report_content_binding(self):
+        with self.assertRaisesRegex(ValueError, "preparação vinculada"):
+            self.run_flow(report_text="Laudo definitivo")
+        self.assertEqual(self.events, ["pdf"])
+
+    def test_raw_pdf_cannot_bypass_html_content_binding(self):
+        with self.assertRaisesRegex(ValueError, "preparação vinculada"):
+            self.run_flow(report_html="<p>Laudo</p>")
         self.assertEqual(self.events, ["pdf"])
 
     def test_signing_precedes_release(self):
