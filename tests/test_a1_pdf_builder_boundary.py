@@ -38,6 +38,16 @@ class PdfBuilderBoundaryTests(unittest.TestCase):
         self.assertIn("build_legacy_report_pdf_bytes(e)", wrapper)
         self.assertIn("send_file(io.BytesIO(pdf_bytes)", wrapper)
 
+    def test_temporary_model_cleanup_runs_in_finally(self):
+        builder = self.functions["build_legacy_report_pdf_bytes"]
+        finally_blocks = [n.finalbody for n in ast.walk(builder) if isinstance(n, ast.Try) and n.finalbody]
+        self.assertTrue(finally_blocks, "Temporary clinic PDF must be cleaned even on failure")
+        self.assertTrue(any(
+            any(isinstance(node, ast.Attribute) and node.attr == "unlink"
+                for statement in block for node in ast.walk(statement))
+            for block in finally_blocks
+        ), "Temporary model must be unlinked in finally")
+
     def test_builder_covers_standard_tmj_and_custom_pdf(self):
         builder = ast.get_source_segment(SOURCE.read_text(encoding="utf-8"), self.functions["build_legacy_report_pdf_bytes"])
         self.assertIn("tdoc.build(story_tmj)", builder)
