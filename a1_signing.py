@@ -72,7 +72,10 @@ def sign_pdf_pades(pdf_bytes: bytes, pfx_bytes: bytes, password: str) -> bytes:
 
 
 def verify_embedded_signature(pdf_bytes: bytes) -> bool:
-    """Basic structural verification, not an ICP-Brasil trust/revocation verdict."""
+    """Basic structural verification only; not an ICP-Brasil trust verdict.
+
+    Never use this boolean alone to authorize release of a clinical report.
+    """
     from pyhanko.pdf_utils.reader import PdfFileReader
     from pyhanko.sign.validation import validate_pdf_signature
     try:
@@ -82,5 +85,26 @@ def verify_embedded_signature(pdf_bytes: bytes) -> bool:
             return False
         status = validate_pdf_signature(fields[0])
         return bool(status.intact and status.valid)
+    except Exception:
+        return False
+
+
+def validate_signer_trust(pdf_bytes: bytes, validation_context) -> bool:
+    """Check signature integrity AND a caller-provided trusted validation context.
+
+    The production caller must supply an explicitly configured ICP-Brasil trust
+    context, including appropriate revocation checking. No default system trust
+    or self-signed certificate is accepted implicitly by this function.
+    """
+    if validation_context is None:
+        raise SignatureConfigurationError("Contexto de confiança ICP-Brasil obrigatório.")
+    from pyhanko.pdf_utils.reader import PdfFileReader
+    from pyhanko.sign.validation import validate_pdf_signature
+    try:
+        signatures = list(PdfFileReader(BytesIO(pdf_bytes)).embedded_signatures)
+        if len(signatures) != 1:
+            return False
+        status = validate_pdf_signature(signatures[0], signer_validation_context=validation_context)
+        return bool(status.intact and status.valid and status.trusted)
     except Exception:
         return False
