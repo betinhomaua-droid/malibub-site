@@ -48,7 +48,7 @@ def sign_and_release(*, pdf_builder, model, db_session, exam, signer_name,
     signing_at = signing_at or datetime.utcnow()
     if not isinstance(signing_at, datetime) or signing_at.tzinfo is not None:
         raise ValueError("Data de assinatura deve ser datetime UTC sem timezone.")
-    pdf_bytes = pdf_builder()
+    pdf_bytes = pdf_builder(signer_name=signer_name.strip(), signing_at=signing_at)
     validate_unsigned_pdf(pdf_bytes)
     artifact = signing_pipeline(
         pdf_bytes=pdf_bytes, exam_id=exam_id,
