@@ -9,7 +9,8 @@ from a1_report_link import stage_signed_version
 
 
 def commit_signed_release(*, model, db_session, exam, artifact, signer_name,
-                          finance_entry=None, occurrences=(), now=None):
+                          finance_entry=None, occurrences=(), now=None,
+                          report_text=None, report_html=None, clear_revision=False):
     """Commit report metadata, clinical release, and finance in one SQL transaction.
 
     Caller must prepare and validate the signed PDF before invoking this function.
@@ -20,10 +21,23 @@ def commit_signed_release(*, model, db_session, exam, artifact, signer_name,
     if getattr(exam, "status", None) == "Liberado":
         raise ValueError("Exame já liberado; revisão requer fluxo específico.")
     exam_id = getattr(exam, "id", None)
-    moment = now or datetime.utcnow()
+    moment = datetime.utcnow() if now is None else now
+    if not isinstance(moment, datetime) or moment.tzinfo is not None:
+        raise ValueError("Data de liberação UTC inválida.")
+    if report_text is not None and (not isinstance(report_text, str) or not report_text.strip()):
+        raise ValueError("Texto final do laudo inválido.")
+    if report_html is not None and not isinstance(report_html, str):
+        raise ValueError("HTML final do laudo inválido.")
     try:
         row = stage_signed_version(model=model, db_session=db_session,
                                    exam_id=exam_id, artifact=artifact)
+        if report_text is not None:
+            exam.report = report_text
+        if report_html is not None:
+            exam.report_html = report_html
+        if clear_revision:
+            exam.revision_reason = None
+            exam.revision_requested_at = None
         exam.status = "Liberado"
         exam.released_at = moment
         exam.signed_at = moment
