@@ -12,6 +12,8 @@ def stage_signed_version(*, model, db_session, exam_id, artifact):
     decision = authorize_release(a1_required=True, exam_id=exam_id, artifact=artifact)
     previous = (db_session.query(model).filter_by(exam_id=exam_id)
                 .order_by(model.version.desc()).first())
+    if previous is not None and (not isinstance(previous.version, int) or isinstance(previous.version, bool) or previous.version < 1):
+        raise ValueError("Histórico de versões assinadas inconsistente.")
     version = (previous.version + 1) if previous else 1
     row = model(
         exam_id=exam_id, version=version,
