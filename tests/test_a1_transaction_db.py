@@ -6,6 +6,7 @@ from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import IntegrityError
 from a1_report_model import register_signed_report_model
 from a1_transaction import commit_signed_release
+from a1_report_link import stage_signed_version
 
 
 class SignedReleaseDatabaseTests(unittest.TestCase):
@@ -107,6 +108,44 @@ class SignedReleaseDatabaseTests(unittest.TestCase):
             )
         self.db.session.expire_all()
         self.assertEqual(self.db.session.get(self.Exam, 7).status, "A conferir")
+        self.assertEqual(self.SignedReport.query.count(), 1)
+
+    def test_revision_version_links_to_immutable_previous_version(self):
+        first = stage_signed_version(
+            model=self.SignedReport, db_session=self.db.session,
+            exam_id=7, artifact=self.artifact())
+        self.db.session.commit()
+        original_key = first.storage_key
+        second = stage_signed_version(
+            model=self.SignedReport, db_session=self.db.session,
+            exam_id=7, artifact={
+                "key": "signed-reports/7/revision.pdf",
+                "sha256": "b" * 64, "size": 456,
+            }, revision=True)
+        self.db.session.commit()
+        self.assertEqual(second.version, 2)
+        self.assertEqual(second.supersedes_id, first.id)
+        self.assertEqual(self.db.session.get(self.SignedReport, first.id).storage_key, original_key)
+
+    def test_revision_without_prior_signed_version_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "versão assinada anterior"):
+            stage_signed_version(
+                model=self.SignedReport, db_session=self.db.session,
+                exam_id=7, artifact=self.artifact(), revision=True)
+        self.assertEqual(self.SignedReport.query.count(), 0)
+
+    def test_first_release_cannot_append_to_existing_signed_history(self):
+        stage_signed_version(
+            model=self.SignedReport, db_session=self.db.session,
+            exam_id=7, artifact=self.artifact())
+        self.db.session.commit()
+        with self.assertRaisesRegex(ValueError, "revisão A1"):
+            stage_signed_version(
+                model=self.SignedReport, db_session=self.db.session,
+                exam_id=7, artifact={
+                    "key": "signed-reports/7/second.pdf",
+                    "sha256": "b" * 64, "size": 456,
+                })
         self.assertEqual(self.SignedReport.query.count(), 1)
 
     def test_finance_constraint_failure_rolls_back_everything(self):
