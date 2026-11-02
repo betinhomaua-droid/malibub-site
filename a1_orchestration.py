@@ -5,6 +5,7 @@ produce final bytes without changing clinical status; the caller must perform
 signer authorization before invoking it.
 """
 from a1_pipeline import prepare_signed_report
+from a1_signing import SignatureValidationError
 from a1_transaction import commit_signed_release
 
 
@@ -26,6 +27,8 @@ def sign_and_release(*, pdf_builder, model, db_session, exam, signer_name,
     if getattr(exam, "status", None) == "Liberado":
         raise ValueError("Exame já liberado; revisão exige fluxo próprio.")
     pdf_bytes = pdf_builder()
+    if not isinstance(pdf_bytes, bytes) or not pdf_bytes.startswith(b"%PDF-"):
+        raise SignatureValidationError("Gerador não produziu um PDF válido para assinatura.")
     artifact = signing_pipeline(
         pdf_bytes=pdf_bytes, exam_id=exam_id,
         storage_client=storage_client, bucket=bucket,
