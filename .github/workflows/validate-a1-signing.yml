@@ -2,6 +2,7 @@ name: Validate A1 signing integration
 on:
   pull_request:
     paths:
+      - 'app.py'
       - 'a1_signing.py'
       - 'tests/test_a1_signing.py'
       - 'a1_revisions.py'
@@ -27,6 +28,8 @@ jobs:
           python-version: '3.12'
       - name: Install signing and PDF dependencies
         run: python -m pip install 'pyHanko>=0.25,<0.34' 'cryptography>=42,<47' 'reportlab>=4.2,<5'
+      - name: Compile application and signing modules
+        run: python -m compileall -q app.py a1_*.py
       - name: Execute real A1 test-signature round trip
         run: |
           python -m unittest discover -s tests -p 'test_a1_signing.py' -v
