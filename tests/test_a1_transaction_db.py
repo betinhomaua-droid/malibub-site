@@ -66,6 +66,32 @@ class SignedReleaseDatabaseTests(unittest.TestCase):
         self.assertEqual(self.SignedReport.query.count(), 1)
         self.assertEqual(self.Finance.query.count(), 2)
 
+    def test_prior_signed_exam_is_rejected_without_sql_changes(self):
+        exam = self.db.session.get(self.Exam, 7)
+        exam.signed_at = datetime(2026, 11, 1)
+        self.db.session.commit()
+        with self.assertRaisesRegex(ValueError, "revisão A1"):
+            commit_signed_release(
+                model=self.SignedReport, db_session=self.db.session,
+                exam=exam, artifact=self.artifact(), signer_name="Dra. Marina",
+            )
+        self.db.session.expire_all()
+        self.assertEqual(self.db.session.get(self.Exam, 7).status, "A conferir")
+        self.assertEqual(self.SignedReport.query.count(), 0)
+
+    def test_prior_released_exam_is_rejected_without_sql_changes(self):
+        exam = self.db.session.get(self.Exam, 7)
+        exam.released_at = datetime(2026, 11, 1)
+        self.db.session.commit()
+        with self.assertRaisesRegex(ValueError, "revisão A1"):
+            commit_signed_release(
+                model=self.SignedReport, db_session=self.db.session,
+                exam=exam, artifact=self.artifact(), signer_name="Dra. Marina",
+            )
+        self.db.session.expire_all()
+        self.assertEqual(self.db.session.get(self.Exam, 7).status, "A conferir")
+        self.assertEqual(self.SignedReport.query.count(), 0)
+
     def test_finance_constraint_failure_rolls_back_everything(self):
         exam = self.db.session.get(self.Exam, 7)
         occurrence = self.db.session.get(self.Occurrence, 9)
