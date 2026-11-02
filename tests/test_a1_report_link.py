@@ -41,7 +41,7 @@ class LinkTests(unittest.TestCase):
 
     def test_revision_links_previous(self):
         db = Session(SimpleNamespace(version=2, id=18))
-        row = stage_signed_version(model=Model, db_session=db, exam_id=7, artifact=artifact(7))
+        row = stage_signed_version(model=Model, db_session=db, exam_id=7, artifact=artifact(7), revision=True)
         self.assertEqual((row.version, row.supersedes_id), (3, 18))
 
     def test_corrupted_version_history_does_not_write(self):
