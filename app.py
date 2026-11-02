@@ -1481,7 +1481,7 @@ def result_pdf(eid):
    from icp_signing import sign_pdf_bytes
    buf.seek(0)
    if request.endpoint!="preview_report_pdf":
-   buf=io.BytesIO(sign_pdf_bytes(buf.getvalue()))
+    buf=io.BytesIO(sign_pdf_bytes(buf.getvalue()))
   except Exception:
    app.logger.exception("Falha na assinatura digital do laudo TMJ")
    return "Assinatura digital indisponível. O laudo não pode ser liberado.",503
