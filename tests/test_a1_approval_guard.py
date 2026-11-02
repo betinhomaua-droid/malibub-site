@@ -21,6 +21,16 @@ class A1ApprovalGuardTests(unittest.TestCase):
         self.assertLess(guard, release)
         self.assertIn('return redirect(url_for("report",eid=e.id))', block[guard:release])
 
+    def test_preview_rejects_a1_before_mutating_exam(self):
+        start = self.source.index("def preview_report_pdf(eid):")
+        end = self.source.index("\ndef br_date(", start)
+        block = self.source[start:end]
+        guard = block.index('if os.getenv("MALIBUB_A1_SIGNING_ENABLED", "").lower()=="true":')
+        mutation = block.index('e.status="Liberado"')
+        self.assertLess(guard, mutation)
+        self.assertIn("status=503", block[guard:mutation])
+        self.assertLess(block.index("SignedReport.query.filter_by(exam_id=e.id)"), mutation)
+
     def test_signed_delivery_precedes_legacy_pdf_generation(self):
         start = self.source.index('def result_pdf(eid):')
         block = self.source[start:]
