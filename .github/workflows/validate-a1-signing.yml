@@ -9,6 +9,7 @@ on:
       - 'a1_transaction.py'
       - 'a1_orchestration.py'
       - 'tests/test_a1_orchestration.py'
+      - 'tests/test_a1_pdf_builder_boundary.py'
       - 'tests/test_a1_transaction.py'
       - 'tests/test_a1_transaction_db.py'
       - 'tests/test_a1_report_link.py'
@@ -59,3 +60,4 @@ jobs:
           python -m unittest discover -s tests -p 'test_a1_transaction.py' -v
           python -m unittest discover -s tests -p 'test_a1_transaction_db.py' -v
           python -m unittest discover -s tests -p 'test_a1_orchestration.py' -v
+          python -m unittest discover -s tests -p 'test_a1_pdf_builder_boundary.py' -v
