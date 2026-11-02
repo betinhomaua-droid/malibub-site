@@ -69,6 +69,14 @@ class OrchestrationTests(unittest.TestCase):
             self.run_flow(pdf_builder=broken)
         self.assertEqual(self.events, ["pdf"])
 
+    def test_invalid_pdf_output_never_signs_or_commits(self):
+        for invalid in (None, "", "not bytes", b"", b"not a pdf", bytearray(b"%PDF-test")):
+            with self.subTest(invalid=repr(invalid)):
+                self.events.clear()
+                with self.assertRaises(Exception):
+                    self.run_flow(pdf_builder=lambda invalid=invalid: invalid)
+                self.assertEqual(self.events, [])
+
     def test_signing_failure_never_commits(self):
         def broken(**kwargs):
             self.events.append("sign")
