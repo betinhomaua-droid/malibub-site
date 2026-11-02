@@ -31,6 +31,15 @@ class A1ApprovalGuardTests(unittest.TestCase):
         self.assertIn("status=503", block[guard:mutation])
         self.assertLess(block.index("SignedReport.query.filter_by(exam_id=e.id)"), mutation)
 
+    def test_signed_exam_cannot_fall_back_to_unsigned_release(self):
+        start = self.source.index("def report(eid):")
+        end = self.source.index(" imgs=", start)
+        block = self.source[start:end]
+        signed_guard = block.index("SignedReport.query.filter_by(exam_id=e.id).first()")
+        release = block.index('e.status="Liberado"')
+        self.assertLess(signed_guard, release)
+        self.assertIn('return redirect(url_for("report",eid=e.id))', block[signed_guard:release])
+
     def test_signed_delivery_precedes_legacy_pdf_generation(self):
         start = self.source.index('def result_pdf(eid):')
         block = self.source[start:]
