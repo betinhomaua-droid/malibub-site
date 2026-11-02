@@ -14,6 +14,8 @@ def stage_signed_version(*, model, db_session, exam_id, artifact):
                 .order_by(model.version.desc()).first())
     if previous is not None and (not isinstance(previous.version, int) or isinstance(previous.version, bool) or previous.version < 1):
         raise ValueError("Histórico de versões assinadas inconsistente.")
+    if previous is not None and (not isinstance(previous.id, int) or isinstance(previous.id, bool) or previous.id <= 0):
+        raise ValueError("Referência anterior do laudo assinado inválida.")
     version = (previous.version + 1) if previous else 1
     row = model(
         exam_id=exam_id, version=version,
