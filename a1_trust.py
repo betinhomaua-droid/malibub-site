@@ -4,6 +4,7 @@ No system default or implicit self-signed roots are accepted. Trust anchors
 must be provisioned by an administrator on the server, never uploaded by clinics.
 """
 import os
+import hashlib
 from pathlib import Path
 
 from a1_signing import SignatureConfigurationError
@@ -22,6 +23,10 @@ def load_icp_brasil_validation_context(*, anchors_dir=None):
     directory = Path(location)
     if not directory.is_dir():
         raise SignatureConfigurationError("Diretório de confiança ICP-Brasil indisponível.")
+    fingerprints = os.getenv("MALIBUB_ICP_BRASIL_ROOT_SHA256", "").strip()
+    allowed = {item.strip().lower().replace(":", "") for item in fingerprints.split(",") if item.strip()}
+    if not allowed or any(len(item) != 64 or any(ch not in "0123456789abcdef" for ch in item) for item in allowed):
+        raise SignatureConfigurationError("Impressões SHA-256 das raízes ICP-Brasil não configuradas ou inválidas.")
     files = sorted(path for path in directory.iterdir()
                    if path.is_file() and path.suffix.lower() in (".pem", ".der", ".crt", ".cer"))
     if not files:
@@ -36,6 +41,9 @@ def load_icp_brasil_validation_context(*, anchors_dir=None):
                 raise ValueError("Certificado de confiança excessivamente grande.")
             if pem.detect(raw):
                 _, _, raw = pem.unarmor(raw)
+            digest = hashlib.sha256(raw).hexdigest()
+            if digest not in allowed:
+                raise ValueError("Certificado raiz sem impressão digital autorizada.")
             cert = x509.Certificate.load(raw)
             if cert["tbs_certificate"]["subject"] != cert["tbs_certificate"]["issuer"]:
                 raise ValueError("Âncora de confiança não é uma raiz autoassinada.")
