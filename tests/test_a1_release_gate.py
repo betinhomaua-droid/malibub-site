@@ -22,6 +22,23 @@ class ReleaseGateTests(unittest.TestCase):
                                              "sha256": "a" * 64, "size": 100})
         self.assertEqual(result["mode"], "signed")
 
+    def test_invalid_metadata_blocks(self):
+        for exam_id in (True, 0, -1):
+            with self.subTest(exam_id=exam_id):
+                with self.assertRaises(ReleaseBlocked):
+                    authorize_release(a1_required=True, exam_id=exam_id)
+        for key in ("signed-reports/3/sub/file.pdf",
+                    "signed-reports/3/../file.pdf",
+                    "signed-reports/3/file.txt"):
+            with self.subTest(key=key):
+                with self.assertRaises(ReleaseBlocked):
+                    authorize_release(a1_required=True, exam_id=3,
+                                      artifact={"key": key, "sha256": "a" * 64, "size": 100})
+        with self.assertRaises(ReleaseBlocked):
+            authorize_release(a1_required=True, exam_id=3,
+                              artifact={"key": "signed-reports/3/file.pdf",
+                                        "sha256": "a" * 64, "size": True})
+
     def test_missing_integrity_blocks(self):
         with self.assertRaises(ReleaseBlocked):
             authorize_release(a1_required=True, exam_id=3,
