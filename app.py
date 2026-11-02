@@ -1437,11 +1437,26 @@ def result_pdf(eid):
 
 
 def render_legacy_report_pdf_response(e):
- """Render the legacy report only after the caller has authorized access.
+ """Render the authorized legacy download from the shared PDF byte builder."""
+ try:
+  pdf_bytes=build_legacy_report_pdf_bytes(e)
+ except LegacyReportPdfError as exc:
+  return str(exc),exc.http_status
+ print_mode=request.args.get("print")=="1"
+ response=send_file(io.BytesIO(pdf_bytes),mimetype="application/pdf",as_attachment=not print_mode,download_name=f"{e.protocol}_laudo.pdf")
+ if print_mode:
+  response.headers["Content-Disposition"]=f'inline; filename="{e.protocol}_laudo.pdf"'
+ return response
 
- This function is intentionally separate from clinical release. Do not call
- it for A1 signing until a byte-oriented builder is extracted and audited.
- """
+
+class LegacyReportPdfError(Exception):
+ def __init__(self,message,http_status=500):
+  super().__init__(message)
+  self.http_status=http_status
+
+
+def build_legacy_report_pdf_bytes(e):
+ """Generate final unsigned PDF bytes without invoking the HTTP download route."""
  from reportlab.lib.pagesizes import A4
  from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
  from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
@@ -1569,7 +1584,7 @@ def render_legacy_report_pdf_response(e):
   story_tmj.append(KeepTogether([Spacer(1,3*mm),ReportSignature()]))
   tdoc.build(story_tmj)
   buf=apply_final_footer(buf.getvalue())
-  return send_file(buf,mimetype="application/pdf",as_attachment=True,download_name=f"{e.protocol}_laudo.pdf")
+  return buf.getvalue() if hasattr(buf,"getvalue") else bytes(buf)
  doc=SimpleDocTemplate(buf,pagesize=A4,rightMargin=22*mm,leftMargin=22*mm,topMargin=((clinic.report_top_mm or 72)*mm if has_pdf_model else 16*mm),bottomMargin=((clinic.report_bottom_mm or 48)*mm if has_pdf_model else 48*mm),title=f"{e.protocol} - Laudo MALIBUB",author="MALIBUB Imaginologia Odontológica")
  styles=getSampleStyleSheet(); navy=colors.HexColor("#06394C"); teal=colors.HexColor("#087B9B"); gold=colors.HexColor("#C99B3B")
  title=ParagraphStyle("t",parent=styles["Heading1"],alignment=TA_CENTER,textColor=navy,fontSize=16,leading=20); body=ParagraphStyle("b",parent=styles["BodyText"],fontSize=10,leading=15,textColor=colors.HexColor("#26383D"))
@@ -1595,7 +1610,7 @@ def render_legacy_report_pdf_response(e):
     model_path.write_bytes(storage_bytes(clinic.report_model))
   else: model_path=UPLOAD/clinic.report_model
  if has_pdf_model and (not model_path or not model_path.exists()):
-  return "O modelo PDF personalizado desta clínica não está disponível. Reenvie o modelo antes de gerar o laudo.",410
+  raise LegacyReportPdfError("O modelo PDF personalizado desta clínica não está disponível. Reenvie o modelo antes de gerar o laudo.",410)
  if model_path and model_path.exists() and model_path.suffix.lower() in {".jpg",".jpeg",".png"}:
   from reportlab.platypus import Image
   try:
@@ -1672,17 +1687,12 @@ def render_legacy_report_pdf_response(e):
     cv.save();extra.seek(0);final_writer.add_page(PdfReader(extra).pages[0])
    merged=io.BytesIO(); final_writer.write(merged); merged.seek(0); buf=apply_final_footer(merged.getvalue())
   except Exception:
-   return "Não foi possível gerar o PDF personalizado. Verifique o modelo de laudo cadastrado.",500
- print_mode=request.args.get("print")=="1"
- response=send_file(buf,mimetype="application/pdf",as_attachment=not print_mode,download_name=f"{e.protocol}_laudo.pdf")
- if print_mode:
-  response.headers["Content-Disposition"]=f'inline; filename="{e.protocol}_laudo.pdf"'
+   raise LegacyReportPdfError("Não foi possível gerar o PDF personalizado. Verifique o modelo de laudo cadastrado.",500)
+ pdf_bytes=buf.getvalue() if hasattr(buf,"getvalue") else bytes(buf)
  if temp_model_path and temp_model_path.exists():
-  @response.call_on_close
-  def _cleanup_temp_model():
-   try: temp_model_path.unlink()
-   except OSError: pass
- return response
+  try: temp_model_path.unlink()
+  except OSError: pass
+ return pdf_bytes
 
 @app.route("/result/<int:eid>")
 def result(eid):
