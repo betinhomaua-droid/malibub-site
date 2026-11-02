@@ -89,7 +89,7 @@ class OrchestrationTests(unittest.TestCase):
             self.assertEqual(kwargs["report_html"], "<p>Laudo final</p>")
             self.assertTrue(kwargs["clear_revision"])
             return "released"
-        self.assertEqual(self.run_flow(pdf_builder=lambda **metadata: (sample_pdf(), "Laudo final", "<p>Laudo final</p>"),
+        self.assertEqual(self.run_flow(pdf_builder=lambda **metadata: (self.events.append("pdf"), sample_pdf(), "Laudo final", "<p>Laudo final</p>")[1:],
                                        report_text="Laudo final",
                                        report_html="<p>Laudo final</p>",
                                        clear_revision=True, transaction=transaction), "released")
