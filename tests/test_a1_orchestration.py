@@ -94,6 +94,31 @@ class OrchestrationTests(unittest.TestCase):
                                        clear_revision=True, transaction=transaction), "released")
         self.assertEqual(self.events, ["pdf", "sign", "commit"])
 
+    def test_prepared_html_is_identical_to_committed_html(self):
+        prepared = "<p>Texto higienizado</p>"
+        def builder(**metadata):
+            self.events.append("pdf")
+            return sample_pdf(), prepared
+        def transaction(**kwargs):
+            self.events.append("commit")
+            self.assertEqual(kwargs["report_html"], prepared)
+            return "released"
+        self.assertEqual(self.run_flow(pdf_builder=builder, transaction=transaction), "released")
+        self.assertEqual(self.events, ["pdf", "sign", "commit"])
+
+    def test_html_mismatch_prevents_signing_and_release(self):
+        def builder(**metadata):
+            self.events.append("pdf")
+            return sample_pdf(), "<p>Final</p>"
+        with self.assertRaises(ValueError):
+            self.run_flow(pdf_builder=builder, report_html="<p>Diferente</p>")
+        self.assertEqual(self.events, ["pdf"])
+
+    def test_malformed_preparation_prevents_signing(self):
+        with self.assertRaises(ValueError):
+            self.run_flow(pdf_builder=lambda **metadata: (sample_pdf(), None))
+        self.assertEqual(self.events, [])
+
     def test_signing_precedes_release(self):
         self.assertEqual(self.run_flow(), "released")
         self.assertEqual(self.events, ["pdf", "sign", "commit"])
