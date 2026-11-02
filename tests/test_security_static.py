@@ -10,6 +10,15 @@ class SecuritySourceChecks(unittest.TestCase):
         self.assertIn("/exam-file/{f.id}#navpanes=0&view=FitH", SOURCE)
         self.assertIn("Pré-visualização do PDF sem miniaturas laterais", SOURCE)
 
+    def test_anamnesis_is_separate_from_pdf_indication(self):
+        self.assertIn('anamnesis=db.Column(db.String(500))', SOURCE)
+        self.assertIn('name="anamnesis" maxlength="500"', SOURCE)
+        self.assertIn('anamnesis=request.form.get("anamnesis","").strip()[:500]', SOURCE)
+        self.assertIn('ALTER TABLE exam ADD COLUMN IF NOT EXISTS anamnesis VARCHAR(500)', SOURCE)
+        self.assertIn('Observações / Anamnese (uso interno; não incluir no laudo)', SOURCE)
+        self.assertIn('f"Indicação clínica: {e.observation or', SOURCE)
+        self.assertNotIn('f"Indicação clínica: {e.anamnesis', SOURCE)
+
     def test_turnstile_server_validation(self):
         self.assertIn("https://challenges.cloudflare.com/turnstile/v0/siteverify", SOURCE)
         self.assertIn('if not verify_turnstile(data.get("turnstile_token","")):', SOURCE)
