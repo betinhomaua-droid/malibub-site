@@ -167,3 +167,17 @@ class A1ClinicalReleaseWiringTests(unittest.TestCase):
         self.assertIn('model=SignedReport,db_session=db.session,exam=e', self.source)
         self.assertIn('db.session.rollback()', self.source)
         self.assertIn('Exame preservado sem liberação', self.source)
+
+
+class VisibleA1SignatureTests(unittest.TestCase):
+    def test_pades_signature_has_visible_field_on_final_page(self):
+        source = (SOURCE.parent / "a1_signing.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        sign = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "sign_pdf_pades")
+        body = ast.get_source_segment(source, sign)
+        self.assertIn('sig_field_name="AssinaturaDigital"', body)
+        self.assertIn("on_page=-1", body)
+        self.assertIn("box=(42, 32, 290, 100)", body)
+        self.assertIn("stamp_style=TextStampStyle(", body)
+        self.assertIn("%(signer)s", body)
+        self.assertIn("%(ts)s", body)
