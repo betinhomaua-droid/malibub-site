@@ -1,4 +1,5 @@
 import tempfile
+import hashlib
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -23,6 +24,20 @@ class TrustLoaderTests(unittest.TestCase):
             (Path(tmp) / "root.pem").write_text("not a certificate")
             with self.assertRaises(SignatureConfigurationError):
                 load_icp_brasil_validation_context(anchors_dir=tmp)
+
+    def test_missing_approved_fingerprints_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "root.der").write_bytes(b"invalid")
+            with patch.dict("os.environ", {"MALIBUB_ICP_BRASIL_ROOT_SHA256": ""}):
+                with self.assertRaises(SignatureConfigurationError):
+                    load_icp_brasil_validation_context(anchors_dir=tmp)
+
+    def test_unapproved_root_fingerprint_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "root.der").write_bytes(b"not an approved root")
+            with patch.dict("os.environ", {"MALIBUB_ICP_BRASIL_ROOT_SHA256": "a" * 64}):
+                with self.assertRaises(SignatureConfigurationError):
+                    load_icp_brasil_validation_context(anchors_dir=tmp)
 
     def test_unrelated_files_do_not_count_as_anchors(self):
         with tempfile.TemporaryDirectory() as tmp:
