@@ -1,5 +1,15 @@
 import unittest
 from types import SimpleNamespace
+from io import BytesIO
+from pypdf import PdfWriter
+
+
+def sample_pdf():
+    out = BytesIO()
+    writer = PdfWriter()
+    writer.add_blank_page(width=595, height=842)
+    writer.write(out)
+    return out.getvalue()
 from a1_orchestration import sign_and_release
 
 
@@ -10,7 +20,7 @@ class OrchestrationTests(unittest.TestCase):
 
     def pipeline(self, **kwargs):
         self.events.append("sign")
-        self.assertEqual(kwargs["pdf_bytes"], b"%PDF-test")
+        self.assertEqual(kwargs["pdf_bytes"], sample_pdf())
         self.assertTrue(kwargs["authorized"])
         return {"key": "signed-reports/7/test.pdf", "sha256": "a"*64, "size": 100}
 
@@ -29,7 +39,7 @@ class OrchestrationTests(unittest.TestCase):
 
     def _build(self):
         self.events.append("pdf")
-        return b"%PDF-test"
+        return sample_pdf()
 
     def test_signing_precedes_release(self):
         self.assertEqual(self.run_flow(), "released")
