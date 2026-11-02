@@ -15,7 +15,7 @@ def authorize_release(*, a1_required, exam_id, artifact=None):
 
     The caller must commit the artifact metadata and clinical status together.
     """
-    if not isinstance(exam_id, int) or exam_id <= 0:
+    if not isinstance(exam_id, int) or isinstance(exam_id, bool) or exam_id <= 0:
         raise ReleaseBlocked("Exame inválido.")
     if not a1_required:
         return {"mode": "legacy", "artifact": None}
@@ -26,8 +26,11 @@ def authorize_release(*, a1_required, exam_id, artifact=None):
     size = artifact.get("size")
     if not isinstance(key, str) or not key.startswith(f"signed-reports/{exam_id}/"):
         raise ReleaseBlocked("Documento assinado não corresponde ao exame.")
+    suffix = key[len(f"signed-reports/{exam_id}/"):]
+    if not suffix.endswith(".pdf") or "/" in suffix or ".." in suffix:
+        raise ReleaseBlocked("Referência do documento assinado inválida.")
     if not isinstance(digest, str) or len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
         raise ReleaseBlocked("Integridade do documento não comprovada.")
-    if not isinstance(size, int) or size <= 0:
+    if not isinstance(size, int) or isinstance(size, bool) or size <= 0:
         raise ReleaseBlocked("Documento assinado vazio.")
     return {"mode": "signed", "artifact": dict(artifact)}
