@@ -45,6 +45,12 @@ def read_signed_version(client, bucket, *, model, db_session, exam_id, version=N
         row = query.filter_by(version=version).first()
     if row is None:
         raise SignatureValidationError("Versão assinada não encontrada.")
+    if getattr(row, "exam_id", None) != exam_id:
+        raise SignatureValidationError("Versão vinculada a outro exame.")
+    recorded_version = getattr(row, "version", None)
+    if (not isinstance(recorded_version, int) or isinstance(recorded_version, bool)
+            or recorded_version <= 0 or (version is not None and recorded_version != version)):
+        raise SignatureValidationError("Metadados da versão assinada inconsistentes.")
     return read_signed_report(
         client, bucket, key=row.storage_key, sha256=row.sha256,
         exam_id=exam_id, expected_size=row.size,
