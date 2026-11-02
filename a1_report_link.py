@@ -16,6 +16,10 @@ def stage_signed_version(*, model, db_session, exam_id, artifact, revision=False
         raise ValueError("Histórico de versões assinadas inconsistente.")
     if previous is not None and (not isinstance(previous.id, int) or isinstance(previous.id, bool) or previous.id <= 0):
         raise ValueError("Referência anterior do laudo assinado inválida.")
+    if not isinstance(revision, bool):
+        raise ValueError("Indicador de revisão A1 inválido.")
+    if previous is not None and getattr(previous, "exam_id", exam_id) != exam_id:
+        raise ValueError("Versão anterior pertence a outro exame.")
     if revision is True and previous is None:
         raise ValueError("Revisão A1 exige versão assinada anterior.")
     if revision is not True and previous is not None:
