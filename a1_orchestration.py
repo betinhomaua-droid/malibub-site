@@ -61,6 +61,8 @@ def sign_and_release(*, pdf_builder, model, db_session, exam, signer_name,
             raise ValueError("HTML final diverge do conteúdo usado no PDF.")
         report_text, report_html = prepared_text, prepared_html
     else:
+        if report_text is not None or report_html is not None:
+            raise ValueError("Laudo final exige preparação vinculada de PDF, texto e HTML.")
         pdf_bytes = built
     validate_unsigned_pdf(pdf_bytes)
     artifact = signing_pipeline(
