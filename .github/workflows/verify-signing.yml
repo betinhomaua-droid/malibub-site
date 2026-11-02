@@ -1,0 +1,48 @@
+name: Verificação assinatura digital
+on:
+  pull_request:
+    paths:
+      - 'app.py'
+      - 'icp_signing.py'
+      - 'requirements.txt'
+      - '.github/workflows/verify-signing.yml'
+  workflow_dispatch:
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compilar módulos Python
+        run: python -m py_compile app.py icp_signing.py
+      - name: Instalar dependências
+        run: python -m pip install -r requirements.txt
+      - name: Verificar importação das APIs de assinatura
+        run: |
+          python - <<'PY'
+          from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
+          from pyhanko.sign import signers
+          from pyhanko.sign.fields import SigSeedSubFilter
+          from pyhanko.keys import load_certs_from_pemder
+          from pyhanko_certvalidator import ValidationContext
+          assert SigSeedSubFilter.PADES
+          assert signers.SimpleSigner.load_pkcs12
+          assert signers.PdfSignatureMetadata
+          print("APIs importadas")
+          PY
+      - name: Verificar falha segura sem certificado
+        run: |
+          python - <<'PY'
+          import os
+          os.environ.pop("MALIBUB_A1_PFX_PATH", None)
+          os.environ.pop("MALIBUB_A1_PFX_PASSWORD", None)
+          from icp_signing import sign_pdf_bytes, SigningConfigurationError
+          try:
+              sign_pdf_bytes(b"%PDF-1.7\n")
+          except SigningConfigurationError:
+              print("Bloqueio sem certificado: OK")
+          else:
+              raise AssertionError("PDF sem certificado não foi bloqueado")
+          PY
