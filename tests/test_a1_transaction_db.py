@@ -92,6 +92,23 @@ class SignedReleaseDatabaseTests(unittest.TestCase):
         self.assertEqual(self.db.session.get(self.Exam, 7).status, "A conferir")
         self.assertEqual(self.SignedReport.query.count(), 0)
 
+    def test_existing_signed_version_blocks_first_release_even_without_dates(self):
+        exam = self.db.session.get(self.Exam, 7)
+        self.SignedReport.query.delete()
+        self.db.session.add(self.SignedReport(
+            exam_id=7, version=1, storage_key="signed-reports/7/previous.pdf",
+            sha256="b" * 64, size=123, created_at=datetime(2026, 11, 1),
+        ))
+        self.db.session.commit()
+        with self.assertRaisesRegex(ValueError, "revisão A1"):
+            commit_signed_release(
+                model=self.SignedReport, db_session=self.db.session,
+                exam=exam, artifact=self.artifact(), signer_name="Dra. Marina",
+            )
+        self.db.session.expire_all()
+        self.assertEqual(self.db.session.get(self.Exam, 7).status, "A conferir")
+        self.assertEqual(self.SignedReport.query.count(), 1)
+
     def test_finance_constraint_failure_rolls_back_everything(self):
         exam = self.db.session.get(self.Exam, 7)
         occurrence = self.db.session.get(self.Occurrence, 9)
