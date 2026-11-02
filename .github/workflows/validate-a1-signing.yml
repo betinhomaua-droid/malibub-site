@@ -6,6 +6,8 @@ on:
       - 'a1_signing.py'
       - 'tests/test_a1_signing.py'
       - 'a1_report_link.py'
+      - 'a1_transaction.py'
+      - 'tests/test_a1_transaction.py'
       - 'tests/test_a1_report_link.py'
       - 'a1_report_model.py'
       - 'tests/test_a1_report_model.py'
@@ -51,3 +53,4 @@ jobs:
           python -m unittest discover -s tests -p 'test_a1_release_gate.py' -v
           python -m unittest discover -s tests -p 'test_a1_report_link.py' -v
           python -m unittest discover -s tests -p 'test_a1_report_model.py' -v
+          python -m unittest discover -s tests -p 'test_a1_transaction.py' -v
