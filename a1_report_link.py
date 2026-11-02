@@ -8,7 +8,7 @@ from datetime import datetime
 from a1_release_gate import authorize_release
 
 
-def stage_signed_version(*, model, db_session, exam_id, artifact):
+def stage_signed_version(*, model, db_session, exam_id, artifact, revision=False):
     decision = authorize_release(a1_required=True, exam_id=exam_id, artifact=artifact)
     previous = (db_session.query(model).filter_by(exam_id=exam_id)
                 .order_by(model.version.desc()).first())
@@ -16,6 +16,10 @@ def stage_signed_version(*, model, db_session, exam_id, artifact):
         raise ValueError("Histórico de versões assinadas inconsistente.")
     if previous is not None and (not isinstance(previous.id, int) or isinstance(previous.id, bool) or previous.id <= 0):
         raise ValueError("Referência anterior do laudo assinado inválida.")
+    if revision is True and previous is None:
+        raise ValueError("Revisão A1 exige versão assinada anterior.")
+    if revision is not True and previous is not None:
+        raise ValueError("Versão anterior exige fluxo de revisão A1.")
     version = (previous.version + 1) if previous else 1
     row = model(
         exam_id=exam_id, version=version,
