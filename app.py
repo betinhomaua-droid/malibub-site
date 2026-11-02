@@ -704,6 +704,10 @@ def delete_exam(eid):
  try:
   Finance.query.filter_by(description=f"Laudo {protocol}").delete(synchronize_session=False)
   for item in files: db.session.delete(item)
+  # Keep the monthly audit history but mark it closed if the exam is deleted.
+  for occurrence in ExamOccurrence.query.filter_by(exam_id=e.id,status="Aberta").all():
+   occurrence.status="Exame excluído"
+   occurrence.resolved_at=datetime.utcnow()
   db.session.delete(e)
   db.session.commit()
  except Exception as exc:
