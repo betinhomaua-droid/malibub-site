@@ -26,3 +26,26 @@ def read_signed_report(client, bucket: str, *, key: str, sha256: str, exam_id: i
             or hashlib.sha256(data).hexdigest() != sha256):
         raise SignatureValidationError("Integridade do PDF assinado comprometida.")
     return data
+
+
+def read_signed_version(client, bucket, *, model, db_session, exam_id, version=None):
+    """Retrieve an authorized exam's exact signed version from database metadata.
+
+    Authorization must be checked by the calling route before invoking.
+    Never accept a storage key from client input. None selects latest.
+    """
+    if not isinstance(exam_id, int) or isinstance(exam_id, bool) or exam_id <= 0:
+        raise SignatureValidationError("Identificação do exame inválida.")
+    if version is not None and (not isinstance(version, int) or isinstance(version, bool) or version <= 0):
+        raise SignatureValidationError("Versão assinada inválida.")
+    query = db_session.query(model).filter_by(exam_id=exam_id)
+    if version is None:
+        row = query.order_by(model.version.desc()).first()
+    else:
+        row = query.filter_by(version=version).first()
+    if row is None:
+        raise SignatureValidationError("Versão assinada não encontrada.")
+    return read_signed_report(
+        client, bucket, key=row.storage_key, sha256=row.sha256,
+        exam_id=exam_id, expected_size=row.size,
+    )
