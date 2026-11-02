@@ -23,7 +23,7 @@ class A1ApprovalGuardTests(unittest.TestCase):
 
     def test_preview_never_changes_release_status_or_flushes(self):
         start = self.source.index("def preview_report_pdf(eid):")
-        end = self.source.index("\\ndef br_date(", start)
+        end = self.source.index("\ndef br_date(", start)
         block = self.source[start:end]
         self.assertIn("SignedReport.query.filter_by(exam_id=e.id)", block)
         self.assertIn("build_legacy_report_pdf_bytes(e)", block)
