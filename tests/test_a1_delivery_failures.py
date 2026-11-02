@@ -50,6 +50,10 @@ class DeliveryFailureTests(unittest.TestCase):
         with self.assertRaises(SignatureValidationError):
             self.fetch(StorageClient(self.pdf[:-1]))
 
+    def test_boolean_exam_identifier_blocks(self):
+        with self.assertRaises(SignatureValidationError):
+            self.fetch(StorageClient(self.pdf), exam_id=True)
+
     def test_cross_exam_key_blocks(self):
         with self.assertRaises(SignatureValidationError):
             self.fetch(StorageClient(self.pdf), key="signed-reports/22/immutable.pdf")
