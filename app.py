@@ -1476,6 +1476,13 @@ def result_pdf(eid):
   story_tmj.append(KeepTogether([Spacer(1,3*mm),ReportSignature()]))
   tdoc.build(story_tmj)
   buf=apply_final_footer(buf.getvalue())
+  try:
+   from icp_signing import sign_pdf_bytes
+   buf.seek(0)
+   buf=io.BytesIO(sign_pdf_bytes(buf.getvalue()))
+  except Exception:
+   app.logger.exception("Falha na assinatura digital do laudo TMJ")
+   return "Assinatura digital indisponível. O laudo não pode ser liberado.",503
   return send_file(buf,mimetype="application/pdf",as_attachment=True,download_name=f"{e.protocol}_laudo.pdf")
  doc=SimpleDocTemplate(buf,pagesize=A4,rightMargin=22*mm,leftMargin=22*mm,topMargin=((clinic.report_top_mm or 72)*mm if has_pdf_model else 16*mm),bottomMargin=((clinic.report_bottom_mm or 48)*mm if has_pdf_model else 48*mm),title=f"{e.protocol} - Laudo MALIBUB",author="MALIBUB Imaginologia Odontológica")
  styles=getSampleStyleSheet(); navy=colors.HexColor("#06394C"); teal=colors.HexColor("#087B9B"); gold=colors.HexColor("#C99B3B")
