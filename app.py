@@ -1348,6 +1348,10 @@ def report(eid):
 def preview_report_pdf(eid):
  if session.get("role")!="Radiologista": return redirect("/")
  e=Exam.query.get_or_404(eid)
+ if e.status=="Liberado":
+  return Response("Laudo já liberado. Utilize o documento final assinado.",status=409,mimetype="text/plain")
+ if os.getenv("MALIBUB_A1_SIGNING_ENABLED", "").lower()=="true":
+  return Response("Prévia A1 indisponível até integração do gerador isolado.",status=503,mimetype="text/plain")
  # Salva somente uma prévia temporária do texto no registro para reutilizar o mesmo gerador.
  old_report=e.report; old_report_html=e.report_html; old_status=e.status; old_signed_by=e.signed_by; old_signed_at=e.signed_at; old_released=e.released_at
  e.report=request.form.get("report","")
