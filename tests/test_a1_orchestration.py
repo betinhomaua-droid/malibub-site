@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from io import BytesIO
 from pypdf import PdfWriter
@@ -40,6 +41,20 @@ class OrchestrationTests(unittest.TestCase):
     def _build(self):
         self.events.append("pdf")
         return sample_pdf()
+
+    def test_fixed_signing_timestamp_reaches_transaction(self):
+        moment = datetime(2026, 11, 2, 17, 19, 0)
+        def transaction(**kwargs):
+            self.events.append("commit")
+            self.assertEqual(kwargs["now"], moment)
+            return "released"
+        self.assertEqual(self.run_flow(signing_at=moment, transaction=transaction), "released")
+        self.assertEqual(self.events, ["pdf", "sign", "commit"])
+
+    def test_timezone_aware_signing_timestamp_is_rejected(self):
+        with self.assertRaises(ValueError):
+            self.run_flow(signing_at=datetime.now(timezone.utc))
+        self.assertEqual(self.events, [])
 
     def test_signing_precedes_release(self):
         self.assertEqual(self.run_flow(), "released")
