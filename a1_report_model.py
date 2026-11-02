@@ -18,6 +18,9 @@ def register_signed_report_model(db):
         supersedes_id = db.Column(db.Integer, nullable=True)
         __table_args__ = (
             db.UniqueConstraint("exam_id", "version", name="uq_signed_report_exam_version"),
+            db.CheckConstraint("version > 0", name="ck_signed_report_version_positive"),
+            db.CheckConstraint("size > 0", name="ck_signed_report_size_positive"),
+            db.CheckConstraint("length(sha256) = 64", name="ck_signed_report_digest_length"),
         )
 
     return SignedReport
