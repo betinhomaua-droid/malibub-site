@@ -31,15 +31,17 @@ class OrchestrationTests(unittest.TestCase):
         return "released"
 
     def run_flow(self, **changes):
-        args = dict(pdf_builder=lambda: self._build(), model=object(),
+        args = dict(pdf_builder=lambda **metadata: self._build(**metadata), model=object(),
                     db_session=object(), exam=self.exam, signer_name="Radiologista",
                     storage_client=object(), bucket="private", validation_context=object(),
                     authorized=True, signing_pipeline=self.pipeline, transaction=self.transaction)
         args.update(changes)
         return sign_and_release(**args)
 
-    def _build(self):
+    def _build(self, **metadata):
         self.events.append("pdf")
+        self.assertEqual(metadata["signer_name"], "Radiologista")
+        self.assertIsInstance(metadata["signing_at"], datetime)
         return sample_pdf()
 
     def test_fixed_signing_timestamp_reaches_transaction(self):
@@ -87,7 +89,7 @@ class OrchestrationTests(unittest.TestCase):
         self.assertEqual(self.events, [])
 
     def test_builder_failure_never_signs_or_commits(self):
-        def broken():
+        def broken(**metadata):
             self.events.append("pdf")
             raise RuntimeError("PDF failure")
         with self.assertRaises(RuntimeError):
@@ -99,7 +101,7 @@ class OrchestrationTests(unittest.TestCase):
             with self.subTest(invalid=repr(invalid)):
                 self.events.clear()
                 with self.assertRaises(Exception):
-                    self.run_flow(pdf_builder=lambda invalid=invalid: invalid)
+                    self.run_flow(pdf_builder=lambda invalid=invalid, **metadata: invalid)
                 self.assertEqual(self.events, [])
 
     def test_transaction_failure_occurs_only_after_signed_artifact(self):
@@ -112,7 +114,7 @@ class OrchestrationTests(unittest.TestCase):
 
     def test_malformed_pdf_with_valid_header_never_signs(self):
         with self.assertRaises(Exception):
-            self.run_flow(pdf_builder=lambda: b"%PDF-1.7\\ntruncated")
+            self.run_flow(pdf_builder=lambda **metadata: b"%PDF-1.7\\ntruncated")
         self.assertEqual(self.events, [])
 
     def test_encrypted_pdf_never_signs(self):
@@ -122,7 +124,7 @@ class OrchestrationTests(unittest.TestCase):
         writer.encrypt("password")
         writer.write(out)
         with self.assertRaises(Exception):
-            self.run_flow(pdf_builder=lambda: out.getvalue())
+            self.run_flow(pdf_builder=lambda **metadata: out.getvalue())
         self.assertEqual(self.events, [])
 
     def test_pipeline_receives_exact_generated_pdf(self):
@@ -132,7 +134,7 @@ class OrchestrationTests(unittest.TestCase):
             self.assertIs(kwargs["pdf_bytes"], pdf)
             self.assertEqual(kwargs["exam_id"], self.exam.id)
             return {"key": "signed-reports/7/test.pdf", "sha256": "a"*64, "size": 100}
-        self.assertEqual(self.run_flow(pdf_builder=lambda: (self.events.append("pdf"), pdf)[1],
+        self.assertEqual(self.run_flow(pdf_builder=lambda **metadata: (self.events.append("pdf"), pdf)[1],
                                        signing_pipeline=pipeline), "released")
         self.assertEqual(self.events, ["pdf", "sign", "commit"])
 
