@@ -64,7 +64,7 @@ def sign_pdf_pades(pdf_bytes: bytes, pfx_bytes: bytes, password: str) -> bytes:
                 box=(42, 32, 290, 100),
             ),
             stamp_style=TextStampStyle(
-                stamp_text="Assinado digitalmente por %(signer)s\\nData/hora: %(ts)s",
+                stamp_text="Assinado digitalmente por %(signer)s\nData/hora: %(ts)s",
             ),
         )
         out = BytesIO()
