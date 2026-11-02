@@ -94,5 +94,15 @@ class VersionDeliveryTests(unittest.TestCase):
         with self.assertRaises(SignatureValidationError):
             self.read(8, 1)
 
+    def test_corrupted_record_exam_id_is_rejected(self):
+        self.rows[0].exam_id = 8
+        with self.assertRaises(SignatureValidationError):
+            self.read(8, 1)
+
+    def test_corrupted_record_version_is_rejected(self):
+        self.rows[0].version = True
+        with self.assertRaises(SignatureValidationError):
+            self.read(7, True)
+
 if __name__ == "__main__":
     unittest.main()
