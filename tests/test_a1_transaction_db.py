@@ -5,7 +5,7 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import IntegrityError
 from a1_report_model import register_signed_report_model
-from a1_transaction import commit_signed_release
+from a1_transaction import commit_signed_release, commit_signed_revision
 from a1_report_link import stage_signed_version
 
 
@@ -22,6 +22,10 @@ class SignedReleaseDatabaseTests(unittest.TestCase):
             released_at = db.Column(db.DateTime)
             signed_at = db.Column(db.DateTime)
             signed_by = db.Column(db.String(128))
+            report = db.Column(db.Text)
+            report_html = db.Column(db.Text)
+            revision_reason = db.Column(db.Text)
+            revision_requested_at = db.Column(db.DateTime)
 
         class Finance(db.Model):
             id = db.Column(db.Integer, primary_key=True)
@@ -147,6 +151,36 @@ class SignedReleaseDatabaseTests(unittest.TestCase):
                     "sha256": "b" * 64, "size": 456,
                 })
         self.assertEqual(self.SignedReport.query.count(), 1)
+
+    def test_revision_transaction_preserves_original_and_updates_report(self):
+        exam = self.db.session.get(self.Exam, 7)
+        exam.revision_reason = "Correção solicitada pela clínica"
+        self.db.session.add(self.SignedReport(
+            exam_id=7, version=1, storage_key="signed-reports/7/original.pdf",
+            sha256="a" * 64, size=123, created_at=datetime(2026, 11, 1)))
+        self.db.session.commit()
+        revised = commit_signed_revision(
+            model=self.SignedReport, db_session=self.db.session,
+            exam=exam, artifact={
+                "key": "signed-reports/7/revised.pdf",
+                "sha256": "b" * 64, "size": 456},
+            signer_name="Dra. Marina", report_text="Texto corrigido",
+            report_html="<p>Texto corrigido</p>", now=datetime(2026, 11, 2))
+        self.assertEqual(revised.version, 2)
+        self.assertEqual(self.db.session.get(self.SignedReport, revised.supersedes_id).storage_key,
+                         "signed-reports/7/original.pdf")
+        self.assertEqual(exam.report, "Texto corrigido")
+        self.assertIsNone(exam.revision_reason)
+        self.assertEqual(self.SignedReport.query.count(), 2)
+
+    def test_revision_without_reason_does_not_create_version(self):
+        exam = self.db.session.get(self.Exam, 7)
+        with self.assertRaisesRegex(ValueError, "justificativa"):
+            commit_signed_revision(
+                model=self.SignedReport, db_session=self.db.session,
+                exam=exam, artifact=self.artifact(), signer_name="Dra. Marina",
+                report_text="Texto", report_html="<p>Texto</p>")
+        self.assertEqual(self.SignedReport.query.count(), 0)
 
     def test_finance_constraint_failure_rolls_back_everything(self):
         exam = self.db.session.get(self.Exam, 7)
