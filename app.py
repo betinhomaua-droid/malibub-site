@@ -1358,23 +1358,23 @@ def preview_report_pdf(eid):
  e=Exam.query.get_or_404(eid)
  if e.status=="Liberado" or SignedReport.query.filter_by(exam_id=e.id).first() is not None:
   return Response("Existe versão final assinada. A prévia não pode reutilizar este documento.",status=409,mimetype="text/plain")
- # Preview must never mutate a released artifact or bypass mandatory A1 signing.
- if os.getenv("MALIBUB_A1_SIGNING_ENABLED", "").lower()=="true":
-  return Response("Prévia A1 indisponível até integração do gerador isolado.",status=503,mimetype="text/plain")
- # Salva somente uma prévia temporária do texto no registro para reutilizar o mesmo gerador.
- old_report=e.report; old_report_html=e.report_html; old_status=e.status; old_signed_by=e.signed_by; old_signed_at=e.signed_at; old_released=e.released_at
- e.report=request.form.get("report","")
- e.report_html=clean_report_html(request.form.get("report_html",""))
- e.status="Liberado"; e.signed_by=session.get("name") or "Dra. Marina"; e.signed_at=datetime.utcnow(); e.released_at=e.signed_at
- db.session.flush()
+ # Preview only changes in-memory report fields. It never releases, signs,
+ # flushes, or commits an exam, even when A1 signing is mandatory.
+ old_report=e.report; old_report_html=e.report_html
  try:
-  response=result_pdf(eid)
+  e.report=request.form.get("report","")
+  e.report_html=clean_report_html(request.form.get("report_html",""))
+  pdf_bytes=build_legacy_report_pdf_bytes(e)
+ except LegacyReportPdfError as exc:
+  return Response(str(exc),status=exc.http_status,mimetype="text/plain")
+ except Exception:
+  app.logger.exception("report_preview_generation_failed exam_id=%s",e.id)
+  return Response("Não foi possível gerar a prévia do laudo.",status=500,mimetype="text/plain")
  finally:
-  e.report=old_report; e.report_html=old_report_html; e.status=old_status; e.signed_by=old_signed_by; e.signed_at=old_signed_at; e.released_at=old_released
-  db.session.rollback()
- if hasattr(response,"headers"):
-  response.headers["Content-Disposition"]=f'inline; filename="{e.protocol}_previa.pdf"'
- return response
+  e.report=old_report
+  e.report_html=old_report_html
+ return send_file(io.BytesIO(pdf_bytes),mimetype="application/pdf",
+                  as_attachment=False,download_name=f"{e.protocol}_previa.pdf")
 
 def br_date(value):
  if not value: return ""
