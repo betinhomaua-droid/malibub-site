@@ -5,6 +5,8 @@ environment secret. Never commit, print, upload through a public form, or
 include the credentials in exception messages.
 """
 import os
+import base64
+import binascii
 from pathlib import Path
 from a1_signing import SignatureConfigurationError
 
@@ -30,4 +32,9 @@ def load_a1_credentials(*, certificate_path=None, password=None):
         raise SignatureConfigurationError("Não foi possível ler o certificado A1.") from None
     if not data:
         raise SignatureConfigurationError("Certificado A1 vazio.")
+    if path.suffix.lower() == ".b64":
+        try:
+            data = base64.b64decode(b"".join(data.split()), validate=True)
+        except (binascii.Error, ValueError):
+            raise SignatureConfigurationError("Arquivo A1 Base64 inválido.") from None
     return data, secret
