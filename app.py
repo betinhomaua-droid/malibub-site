@@ -1589,13 +1589,13 @@ def result_pdf(eid):
    return "Não foi possível gerar o PDF personalizado. Verifique o modelo de laudo cadastrado.",500
  print_mode=request.args.get("print")=="1"
  try:
-   from icp_signing import sign_pdf_bytes
-   buf.seek(0)
-   buf=io.BytesIO(sign_pdf_bytes(buf.getvalue()))
-  except Exception:
-   app.logger.exception("Falha na assinatura digital do laudo")
-   return "Assinatura digital indisponível. O laudo não pode ser liberado.",503
-  response=send_file(buf,mimetype="application/pdf",as_attachment=not print_mode,download_name=f"{e.protocol}_laudo.pdf")
+  from icp_signing import sign_pdf_bytes
+  buf.seek(0)
+  buf=io.BytesIO(sign_pdf_bytes(buf.getvalue()))
+ except Exception:
+  app.logger.exception("Falha na assinatura digital do laudo")
+  return "Assinatura digital indisponível. O laudo não pode ser liberado.",503
+ response=send_file(buf,mimetype="application/pdf",as_attachment=not print_mode,download_name=f"{e.protocol}_laudo.pdf")
  if print_mode:
   response.headers["Content-Disposition"]=f'inline; filename="{e.protocol}_laudo.pdf"'
  if temp_model_path and temp_model_path.exists():
