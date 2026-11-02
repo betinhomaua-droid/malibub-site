@@ -30,6 +30,7 @@ from a1_transaction import commit_signed_release
 def sign_and_release(*, pdf_builder, model, db_session, exam, signer_name,
                      storage_client, bucket, validation_context, authorized=False,
                      finance_entry=None, occurrences=(), signing_at=None,
+                     report_text=None, report_html=None, clear_revision=False,
                      signing_pipeline=prepare_signed_report,
                      transaction=commit_signed_release):
     if authorized is not True:
@@ -63,4 +64,6 @@ def sign_and_release(*, pdf_builder, model, db_session, exam, signer_name,
         model=model, db_session=db_session, exam=exam,
         artifact=artifact, signer_name=signer_name,
         finance_entry=finance_entry, occurrences=occurrences, now=signing_at,
+        report_text=report_text, report_html=report_html,
+        clear_revision=clear_revision,
     )
