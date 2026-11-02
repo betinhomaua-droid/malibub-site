@@ -150,6 +150,18 @@ class OrchestrationTests(unittest.TestCase):
             self.run_flow(report_html="<p>Laudo</p>")
         self.assertEqual(self.events, ["pdf"])
 
+    def test_prior_signature_timestamp_requires_revision_flow(self):
+        self.exam.signed_at = datetime(2026, 11, 1, 12, 0)
+        with self.assertRaisesRegex(ValueError, "revisão A1"):
+            self.run_flow()
+        self.assertEqual(self.events, [])
+
+    def test_prior_release_timestamp_requires_revision_flow(self):
+        self.exam.released_at = datetime(2026, 11, 1, 12, 0)
+        with self.assertRaisesRegex(ValueError, "revisão A1"):
+            self.run_flow()
+        self.assertEqual(self.events, [])
+
     def test_signing_precedes_release(self):
         self.assertEqual(self.run_flow(), "released")
         self.assertEqual(self.events, ["pdf", "sign", "commit"])
