@@ -48,6 +48,24 @@ class PdfBuilderBoundaryTests(unittest.TestCase):
         self.assertNotIn("e.signed_at=", source)
         self.assertNotIn("e.signed_by=", source)
 
+    def test_a1_final_builder_uses_detached_snapshot(self):
+        source = ast.get_source_segment(SOURCE.read_text(encoding="utf-8"),
+                                        self.functions["build_a1_final_pdf_bytes"])
+        self.assertIn("SimpleNamespace(", source)
+        self.assertIn("snapshot.report=report_text", source)
+        self.assertIn("snapshot.report_html=report_html", source)
+        self.assertIn("build_legacy_report_pdf_bytes(snapshot", source)
+        self.assertNotIn("exam.report=", source)
+        self.assertNotIn("exam.report_html=", source)
+        self.assertNotIn("db.session", source)
+
+    def test_a1_builder_receives_identical_signing_metadata(self):
+        source = ast.get_source_segment(SOURCE.read_text(encoding="utf-8"),
+                                        self.functions["build_a1_final_pdf_bytes"])
+        self.assertIn("signer_name=signer_name.strip()", source)
+        self.assertIn("signing_at=signing_at", source)
+        self.assertIn("Data de assinatura UTC inválida", source)
+
     def test_temporary_model_cleanup_runs_in_finally(self):
         builder = self.functions["build_legacy_report_pdf_bytes"]
         finally_blocks = [n.finalbody for n in ast.walk(builder) if isinstance(n, ast.Try) and n.finalbody]
