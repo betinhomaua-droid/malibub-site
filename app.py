@@ -1401,6 +1401,25 @@ def result_pdf(eid):
  e=Exam.query.get_or_404(eid)
  if session.get("role")=="Clinica" and e.clinic_id!=session.get("uid"): return redirect("/dashboard")
  if e.status!="Liberado": return redirect("/dashboard")
+ # Once a cryptographically signed version exists, never regenerate the PDF.
+ # Fail closed when signed bytes are missing or have been altered.
+ signed_version=SignedReport.query.filter_by(exam_id=e.id).order_by(SignedReport.version.desc()).first()
+ if signed_version is not None:
+  from a1_delivery import read_signed_report
+  try:
+   if not object_storage_enabled():
+    raise RuntimeError("Private signed document storage is unavailable")
+   signed_bytes=read_signed_report(
+    r2_client(),R2_BUCKET,key=signed_version.storage_key,
+    sha256=signed_version.sha256,exam_id=e.id)
+  except Exception as exc:
+   app.logger.error("signed_report_delivery_failed exam_id=%s error_type=%s",e.id,type(exc).__name__)
+   return Response("Documento assinado indisponível. Contate o suporte.",status=503,mimetype="text/plain")
+  return send_file(io.BytesIO(signed_bytes),mimetype="application/pdf",
+                   as_attachment=False,download_name=f"laudo-{e.protocol or e.id}-assinado.pdf")
+ if os.getenv("MALIBUB_A1_SIGNING_ENABLED","").lower()=="true":
+  app.logger.error("signed_report_missing_for_release exam_id=%s",e.id)
+  return Response("Documento assinado não encontrado. Contate o suporte.",status=503,mimetype="text/plain")
  from reportlab.lib.pagesizes import A4
  from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
  from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
