@@ -19,6 +19,9 @@ class FakeStorage:
             raise FileExistsError("precondition failed")
         self.objects[(Bucket, Key)] = Body.read()
 
+    def delete_object(self, Bucket, Key):
+        self.objects.pop((Bucket, Key), None)
+
     def get_object(self, Bucket, Key):
         data = self.objects[(Bucket, Key)]
         return {"Body": io.BytesIO(data + b"tampered" if self.corrupt else data)}
@@ -52,8 +55,10 @@ class SignedStorageTests(unittest.TestCase):
             persist_signed_pdf(FakeStorage(fail=True), "private-bucket", 3, b"%PDF-1.7")
 
     def test_corrupted_readback_blocks_release(self):
+        store = FakeStorage(corrupt=True)
         with self.assertRaises(SignatureValidationError):
-            persist_signed_pdf(FakeStorage(corrupt=True), "private-bucket", 3, b"%PDF-1.7")
+            persist_signed_pdf(store, "private-bucket", 3, b"%PDF-1.7")
+        self.assertEqual(store.objects, {})
 
 
 if __name__ == "__main__":
