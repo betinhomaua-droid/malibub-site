@@ -61,3 +61,4 @@ jobs:
           python -m unittest discover -s tests -p 'test_a1_transaction_db.py' -v
           python -m unittest discover -s tests -p 'test_a1_orchestration.py' -v
           python -m unittest discover -s tests -p 'test_a1_pdf_builder_boundary.py' -v
+          python -m unittest discover -s tests -p 'test_a1_trust.py' -v
