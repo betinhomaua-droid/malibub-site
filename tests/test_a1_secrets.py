@@ -1,4 +1,5 @@
 import tempfile
+import base64
 import unittest
 from pathlib import Path
 from a1_signing import SignatureConfigurationError
@@ -18,6 +19,22 @@ class A1SecretTests(unittest.TestCase):
                 load_a1_credentials(certificate_path=str(path), password="test-pass"),
                 (b"test-pfx-fixture", "test-pass"),
             )
+
+    def test_reads_base64_secret_file(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "malibub_a1.pfx.b64"
+            path.write_bytes(base64.b64encode(b"test-pfx-fixture"))
+            self.assertEqual(
+                load_a1_credentials(certificate_path=str(path), password="test-pass"),
+                (b"test-pfx-fixture", "test-pass"),
+            )
+
+    def test_rejects_invalid_base64_secret_file(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "malibub_a1.pfx.b64"
+            path.write_text("not valid !")
+            with self.assertRaises(SignatureConfigurationError):
+                load_a1_credentials(certificate_path=str(path), password="test-pass")
 
     def test_relative_path_is_rejected(self):
         with self.assertRaises(SignatureConfigurationError):
