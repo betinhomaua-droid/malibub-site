@@ -32,6 +32,11 @@ class A1SigningTests(unittest.TestCase):
         self.assertNotEqual(original, signed)
         self.assertTrue(verify_embedded_signature(signed))
         self.assertFalse(verify_embedded_signature(original))
+        # Modifying signed bytes must fail integrity verification.
+        altered = signed.replace(b'PDF FICTICIO', b'PDF ALTERADO')
+        if altered == signed:
+            altered = signed[:-30] + bytes([signed[-30] ^ 1]) + signed[-29:]
+        self.assertFalse(verify_embedded_signature(altered))
 
     def test_rejects_non_pdf(self):
         with self.assertRaises(ValueError):
