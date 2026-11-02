@@ -1277,7 +1277,7 @@ def report(eid):
   e.report=report_text; e.report_html=clean_report_html(request.form.get("report_html","")); e.status="Liberado"; e.revision_reason=None; e.revision_requested_at=None; e.released_at=datetime.utcnow(); e.signed_by=session.get("name") or "Dra. Marina"; e.signed_at=datetime.utcnow()
   db.session.flush()
   check=result_pdf(e.id)
-  if getattr(check,"status_code",200) >= 400:
+  if getattr(check,"status_code",200) >= 400 or not hasattr(check,"get_data") or not check.get_data().startswith(b"%PDF-"):
    db.session.rollback()
    flash("PDF final indisponível. O exame não foi liberado nem faturado.")
    return redirect(url_for("report",eid=e.id))
