@@ -173,6 +173,38 @@ class SignedReleaseDatabaseTests(unittest.TestCase):
         self.assertIsNone(exam.revision_reason)
         self.assertEqual(self.SignedReport.query.count(), 2)
 
+    def test_revision_database_commit_failure_restores_original_metadata(self):
+        exam = self.db.session.get(self.Exam, 7)
+        exam.revision_reason = "Correção solicitada"
+        exam.report = "Texto original"
+        exam.report_html = "<p>Texto original</p>"
+        self.db.session.add(self.SignedReport(
+            exam_id=7, version=1, storage_key="signed-reports/7/original.pdf",
+            sha256="a" * 64, size=123, created_at=datetime(2026, 11, 1)))
+        self.db.session.commit()
+        original_commit = self.db.session.commit
+        def fail_commit():
+            raise RuntimeError("Falha simulada no commit")
+        self.db.session.commit = fail_commit
+        try:
+            with self.assertRaisesRegex(RuntimeError, "Falha simulada"):
+                commit_signed_revision(
+                    model=self.SignedReport, db_session=self.db.session,
+                    exam=exam, artifact={
+                        "key": "signed-reports/7/revised.pdf",
+                        "sha256": "b" * 64, "size": 456},
+                    signer_name="Dra. Marina", report_text="Texto novo",
+                    report_html="<p>Texto novo</p>")
+        finally:
+            self.db.session.commit = original_commit
+        self.db.session.expire_all()
+        exam = self.db.session.get(self.Exam, 7)
+        self.assertEqual(exam.report, "Texto original")
+        self.assertEqual(exam.report_html, "<p>Texto original</p>")
+        self.assertEqual(exam.revision_reason, "Correção solicitada")
+        self.assertEqual(exam.status, "A conferir")
+        self.assertEqual(self.SignedReport.query.count(), 1)
+
     def test_revision_without_reason_does_not_create_version(self):
         exam = self.db.session.get(self.Exam, 7)
         with self.assertRaisesRegex(ValueError, "justificativa"):
