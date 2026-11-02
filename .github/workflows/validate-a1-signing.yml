@@ -5,6 +5,7 @@ on:
       - 'app.py'
       - 'a1_signing.py'
       - 'tests/test_a1_signing.py'
+      - 'a1_report_model.py'
       - 'a1_release_gate.py'
       - 'tests/test_a1_release_gate.py'
       - 'a1_revisions.py'
