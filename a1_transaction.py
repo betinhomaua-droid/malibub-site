@@ -23,6 +23,8 @@ def commit_signed_release(*, model, db_session, exam, artifact, signer_name,
     if getattr(exam, "signed_at", None) is not None or getattr(exam, "released_at", None) is not None:
         raise ValueError("Exame com assinatura ou liberação anterior exige revisão A1.")
     exam_id = getattr(exam, "id", None)
+    if db_session.query(model).filter_by(exam_id=exam_id).first() is not None:
+        raise ValueError("Exame com versão assinada exige fluxo de revisão A1.")
     moment = datetime.utcnow() if now is None else now
     if not isinstance(moment, datetime) or moment.tzinfo is not None:
         raise ValueError("Data de liberação UTC inválida.")
