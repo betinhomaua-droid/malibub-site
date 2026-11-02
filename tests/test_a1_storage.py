@@ -13,6 +13,10 @@ class FakeStorage:
     def put_object(self, Bucket, Key, Body, **kwargs):
         if self.fail:
             raise OSError("storage down")
+        if kwargs.get("IfNoneMatch") != "*":
+            raise AssertionError("Signed PDF must use conditional create-only upload")
+        if (Bucket, Key) in self.objects:
+            raise FileExistsError("precondition failed")
         self.objects[(Bucket, Key)] = Body.read()
 
     def get_object(self, Bucket, Key):
@@ -33,6 +37,15 @@ class SignedStorageTests(unittest.TestCase):
         a = persist_signed_pdf(store, "private-bucket", 3, b"%PDF-1.7 a")
         b = persist_signed_pdf(store, "private-bucket", 3, b"%PDF-1.7 b")
         self.assertNotEqual(a["key"], b["key"])
+
+    def test_signed_upload_requires_create_only_precondition(self):
+        store = FakeStorage()
+        persist_signed_pdf(store, "private-bucket", 3, b"%PDF-1.7 protected")
+        self.assertEqual(len(store.objects), 1)
+
+    def test_invalid_boolean_exam_id_rejected(self):
+        with self.assertRaises(ValueError):
+            persist_signed_pdf(FakeStorage(), "private-bucket", True, b"%PDF-1.7")
 
     def test_storage_failure_blocks_release(self):
         with self.assertRaises(SignatureValidationError):
