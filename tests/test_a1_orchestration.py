@@ -58,6 +58,30 @@ class OrchestrationTests(unittest.TestCase):
             self.run_flow(signing_at=datetime.now(timezone.utc))
         self.assertEqual(self.events, [])
 
+    def test_signer_and_timestamp_match_between_pdf_and_database(self):
+        moment = datetime(2026, 11, 2, 17, 21, 0)
+        def builder(**metadata):
+            self.events.append("pdf")
+            self.assertEqual(metadata["signer_name"], "Radiologista")
+            self.assertIs(metadata["signing_at"], moment)
+            return sample_pdf()
+        def transaction(**kwargs):
+            self.events.append("commit")
+            self.assertEqual(kwargs["signer_name"], "Radiologista")
+            self.assertIs(kwargs["now"], moment)
+            return "released"
+        self.assertEqual(self.run_flow(pdf_builder=builder, signing_at=moment,
+                                       transaction=transaction), "released")
+        self.assertEqual(self.events, ["pdf", "sign", "commit"])
+
+    def test_invalid_falsey_signing_timestamp_is_not_replaced(self):
+        for invalid in ("", 0, False):
+            with self.subTest(invalid=invalid):
+                self.events.clear()
+                with self.assertRaises(ValueError):
+                    self.run_flow(signing_at=invalid)
+                self.assertEqual(self.events, [])
+
     def test_signing_precedes_release(self):
         self.assertEqual(self.run_flow(), "released")
         self.assertEqual(self.events, ["pdf", "sign", "commit"])
