@@ -46,6 +46,21 @@ class OrchestrationTests(unittest.TestCase):
             self.run_flow()
         self.assertEqual(self.events, [])
 
+    def test_missing_signer_never_builds(self):
+        with self.assertRaises(ValueError):
+            self.run_flow(signer_name="  ")
+        self.assertEqual(self.events, [])
+
+    def test_missing_trust_context_never_builds(self):
+        with self.assertRaises(ValueError):
+            self.run_flow(validation_context=None)
+        self.assertEqual(self.events, [])
+
+    def test_missing_storage_never_builds(self):
+        with self.assertRaises(ValueError):
+            self.run_flow(storage_client=None)
+        self.assertEqual(self.events, [])
+
     def test_builder_failure_never_signs_or_commits(self):
         def broken():
             self.events.append("pdf")
