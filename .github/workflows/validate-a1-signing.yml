@@ -14,6 +14,8 @@ on:
       - 'tests/test_a1_revisions.py'
       - 'a1_delivery.py'
       - 'tests/test_a1_delivery.py'
+      - 'tests/test_a1_delivery_failures.py'
+      - 'tests/test_a1_approval_guard.py'
       - 'a1_pipeline.py'
       - 'tests/test_a1_pipeline.py'
       - 'a1_storage.py'
