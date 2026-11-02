@@ -4,6 +4,8 @@ on:
     paths:
       - 'a1_signing.py'
       - 'tests/test_a1_signing.py'
+      - 'a1_pipeline.py'
+      - 'tests/test_a1_pipeline.py'
       - 'a1_storage.py'
       - 'tests/test_a1_storage.py'
       - 'a1_secrets.py'
@@ -26,3 +28,4 @@ jobs:
           python -m unittest discover -s tests -p 'test_a1_signing.py' -v
           python -m unittest discover -s tests -p 'test_a1_secrets.py' -v
           python -m unittest discover -s tests -p 'test_a1_storage.py' -v
+          python -m unittest discover -s tests -p 'test_a1_pipeline.py' -v
