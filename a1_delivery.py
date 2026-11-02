@@ -8,7 +8,7 @@ from a1_signing import SignatureValidationError
 
 
 def read_signed_report(client, bucket: str, *, key: str, sha256: str, exam_id: int, expected_size: int | None = None) -> bytes:
-    if not bucket or not isinstance(exam_id, int) or exam_id <= 0:
+    if not bucket or not isinstance(exam_id, int) or isinstance(exam_id, bool) or exam_id <= 0:
         raise SignatureValidationError("Identificação do laudo inválida.")
     if not isinstance(key, str) or not key.startswith(f"signed-reports/{exam_id}/"):
         raise SignatureValidationError("Referência do laudo assinado inválida.")
