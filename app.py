@@ -1411,7 +1411,7 @@ def result_pdf(eid):
     raise RuntimeError("Private signed document storage is unavailable")
    signed_bytes=read_signed_report(
     r2_client(),R2_BUCKET,key=signed_version.storage_key,
-    sha256=signed_version.sha256,exam_id=e.id)
+    sha256=signed_version.sha256,exam_id=e.id,expected_size=signed_version.size)
   except Exception as exc:
    app.logger.error("signed_report_delivery_failed exam_id=%s error_type=%s",e.id,type(exc).__name__)
    return Response("Documento assinado indisponível. Contate o suporte.",status=503,mimetype="text/plain")
