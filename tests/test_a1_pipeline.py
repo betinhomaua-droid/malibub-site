@@ -22,6 +22,20 @@ class PipelineTests(unittest.TestCase):
                                       validation_context=object(), authorized=False,
                                       credentials_loader=lambda: self.fail("secret accessed"))
 
+    def test_invalid_inputs_block_before_secret_access(self):
+        with patch.dict(os.environ, {"MALIBUB_A1_SIGNING_ENABLED": "true"}):
+            base = dict(pdf_bytes=b"%PDF-1.7", exam_id=1, storage_client=object(),
+                        bucket="private", validation_context=object(), authorized=True,
+                        credentials_loader=lambda: self.fail("secret accessed"))
+            for change, error in (({"exam_id": True}, ValueError),
+                                  ({"exam_id": 0}, ValueError),
+                                  ({"pdf_bytes": "not bytes"}, SignatureValidationError),
+                                  ({"pdf_bytes": b"not a PDF"}, SignatureValidationError),
+                                  ({"authorized": 1}, PermissionError)):
+                with self.subTest(change=change):
+                    with self.assertRaises(error):
+                        prepare_signed_report(**dict(base, **change))
+
     def test_missing_trust_blocks_before_secret_access(self):
         with patch.dict(os.environ, {"MALIBUB_A1_SIGNING_ENABLED": "true"}):
             with self.assertRaises(SignatureConfigurationError):
