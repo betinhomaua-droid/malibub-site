@@ -1609,90 +1609,93 @@ def build_legacy_report_pdf_bytes(e):
     temp_model_path=model_path
     model_path.write_bytes(storage_bytes(clinic.report_model))
   else: model_path=UPLOAD/clinic.report_model
- if has_pdf_model and (not model_path or not model_path.exists()):
-  raise LegacyReportPdfError("O modelo PDF personalizado desta clínica não está disponível. Reenvie o modelo antes de gerar o laudo.",410)
- if model_path and model_path.exists() and model_path.suffix.lower() in {".jpg",".jpeg",".png"}:
-  from reportlab.platypus import Image
-  try:
-   bg=Image(str(model_path)); bg._restrictSize(170*mm,48*mm); story += [bg,Spacer(1,4*mm)]
-  except Exception: pass
- if not story and not has_pdf_model:
-  clinic_title=escape((clinic.name if clinic and clinic.name else "Clínica solicitante"))
-  story=[Paragraph(clinic_title,title),Spacer(1,6*mm)]
- if not has_pdf_model:
-  data=[["Protocolo",escape(e.protocol or "")],["Paciente",escape(e.patient or "")],["Sexo",escape(e.sex or "Não informado")],["Data de nascimento",escape(br_date(e.birth))],["Exame",escape(e.exam_type or "")],["Dentista solicitante",escape(e.dentist or "")],["Data do exame",escape(br_date(e.exam_date))]]
-  t=Table(data,colWidths=[42*mm,120*mm]); t.setStyle(TableStyle([("GRID",(0,0),(-1,-1),.4,colors.HexColor("#DCE8EC")),("BACKGROUND",(0,0),(0,-1),colors.HexColor("#F1F6F7")),("FONTNAME",(0,0),(0,-1),"Helvetica-Bold"),("FONTSIZE",(0,0),(-1,-1),9),("PADDING",(0,0),(-1,-1),6)])); story += [t,Spacer(1,7*mm),Paragraph("LAUDO RADIOLÓGICO",ParagraphStyle("h",parent=title,alignment=0,fontSize=12,textColor=navy)),Spacer(1,2*mm)]
- if not has_pdf_model:
-  for markup,alignment in rich_report_blocks(e.report_html,e.report):
-   sty=ParagraphStyle("rich_body",parent=body,alignment={"left":0,"center":1,"right":2,"justify":4}.get(alignment,0))
-   story.append(Paragraph(markup,sty))
- signer=escape(e.signed_by or "Dra. Marina"); signed=brasilia_stamp(e.signed_at or e.released_at)
- if not has_pdf_model:
-  story.append(KeepTogether([Spacer(1,5*mm),ReportSignature()]))
-  doc.build(story)
-  buf=apply_final_footer(buf.getvalue())
- # Modelo PDF da clínica: o texto do campo "Laudo radiológico" deve ocupar
- # uma área própria logo após a descrição fixa, sem sobrepor o restante do modelo.
- # Para modelos que já contêm texto fixo abaixo da descrição (ex.: TMJ), o sistema
- # cria uma folha de continuação com o mesmo cabeçalho quando necessário.
- if model_path and model_path.exists() and model_path.suffix.lower()==".pdf":
-  try:
-   from pypdf import PdfReader, PdfWriter
-   from reportlab.pdfgen import canvas
-   base_reader=PdfReader(str(model_path)); final_writer=PdfWriter()
-   # Renderização com os mesmos parágrafos estilizados dos demais laudos.
-   blocks=rich_report_blocks(e.report_html,e.report)
-   from reportlab.platypus import Paragraph
-   from reportlab.lib.styles import ParagraphStyle
-   from reportlab.lib.enums import TA_LEFT,TA_CENTER,TA_RIGHT,TA_JUSTIFY
-   def make_block(markup,alignment,available_width):
-    style=ParagraphStyle("clinic_rich",fontName="Helvetica",fontSize=9,leading=12,textColor=colors.HexColor("#111111"),alignment={"left":TA_LEFT,"center":TA_CENTER,"right":TA_RIGHT,"justify":TA_JUSTIFY}.get(alignment,TA_LEFT))
-    p=Paragraph(markup,style);_,h=p.wrap(available_width,700*mm);return p,h
-   first=base_reader.pages[0];width=float(first.mediabox.width);height=float(first.mediabox.height)
-   left=22*mm; available_width=width-44*mm
-   rendered=[make_block(markup,align,available_width) for markup,align in blocks]
-   index=0;signature_done=False
-   overlay=io.BytesIO();cv=canvas.Canvas(overlay,pagesize=(width,height))
-   y=height-119*mm;min_y=height-139*mm
-   while index<len(rendered):
-    para,h=rendered[index]
-    if y-h<min_y:break
-    y-=h;para.drawOn(cv,left,y);y-=2*mm;index+=1
-   # O modelo da clínica pode ter texto fixo abaixo da área editável.
-   # Por segurança, a assinatura vai para a folha de continuação.
-   cv.save();overlay.seek(0);first.merge_page(PdfReader(overlay).pages[0]);final_writer.add_page(first)
-   for original_page in list(base_reader.pages)[1:]:final_writer.add_page(original_page)
-   while index<len(rendered) or not signature_done:
-    extra=io.BytesIO();cv=canvas.Canvas(extra,pagesize=A4);width,height=A4
-    cv.setFont("Helvetica-Bold",11);cv.setFillColor(colors.HexColor("#111111"))
-    cv.drawCentredString(width/2,height-20*mm,"LAUDO RADIOLÓGICO - CONTINUAÇÃO")
-    cv.setFont("Helvetica",8)
-    cv.drawString(22*mm,height-27*mm,f"Paciente: {(e.patient or '')[:60]}  |  Sexo: {(e.sex or '')[:20]}  |  Nascimento: {br_date(e.birth)}")
-    cv.drawString(22*mm,height-31*mm,f"Dentista: {(e.dentist or '')[:45]}  |  Data do exame: {br_date(e.exam_date)}")
-    cv.line(22*mm,height-34*mm,width-22*mm,height-34*mm)
-    y=height-42*mm;available_width=width-44*mm
+ try:
+  if has_pdf_model and (not model_path or not model_path.exists()):
+   raise LegacyReportPdfError("O modelo PDF personalizado desta clínica não está disponível. Reenvie o modelo antes de gerar o laudo.",410)
+  if model_path and model_path.exists() and model_path.suffix.lower() in {".jpg",".jpeg",".png"}:
+   from reportlab.platypus import Image
+   try:
+    bg=Image(str(model_path)); bg._restrictSize(170*mm,48*mm); story += [bg,Spacer(1,4*mm)]
+   except Exception: pass
+  if not story and not has_pdf_model:
+   clinic_title=escape((clinic.name if clinic and clinic.name else "Clínica solicitante"))
+   story=[Paragraph(clinic_title,title),Spacer(1,6*mm)]
+  if not has_pdf_model:
+   data=[["Protocolo",escape(e.protocol or "")],["Paciente",escape(e.patient or "")],["Sexo",escape(e.sex or "Não informado")],["Data de nascimento",escape(br_date(e.birth))],["Exame",escape(e.exam_type or "")],["Dentista solicitante",escape(e.dentist or "")],["Data do exame",escape(br_date(e.exam_date))]]
+   t=Table(data,colWidths=[42*mm,120*mm]); t.setStyle(TableStyle([("GRID",(0,0),(-1,-1),.4,colors.HexColor("#DCE8EC")),("BACKGROUND",(0,0),(0,-1),colors.HexColor("#F1F6F7")),("FONTNAME",(0,0),(0,-1),"Helvetica-Bold"),("FONTSIZE",(0,0),(-1,-1),9),("PADDING",(0,0),(-1,-1),6)])); story += [t,Spacer(1,7*mm),Paragraph("LAUDO RADIOLÓGICO",ParagraphStyle("h",parent=title,alignment=0,fontSize=12,textColor=navy)),Spacer(1,2*mm)]
+  if not has_pdf_model:
+   for markup,alignment in rich_report_blocks(e.report_html,e.report):
+    sty=ParagraphStyle("rich_body",parent=body,alignment={"left":0,"center":1,"right":2,"justify":4}.get(alignment,0))
+    story.append(Paragraph(markup,sty))
+  signer=escape(e.signed_by or "Dra. Marina"); signed=brasilia_stamp(e.signed_at or e.released_at)
+  if not has_pdf_model:
+   story.append(KeepTogether([Spacer(1,5*mm),ReportSignature()]))
+   doc.build(story)
+   buf=apply_final_footer(buf.getvalue())
+  # Modelo PDF da clínica: o texto do campo "Laudo radiológico" deve ocupar
+  # uma área própria logo após a descrição fixa, sem sobrepor o restante do modelo.
+  # Para modelos que já contêm texto fixo abaixo da descrição (ex.: TMJ), o sistema
+  # cria uma folha de continuação com o mesmo cabeçalho quando necessário.
+  if model_path and model_path.exists() and model_path.suffix.lower()==".pdf":
+   try:
+    from pypdf import PdfReader, PdfWriter
+    from reportlab.pdfgen import canvas
+    base_reader=PdfReader(str(model_path)); final_writer=PdfWriter()
+    # Renderização com os mesmos parágrafos estilizados dos demais laudos.
+    blocks=rich_report_blocks(e.report_html,e.report)
+    from reportlab.platypus import Paragraph
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_LEFT,TA_CENTER,TA_RIGHT,TA_JUSTIFY
+    def make_block(markup,alignment,available_width):
+     style=ParagraphStyle("clinic_rich",fontName="Helvetica",fontSize=9,leading=12,textColor=colors.HexColor("#111111"),alignment={"left":TA_LEFT,"center":TA_CENTER,"right":TA_RIGHT,"justify":TA_JUSTIFY}.get(alignment,TA_LEFT))
+     p=Paragraph(markup,style);_,h=p.wrap(available_width,700*mm);return p,h
+    first=base_reader.pages[0];width=float(first.mediabox.width);height=float(first.mediabox.height)
+    left=22*mm; available_width=width-44*mm
+    rendered=[make_block(markup,align,available_width) for markup,align in blocks]
+    index=0;signature_done=False
+    overlay=io.BytesIO();cv=canvas.Canvas(overlay,pagesize=(width,height))
+    y=height-119*mm;min_y=height-139*mm
     while index<len(rendered):
-     para,h=make_block(blocks[index][0],blocks[index][1],available_width)
-     if y-h<66*mm:break
-     y-=h;para.drawOn(cv,22*mm,y);y-=2*mm;index+=1
-    if index==len(rendered) and y>=66*mm:
-     draw_report_signature(cv,width,baseline=y-12*mm)
-     cv.setFillColor(colors.HexColor("#06394C"));cv.setFont("Helvetica-Bold",9)
-     cv.drawCentredString(width/2,y-16*mm,"Dra. Marina L. Bub")
-     cv.setFillColor(colors.HexColor("#52666E"));cv.setFont("Helvetica",7.8)
-     cv.drawCentredString(width/2,y-20*mm,"Radiologista responsável - CRO-SP 113752")
-     signature_done=True
-    if index<len(rendered) and y==height-42*mm:
-     raise ValueError("Parágrafo do laudo excede a altura de uma página")
-    cv.save();extra.seek(0);final_writer.add_page(PdfReader(extra).pages[0])
-   merged=io.BytesIO(); final_writer.write(merged); merged.seek(0); buf=apply_final_footer(merged.getvalue())
-  except Exception:
-   raise LegacyReportPdfError("Não foi possível gerar o PDF personalizado. Verifique o modelo de laudo cadastrado.",500)
- pdf_bytes=buf.getvalue() if hasattr(buf,"getvalue") else bytes(buf)
- if temp_model_path and temp_model_path.exists():
-  try: temp_model_path.unlink()
-  except OSError: pass
- return pdf_bytes
+     para,h=rendered[index]
+     if y-h<min_y:break
+     y-=h;para.drawOn(cv,left,y);y-=2*mm;index+=1
+    # O modelo da clínica pode ter texto fixo abaixo da área editável.
+    # Por segurança, a assinatura vai para a folha de continuação.
+    cv.save();overlay.seek(0);first.merge_page(PdfReader(overlay).pages[0]);final_writer.add_page(first)
+    for original_page in list(base_reader.pages)[1:]:final_writer.add_page(original_page)
+    while index<len(rendered) or not signature_done:
+     extra=io.BytesIO();cv=canvas.Canvas(extra,pagesize=A4);width,height=A4
+     cv.setFont("Helvetica-Bold",11);cv.setFillColor(colors.HexColor("#111111"))
+     cv.drawCentredString(width/2,height-20*mm,"LAUDO RADIOLÓGICO - CONTINUAÇÃO")
+     cv.setFont("Helvetica",8)
+     cv.drawString(22*mm,height-27*mm,f"Paciente: {(e.patient or '')[:60]}  |  Sexo: {(e.sex or '')[:20]}  |  Nascimento: {br_date(e.birth)}")
+     cv.drawString(22*mm,height-31*mm,f"Dentista: {(e.dentist or '')[:45]}  |  Data do exame: {br_date(e.exam_date)}")
+     cv.line(22*mm,height-34*mm,width-22*mm,height-34*mm)
+     y=height-42*mm;available_width=width-44*mm
+     while index<len(rendered):
+      para,h=make_block(blocks[index][0],blocks[index][1],available_width)
+      if y-h<66*mm:break
+      y-=h;para.drawOn(cv,22*mm,y);y-=2*mm;index+=1
+     if index==len(rendered) and y>=66*mm:
+      draw_report_signature(cv,width,baseline=y-12*mm)
+      cv.setFillColor(colors.HexColor("#06394C"));cv.setFont("Helvetica-Bold",9)
+      cv.drawCentredString(width/2,y-16*mm,"Dra. Marina L. Bub")
+      cv.setFillColor(colors.HexColor("#52666E"));cv.setFont("Helvetica",7.8)
+      cv.drawCentredString(width/2,y-20*mm,"Radiologista responsável - CRO-SP 113752")
+      signature_done=True
+     if index<len(rendered) and y==height-42*mm:
+      raise ValueError("Parágrafo do laudo excede a altura de uma página")
+     cv.save();extra.seek(0);final_writer.add_page(PdfReader(extra).pages[0])
+    merged=io.BytesIO(); final_writer.write(merged); merged.seek(0); buf=apply_final_footer(merged.getvalue())
+   except Exception:
+    raise LegacyReportPdfError("Não foi possível gerar o PDF personalizado. Verifique o modelo de laudo cadastrado.",500)
+  pdf_bytes=buf.getvalue() if hasattr(buf,"getvalue") else bytes(buf)
+
+  return pdf_bytes
+ finally:
+  if temp_model_path and temp_model_path.exists():
+   try: temp_model_path.unlink()
+   except OSError: pass
 
 @app.route("/result/<int:eid>")
 def result(eid):
