@@ -82,6 +82,18 @@ class OrchestrationTests(unittest.TestCase):
                     self.run_flow(signing_at=invalid)
                 self.assertEqual(self.events, [])
 
+    def test_final_report_content_reaches_atomic_release(self):
+        def transaction(**kwargs):
+            self.events.append("commit")
+            self.assertEqual(kwargs["report_text"], "Laudo final")
+            self.assertEqual(kwargs["report_html"], "<p>Laudo final</p>")
+            self.assertTrue(kwargs["clear_revision"])
+            return "released"
+        self.assertEqual(self.run_flow(report_text="Laudo final",
+                                       report_html="<p>Laudo final</p>",
+                                       clear_revision=True, transaction=transaction), "released")
+        self.assertEqual(self.events, ["pdf", "sign", "commit"])
+
     def test_signing_precedes_release(self):
         self.assertEqual(self.run_flow(), "released")
         self.assertEqual(self.events, ["pdf", "sign", "commit"])
