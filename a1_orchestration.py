@@ -4,6 +4,7 @@ This is deliberately not attached to Flask routes yet. The PDF builder must
 produce final bytes without changing clinical status; the caller must perform
 signer authorization before invoking it.
 """
+from datetime import datetime
 from a1_pipeline import prepare_signed_report
 from a1_signing import SignatureValidationError
 
@@ -28,7 +29,8 @@ from a1_transaction import commit_signed_release
 
 def sign_and_release(*, pdf_builder, model, db_session, exam, signer_name,
                      storage_client, bucket, validation_context, authorized=False,
-                     finance_entry=None, occurrences=(), signing_pipeline=prepare_signed_report,
+                     finance_entry=None, occurrences=(), signing_at=None,
+                     signing_pipeline=prepare_signed_report,
                      transaction=commit_signed_release):
     if authorized is not True:
         raise PermissionError("Radiologista não autorizada a liberar este exame.")
@@ -43,6 +45,9 @@ def sign_and_release(*, pdf_builder, model, db_session, exam, signer_name,
         raise ValueError("Identificação do exame inválida.")
     if getattr(exam, "status", None) == "Liberado":
         raise ValueError("Exame já liberado; revisão exige fluxo próprio.")
+    signing_at = signing_at or datetime.utcnow()
+    if not isinstance(signing_at, datetime) or signing_at.tzinfo is not None:
+        raise ValueError("Data de assinatura deve ser datetime UTC sem timezone.")
     pdf_bytes = pdf_builder()
     validate_unsigned_pdf(pdf_bytes)
     artifact = signing_pipeline(
@@ -56,5 +61,5 @@ def sign_and_release(*, pdf_builder, model, db_session, exam, signer_name,
     return transaction(
         model=model, db_session=db_session, exam=exam,
         artifact=artifact, signer_name=signer_name,
-        finance_entry=finance_entry, occurrences=occurrences,
+        finance_entry=finance_entry, occurrences=occurrences, now=signing_at,
     )
