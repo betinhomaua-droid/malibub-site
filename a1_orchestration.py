@@ -6,6 +6,23 @@ signer authorization before invoking it.
 """
 from a1_pipeline import prepare_signed_report
 from a1_signing import SignatureValidationError
+
+
+def validate_unsigned_pdf(pdf_bytes):
+    """Reject truncated, encrypted, empty or malformed source documents."""
+    if not isinstance(pdf_bytes, bytes) or not pdf_bytes.startswith(b"%PDF-"):
+        raise SignatureValidationError("Gerador não produziu um PDF válido para assinatura.")
+    try:
+        import io
+        from pypdf import PdfReader
+        reader = PdfReader(io.BytesIO(pdf_bytes), strict=True)
+        if reader.is_encrypted or len(reader.pages) == 0:
+            raise ValueError("Documento vazio ou criptografado.")
+        for page in reader.pages:
+            _ = page.mediabox
+    except Exception:
+        raise SignatureValidationError("PDF de origem não passou na validação estrutural.") from None
+    return pdf_bytes
 from a1_transaction import commit_signed_release
 
 
@@ -27,8 +44,7 @@ def sign_and_release(*, pdf_builder, model, db_session, exam, signer_name,
     if getattr(exam, "status", None) == "Liberado":
         raise ValueError("Exame já liberado; revisão exige fluxo próprio.")
     pdf_bytes = pdf_builder()
-    if not isinstance(pdf_bytes, bytes) or not pdf_bytes.startswith(b"%PDF-"):
-        raise SignatureValidationError("Gerador não produziu um PDF válido para assinatura.")
+    validate_unsigned_pdf(pdf_bytes)
     artifact = signing_pipeline(
         pdf_bytes=pdf_bytes, exam_id=exam_id,
         storage_client=storage_client, bucket=bucket,
