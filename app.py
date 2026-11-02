@@ -668,11 +668,11 @@ def dashboard():
  if is_radiologist:
   pending_rows="".join(exam_row(e) for e in pending_exams)
   completed_rows="".join(exam_row(e) for e in completed_exams)
-  occurrences=[e for e in exams if e.status=="Revisão solicitada" and e.revision_requested_at]
-  occurrences.sort(key=lambda e:e.revision_requested_at,reverse=True)
+  occurrences=ExamOccurrence.query.filter_by(status="Aberta").order_by(ExamOccurrence.created_at.desc()).all()
+  exam_by_id={e.id:e for e in exams}
   occurrence_rows="".join(
-   f"<tr><td>{html_escape(e.protocol or '')}</td><td>{html_escape(e.patient or '')}</td><td>{html_escape(e.revision_requested_at.strftime('%d/%m/%Y %H:%M'))}</td><td>{html_escape((e.revision_reason or '')[:180])}</td><td><a class='btn gold' href='/report/{e.id}'>Ver exame</a></td></tr>"
-   for e in occurrences
+   f"<tr><td>{html_escape(item.protocol or '')}</td><td>{html_escape(exam_by_id[item.exam_id].patient or '')}</td><td>{html_escape(item.created_at.strftime('%d/%m/%Y %H:%M'))}</td><td>{html_escape((item.reason or '')[:180])}</td><td><a class='btn gold' href='/report/{item.exam_id}'>Ver exame</a></td></tr>"
+   for item in occurrences if item.exam_id in exam_by_id
   )
   body=f'''<h1>Painel da Radiologista</h1><p>Olá, {html_escape(session["name"])}.</p>
   <div class="card" style="border:2px solid #d69c27;background:#fffaf0"><h2>OCORRÊNCIAS — {len(occurrences)} em aberto</h2><p>Solicitações de revisão recebidas das clínicas.</p><a class="btn" href="/admin/ocorrencias">Histórico por mês</a><table><tr><th>Protocolo</th><th>Paciente</th><th>Solicitada em</th><th>Justificativa</th><th>Ação</th></tr>{occurrence_rows or '<tr><td colspan="5">Nenhuma ocorrência em aberto.</td></tr>'}</table></div>
@@ -1325,8 +1325,7 @@ def report(eid):
   if not existing_revenue:
    db.session.add(Finance(description=f"Laudo {e.protocol}",kind="Entrada",amount=amount))
   if e.status=="Liberado":
-   occurrence=ExamOccurrence.query.filter_by(exam_id=e.id,status="Aberta").order_by(ExamOccurrence.created_at.desc()).first()
-   if occurrence:
+   for occurrence in ExamOccurrence.query.filter_by(exam_id=e.id,status="Aberta").all():
     occurrence.status="Resolvida"
     occurrence.resolved_at=datetime.utcnow()
   db.session.commit(); return redirect("/dashboard")
