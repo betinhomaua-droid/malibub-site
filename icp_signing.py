@@ -22,6 +22,8 @@ def sign_pdf_bytes(pdf_bytes: bytes) -> bytes:
     from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
     from pyhanko.sign import signers
     from pyhanko.sign.fields import SigSeedSubFilter
+    from pyhanko.keys import load_certs_from_pemder
+    from pyhanko_certvalidator import ValidationContext
 
     path = os.environ.get("MALIBUB_A1_PFX_PATH", "")
     password = os.environ.get("MALIBUB_A1_PFX_PASSWORD")
@@ -34,6 +36,14 @@ def sign_pdf_bytes(pdf_bytes: bytes) -> bytes:
     )
     if signer is None:
         raise SigningConfigurationError("Não foi possível carregar o certificado A1")
+    roots_path = os.environ.get("MALIBUB_ICP_TRUST_ROOTS_PATH")
+    if not roots_path or not Path(roots_path).is_file():
+        raise SigningConfigurationError("Raízes ICP-Brasil confiáveis não configuradas")
+    context = ValidationContext(
+        trust_roots=list(load_certs_from_pemder([roots_path])),
+        allow_fetching=True,
+        revocation_mode="require",
+    )
     output = io.BytesIO()
     signers.sign_pdf(
         IncrementalPdfFileWriter(io.BytesIO(pdf_bytes)),
@@ -41,6 +51,8 @@ def sign_pdf_bytes(pdf_bytes: bytes) -> bytes:
             field_name="AssinaturaDigital",
             md_algorithm="sha256",
             subfilter=SigSeedSubFilter.PADES,
+            validation_context=context,
+            embed_validation_info=True,
         ),
         signer=signer,
         output=output,
