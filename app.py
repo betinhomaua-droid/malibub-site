@@ -1455,6 +1455,30 @@ class LegacyReportPdfError(Exception):
   self.http_status=http_status
 
 
+def build_a1_final_pdf_bytes(exam, *, report_text, report_html, signer_name, signing_at):
+ """Build the exact proposed final report without changing SQLAlchemy Exam state.
+
+ Caller must persist these same sanitized fields in the signed-release transaction.
+ This is a preparation boundary, not an enabled clinical release route.
+ """
+ from types import SimpleNamespace
+ if not isinstance(report_text,str) or not report_text.strip():
+  raise ValueError("Texto final do laudo obrigatório.")
+ if not isinstance(report_html,str):
+  raise ValueError("HTML final do laudo inválido.")
+ if not isinstance(signer_name,str) or not signer_name.strip():
+  raise ValueError("Radiologista responsável não identificada.")
+ if not isinstance(signing_at,datetime) or signing_at.tzinfo is not None:
+  raise ValueError("Data de assinatura UTC inválida.")
+ fields=("id","clinic_id","protocol","patient","birth","exam_date","observation",
+         "dentist","sex","exam_type","status","created_at","signed_by",
+         "signed_at","released_at")
+ snapshot=SimpleNamespace(**{name:getattr(exam,name,None) for name in fields})
+ snapshot.report=report_text
+ snapshot.report_html=report_html
+ return build_legacy_report_pdf_bytes(snapshot,signer_name=signer_name.strip(),
+                                      signing_at=signing_at)
+
 def build_legacy_report_pdf_bytes(e, *, signer_name=None, signing_at=None):
  """Generate unsigned PDF bytes with optional immutable signing metadata."""
  display_signer=signer_name if signer_name is not None else (e.signed_by or "Dra. Marina")
