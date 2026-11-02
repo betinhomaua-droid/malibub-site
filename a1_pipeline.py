@@ -19,8 +19,12 @@ def prepare_signed_report(*, pdf_bytes, exam_id, storage_client, bucket,
     """Prepare an immutable signed artifact without changing exam status."""
     if os.getenv("MALIBUB_A1_SIGNING_ENABLED", "").lower() != "true":
         raise SignatureConfigurationError("Assinatura A1 desativada.")
-    if not authorized:
+    if authorized is not True:
         raise PermissionError("Radiologista não autorizada a assinar este laudo.")
+    if not isinstance(exam_id, int) or isinstance(exam_id, bool) or exam_id <= 0:
+        raise ValueError("Identificação do exame inválida.")
+    if not isinstance(pdf_bytes, bytes) or not pdf_bytes.startswith(b"%PDF-"):
+        raise SignatureValidationError("Documento PDF de origem inválido.")
     if validation_context is None:
         raise SignatureConfigurationError("Confiança ICP-Brasil não configurada.")
     if storage_client is None or not bucket:
