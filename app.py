@@ -1478,8 +1478,10 @@ def result_pdf(eid):
   except Exception as exc:
    app.logger.error("signed_report_delivery_failed exam_id=%s error_type=%s",e.id,type(exc).__name__)
    return Response("Documento assinado indisponível. Contate o suporte.",status=503,mimetype="text/plain")
-  return send_file(io.BytesIO(signed_bytes),mimetype="application/pdf",
-                   as_attachment=False,download_name=f"laudo-{e.protocol or e.id}-assinado.pdf")
+  response=send_file(io.BytesIO(signed_bytes),mimetype="application/pdf",
+                     as_attachment=False,download_name=f"laudo-{e.protocol or e.id}-assinado.pdf")
+  response.headers["Cache-Control"]="private, no-store"
+  return response
  if os.getenv("MALIBUB_A1_SIGNING_ENABLED","").lower()=="true":
   app.logger.error("signed_report_missing_for_release exam_id=%s",e.id)
   return Response("Documento assinado não encontrado. Contate o suporte.",status=503,mimetype="text/plain")
