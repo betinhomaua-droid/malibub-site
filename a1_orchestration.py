@@ -46,6 +46,8 @@ def sign_and_release(*, pdf_builder, model, db_session, exam, signer_name,
         raise ValueError("Identificação do exame inválida.")
     if getattr(exam, "status", None) == "Liberado":
         raise ValueError("Exame já liberado; revisão exige fluxo próprio.")
+    if getattr(exam, "signed_at", None) is not None or getattr(exam, "released_at", None) is not None:
+        raise ValueError("Exame com histórico de liberação exige fluxo de revisão A1.")
     if signing_at is None:
         signing_at = datetime.utcnow()
     if not isinstance(signing_at, datetime) or signing_at.tzinfo is not None:
