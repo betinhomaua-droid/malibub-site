@@ -1455,6 +1455,17 @@ class LegacyReportPdfError(Exception):
   self.http_status=http_status
 
 
+def prepare_a1_final_report(exam, *, report_text, report_html, signer_name, signing_at):
+ """Return the exact PDF and sanitized content intended for the SQL transaction.
+
+ This preparation step performs no signing, upload, clinical status change or commit.
+ """
+ cleaned_html=clean_report_html(report_html)
+ pdf_bytes=build_a1_final_pdf_bytes(
+  exam,report_text=report_text,report_html=cleaned_html,
+  signer_name=signer_name,signing_at=signing_at)
+ return pdf_bytes, cleaned_html
+
 def build_a1_final_pdf_bytes(exam, *, report_text, report_html, signer_name, signing_at):
  """Build the exact proposed final report without changing SQLAlchemy Exam state.
 
