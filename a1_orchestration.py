@@ -14,6 +14,10 @@ def sign_and_release(*, pdf_builder, model, db_session, exam, signer_name,
                      transaction=commit_signed_release):
     if authorized is not True:
         raise PermissionError("Radiologista não autorizada a liberar este exame.")
+    if not isinstance(signer_name, str) or not signer_name.strip():
+        raise ValueError("Responsável pela assinatura não identificado.")
+    if storage_client is None or not bucket or validation_context is None:
+        raise ValueError("Armazenamento ou validação ICP-Brasil indisponível.")
     if not callable(pdf_builder):
         raise TypeError("Gerador de PDF final indisponível.")
     exam_id = getattr(exam, "id", None)
