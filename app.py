@@ -657,7 +657,14 @@ def dashboard():
  if is_radiologist:
   pending_rows="".join(exam_row(e) for e in pending_exams)
   completed_rows="".join(exam_row(e) for e in completed_exams)
+  occurrences=[e for e in exams if e.status=="Revisão solicitada" and e.revision_requested_at]
+  occurrences.sort(key=lambda e:e.revision_requested_at,reverse=True)
+  occurrence_rows="".join(
+   f"<tr><td>{html_escape(e.protocol or '')}</td><td>{html_escape(e.patient or '')}</td><td>{html_escape(e.revision_requested_at.strftime('%d/%m/%Y %H:%M'))}</td><td>{html_escape((e.revision_reason or '')[:180])}</td><td><a class='btn gold' href='/report/{e.id}'>Ver exame</a></td></tr>"
+   for e in occurrences
+  )
   body=f'''<h1>Painel da Radiologista</h1><p>Olá, {html_escape(session["name"])}.</p>
+  <div class="card" style="border:2px solid #d69c27;background:#fffaf0"><h2>OCORRÊNCIAS — {len(occurrences)} em aberto</h2><p>Solicitações de revisão recebidas das clínicas.</p><a class="btn" href="/admin/ocorrencias">Histórico por mês</a><table><tr><th>Protocolo</th><th>Paciente</th><th>Solicitada em</th><th>Justificativa</th><th>Ação</th></tr>{occurrence_rows or '<tr><td colspan="5">Nenhuma ocorrência em aberto.</td></tr>'}</table></div>
   <div class="card"><h2>Exames a fazer</h2><p style="color:#60747d">Ordenados pela prioridade de entrega: os prazos mais próximos aparecem primeiro.</p><table>{headers}{pending_rows or f'<tr><td colspan={colspan}>Nenhum exame pendente.</td></tr>'}</table></div>
   <div class="card" style="margin-top:24px"><h2>Exames já realizados</h2><table>{headers}{completed_rows or f'<tr><td colspan={colspan}>Nenhum exame realizado.</td></tr>'}</table></div>'''
  else:
@@ -1222,6 +1229,26 @@ def rich_report_blocks(raw_html, plain):
  if not p.blocks:
   p.blocks=[(esc(line) if line else "&nbsp;","left") for line in (plain or "").splitlines()]
  return p.blocks or [("&nbsp;","left")]
+
+@app.get("/admin/ocorrencias")
+def admin_occurrences():
+ if session.get("role")!="Radiologista": return redirect("/")
+ from collections import defaultdict
+ # The current MALIBUB schema uses the radiologist role for administration.
+ # Includes resolved revision requests while revision_requested_at is retained.
+ entries=Exam.query.filter(Exam.revision_requested_at.isnot(None)).order_by(Exam.revision_requested_at.desc()).all()
+ grouped=defaultdict(list)
+ for e in entries:
+  grouped[e.revision_requested_at.strftime("%Y-%m")].append(e)
+ sections=[]
+ for month in sorted(grouped,reverse=True):
+  year,mm=month.split("-")
+  rows="".join(
+   f"<tr><td>{html_escape(e.protocol or '')}</td><td>{html_escape(e.patient or '')}</td><td>{html_escape(e.revision_requested_at.strftime('%d/%m/%Y %H:%M'))}</td><td>{html_escape(e.revision_reason or '')}</td><td>{html_escape(e.status or '')}</td><td><a class='btn' href='/report/{e.id}'>Ver exame</a></td></tr>"
+   for e in grouped[month]
+  )
+  sections.append(f"<details class='card' {'open' if month==max(grouped) else ''}><summary><b>{mm}/{year} — {len(grouped[month])} ocorrência(s)</b></summary><table><tr><th>Protocolo</th><th>Paciente</th><th>Data</th><th>Justificativa</th><th>Status</th><th>Ação</th></tr>{rows}</table></details>")
+ return page("<h1>Administração — Ocorrências por mês</h1><p>Histórico das solicitações de revisão registradas.</p><a class='btn' href='/dashboard'>Voltar ao painel</a>"+("".join(sections) if sections else "<div class='card'>Nenhuma ocorrência registrada.</div>"))
 
 @app.post("/exam/<int:eid>/revisao")
 def request_exam_revision(eid):
