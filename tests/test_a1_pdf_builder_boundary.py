@@ -95,3 +95,26 @@ class PdfBuilderBoundaryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SignedVersionRouteBoundaryTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tree = ast.parse(SOURCE.read_text(encoding="utf-8"))
+        cls.functions = {n.name: n for n in cls.tree.body if isinstance(n, ast.FunctionDef)}
+
+    def test_historical_route_requires_authenticated_clinic_ownership(self):
+        route = self.functions["result_signed_version_pdf"]
+        source = ast.get_source_segment(SOURCE.read_text(encoding="utf-8"), route)
+        self.assertIn('session.get("uid")', source)
+        self.assertIn('session.get("role")', source)
+        self.assertIn('e.clinic_id!=session.get("uid")', source)
+        self.assertIn('e.status!="Liberado"', source)
+
+    def test_historical_route_uses_database_version_not_user_storage_key(self):
+        route = self.functions["result_signed_version_pdf"]
+        source = ast.get_source_segment(SOURCE.read_text(encoding="utf-8"), route)
+        self.assertIn("read_signed_version(", source)
+        self.assertIn("exam_id=e.id,version=version", source)
+        self.assertIn("Cache-Control", source)
+        self.assertNotIn("request.args.get(\"key\")", source)
