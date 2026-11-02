@@ -66,6 +66,15 @@ class PdfBuilderBoundaryTests(unittest.TestCase):
         self.assertIn("signing_at=signing_at", source)
         self.assertIn("Data de assinatura UTC inválida", source)
 
+    def test_orchestration_builder_closes_over_final_text_and_sanitized_html(self):
+        source = ast.get_source_segment(SOURCE.read_text(encoding="utf-8"),
+                                        self.functions["make_a1_report_builder"])
+        self.assertIn("final_text=report_text.strip()", source)
+        self.assertIn("final_html=clean_report_html(report_html)", source)
+        self.assertIn("def build(*, signer_name, signing_at):", source)
+        self.assertIn("prepare_a1_final_report(", source)
+        self.assertNotIn("db.session", source)
+
     def test_temporary_model_cleanup_runs_in_finally(self):
         builder = self.functions["build_legacy_report_pdf_bytes"]
         finally_blocks = [n.finalbody for n in ast.walk(builder) if isinstance(n, ast.Try) and n.finalbody]
