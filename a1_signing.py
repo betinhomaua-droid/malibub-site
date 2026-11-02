@@ -29,11 +29,26 @@ def sign_pdf_pades(pdf_bytes: bytes, pfx_bytes: bytes, password: str) -> bytes:
     from pyhanko.sign.fields import SigFieldSpec, SigSeedSubFilter
     from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
     try:
-        signer = signers.SimpleSigner.load_pkcs12(
-            BytesIO(pfx_bytes), passphrase=password.encode("utf-8")
+        from cryptography.hazmat.primitives.serialization import (
+            pkcs12, Encoding, PrivateFormat, NoEncryption
         )
-        if signer is None:
-            raise SignatureConfigurationError("Não foi possível carregar o certificado A1.")
+        from asn1crypto import x509 as asn1_x509, keys as asn1_keys
+        from pyhanko_certvalidator.registry import SimpleCertificateStore
+        private_key, cert, chain = pkcs12.load_key_and_certificates(
+            pfx_bytes, password.encode("utf-8")
+        )
+        if private_key is None or cert is None:
+            raise SignatureConfigurationError("O arquivo A1 não contém chave e certificado.")
+        store = SimpleCertificateStore()
+        for issuer_cert in chain or []:
+            store.register(asn1_x509.Certificate.load(issuer_cert.public_bytes(Encoding.DER)))
+        signer = signers.SimpleSigner(
+            signing_cert=asn1_x509.Certificate.load(cert.public_bytes(Encoding.DER)),
+            signing_key=asn1_keys.PrivateKeyInfo.load(private_key.private_bytes(
+                Encoding.DER, PrivateFormat.PKCS8, NoEncryption()
+            )),
+            cert_registry=store,
+        )
         meta = signers.PdfSignatureMetadata(
             field_name="AssinaturaDigital",
             md_algorithm="sha256",
