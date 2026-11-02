@@ -1455,6 +1455,20 @@ class LegacyReportPdfError(Exception):
   self.http_status=http_status
 
 
+def make_a1_report_builder(exam, *, report_text, report_html):
+ """Create the immutable report preparation callback for A1 orchestration."""
+ if not isinstance(report_text,str) or not report_text.strip():
+  raise ValueError("Texto final do laudo obrigatório.")
+ if not isinstance(report_html,str):
+  raise ValueError("HTML final do laudo inválido.")
+ final_text=report_text.strip()
+ final_html=clean_report_html(report_html)
+ def build(*, signer_name, signing_at):
+  return prepare_a1_final_report(
+   exam,report_text=final_text,report_html=final_html,
+   signer_name=signer_name,signing_at=signing_at)
+ return build
+
 def prepare_a1_final_report(exam, *, report_text, report_html, signer_name, signing_at):
  """Return the exact PDF and sanitized content intended for the SQL transaction.
 
