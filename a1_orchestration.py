@@ -52,12 +52,14 @@ def sign_and_release(*, pdf_builder, model, db_session, exam, signer_name,
         raise ValueError("Data de assinatura deve ser datetime UTC sem timezone.")
     built = pdf_builder(signer_name=signer_name.strip(), signing_at=signing_at)
     if isinstance(built, tuple):
-        if len(built) != 2 or not isinstance(built[1], str):
+        if len(built) != 3 or not isinstance(built[1], str) or not built[1].strip() or not isinstance(built[2], str):
             raise ValueError("Gerador A1 retornou conteúdo inconsistente.")
-        pdf_bytes, prepared_html = built
+        pdf_bytes, prepared_text, prepared_html = built
+        if report_text is not None and report_text != prepared_text:
+            raise ValueError("Texto final diverge do conteúdo usado no PDF.")
         if report_html is not None and report_html != prepared_html:
             raise ValueError("HTML final diverge do conteúdo usado no PDF.")
-        report_html = prepared_html
+        report_text, report_html = prepared_text, prepared_html
     else:
         pdf_bytes = built
     validate_unsigned_pdf(pdf_bytes)
