@@ -51,6 +51,7 @@ jobs:
           python - <<'PY'
           import io
           import os
+          import base64
           import tempfile
           from datetime import datetime, timedelta, timezone
           from pathlib import Path
@@ -79,5 +80,10 @@ jobs:
               c.save()
               signed=sign_pdf_bytes(buf.getvalue())
               assert len(PdfFileReader(io.BytesIO(signed)).embedded_signatures)==1
+              encoded=Path(d)/'test.pfx.b64'
+              encoded.write_bytes(base64.b64encode(pfx.read_bytes()))
+              os.environ['MALIBUB_A1_PFX_PATH']=str(encoded)
+              signed_b64=sign_pdf_bytes(buf.getvalue())
+              assert len(PdfFileReader(io.BytesIO(signed_b64)).embedded_signatures)==1
               print("Assinatura PAdES de teste validada; sem valor ICP-Brasil")
           PY
