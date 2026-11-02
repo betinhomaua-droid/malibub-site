@@ -28,6 +28,7 @@ def sign_pdf_pades(pdf_bytes: bytes, pfx_bytes: bytes, password: str) -> bytes:
     from pyhanko.sign import signers
     from pyhanko.sign.fields import SigFieldSpec, SigSeedSubFilter
     from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
+    from pyhanko.stamp import TextStampStyle
     try:
         from cryptography.hazmat.primitives.serialization import (
             pkcs12, Encoding, PrivateFormat, NoEncryption
@@ -57,7 +58,14 @@ def sign_pdf_pades(pdf_bytes: bytes, pfx_bytes: bytes, password: str) -> bytes:
         pdf_signer = signers.PdfSigner(
             signature_meta=meta,
             signer=signer,
-            new_field_spec=SigFieldSpec(sig_field_name="AssinaturaDigital"),
+            new_field_spec=SigFieldSpec(
+                sig_field_name="AssinaturaDigital",
+                on_page=-1,
+                box=(42, 32, 290, 100),
+            ),
+            stamp_style=TextStampStyle(
+                stamp_text="Assinado digitalmente por %(signer)s\\nData/hora: %(ts)s",
+            ),
         )
         out = BytesIO()
         pdf_signer.sign_pdf(IncrementalPdfFileWriter(BytesIO(pdf_bytes)), output=out)
