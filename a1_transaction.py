@@ -57,3 +57,47 @@ def commit_signed_release(*, model, db_session, exam, artifact, signer_name,
     except Exception:
         db_session.rollback()
         raise
+
+
+def commit_signed_revision(*, model, db_session, exam, artifact, signer_name,
+                           report_text, report_html, now=None):
+    """Atomically append a signed revision; never overwrite the original artifact.
+
+    Caller must verify authorization and the signed artifact before invoking.
+    Not connected to a clinical route.
+    """
+    if not isinstance(signer_name, str) or not signer_name.strip():
+        raise ValueError("Responsável pela revisão não identificado.")
+    if not isinstance(report_text, str) or not report_text.strip():
+        raise ValueError("Texto revisado obrigatório.")
+    if not isinstance(report_html, str):
+        raise ValueError("HTML revisado inválido.")
+    if getattr(exam, "status", None) == "Liberado":
+        raise ValueError("Revisão deve estar solicitada antes da nova liberação.")
+    if not isinstance(getattr(exam, "revision_reason", None), str) or not exam.revision_reason.strip():
+        raise ValueError("Revisão exige justificativa registrada.")
+    moment = datetime.utcnow() if now is None else now
+    if not isinstance(moment, datetime) or moment.tzinfo is not None:
+        raise ValueError("Data de revisão UTC inválida.")
+    exam_id = getattr(exam, "id", None)
+    previous = (db_session.query(model).filter_by(exam_id=exam_id)
+                .order_by(model.version.desc()).first())
+    if previous is None:
+        raise ValueError("Revisão exige versão assinada anterior.")
+    try:
+        row = stage_signed_version(
+            model=model, db_session=db_session, exam_id=exam_id,
+            artifact=artifact, revision=True)
+        exam.report = report_text
+        exam.report_html = report_html
+        exam.status = "Liberado"
+        exam.released_at = moment
+        exam.signed_at = moment
+        exam.signed_by = signer_name.strip()
+        exam.revision_reason = None
+        exam.revision_requested_at = None
+        db_session.commit()
+        return row
+    except Exception:
+        db_session.rollback()
+        raise
