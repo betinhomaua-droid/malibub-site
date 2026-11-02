@@ -5,7 +5,6 @@ PKCS#12 bytes or passwords. Signed output must be stored immutably and served
 verbatim; do not regenerate it on download.
 """
 from io import BytesIO
-from datetime import datetime, timezone
 
 
 class SignatureConfigurationError(RuntimeError):
@@ -27,18 +26,18 @@ def sign_pdf_pades(pdf_bytes: bytes, pfx_bytes: bytes, password: str) -> bytes:
     if not pfx_bytes or not password:
         raise SignatureConfigurationError("Certificado A1 ou senha indisponível.")
     from pyhanko.sign import signers
-    from pyhanko.sign.fields import SigFieldSpec
+    from pyhanko.sign.fields import SigFieldSpec, SigSeedSubFilter
     from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
     try:
         signer = signers.SimpleSigner.load_pkcs12(
-            pfx_bytes, passphrase=password.encode("utf-8")
+            BytesIO(pfx_bytes), passphrase=password.encode("utf-8")
         )
         if signer is None:
             raise SignatureConfigurationError("Não foi possível carregar o certificado A1.")
         meta = signers.PdfSignatureMetadata(
             field_name="AssinaturaDigital",
             md_algorithm="sha256",
-            subfilter=signers.PdfSignatureMetadata.__dataclass_fields__["subfilter"].default,
+            subfilter=SigSeedSubFilter.PADES,
         )
         pdf_signer = signers.PdfSigner(
             signature_meta=meta,
@@ -61,7 +60,6 @@ def verify_embedded_signature(pdf_bytes: bytes) -> bool:
     """Basic structural verification, not an ICP-Brasil trust/revocation verdict."""
     from pyhanko.pdf_utils.reader import PdfFileReader
     from pyhanko.sign.validation import validate_pdf_signature
-    from pyhanko.sign.validation import EmbeddedPdfSignature
     try:
         reader = PdfFileReader(BytesIO(pdf_bytes))
         fields = list(reader.embedded_signatures)
