@@ -40,7 +40,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install signing and PDF dependencies
-        run: python -m pip install 'pyHanko>=0.25,<0.34' 'cryptography>=42,<47' 'reportlab>=4.2,<5' 'Flask-SQLAlchemy>=3.1,<4'
+        run: python -m pip install 'pyHanko>=0.25,<0.34' 'cryptography>=42,<47' 'reportlab>=4.2,<5' 'Flask-SQLAlchemy>=3.1,<4' 'pypdf>=4,<7'
       - name: Compile application and signing modules
         run: python -m compileall -q app.py a1_*.py
       - name: Execute real A1 test-signature round trip
