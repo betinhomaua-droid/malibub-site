@@ -1455,8 +1455,10 @@ class LegacyReportPdfError(Exception):
   self.http_status=http_status
 
 
-def build_legacy_report_pdf_bytes(e):
- """Generate final unsigned PDF bytes without invoking the HTTP download route."""
+def build_legacy_report_pdf_bytes(e, *, signer_name=None, signing_at=None):
+ """Generate unsigned PDF bytes with optional immutable signing metadata."""
+ display_signer=signer_name if signer_name is not None else (e.signed_by or "Dra. Marina")
+ display_signed_at=signing_at if signing_at is not None else (e.signed_at or e.released_at)
  from reportlab.lib.pagesizes import A4
  from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
  from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
@@ -1515,7 +1517,7 @@ def build_legacy_report_pdf_bytes(e):
     cv.setFillColor(colors.HexColor("#52666E")); cv.setFont("Helvetica",7.2)
     cv.drawCentredString(width/2,14*mm,"Assinado eletronicamente por Marina Bub - CRO-SP 113752")
     cv.setFont("Helvetica",6.8)
-    cv.drawCentredString(width/2,9*mm,f"Data: {brasilia_stamp(e.signed_at or e.released_at)} - Protocolo {e.protocol or ''}")
+    cv.drawCentredString(width/2,9*mm,f"Data: {brasilia_stamp(display_signed_at)} - Protocolo {e.protocol or ''}")
     cv.save(); overlay.seek(0); page.merge_page(PdfReader(overlay).pages[0])
    writer.add_page(page)
   out=io.BytesIO(); writer.write(out); out.seek(0); return out
@@ -1526,7 +1528,7 @@ def build_legacy_report_pdf_bytes(e):
   from reportlab.lib.units import mm
   from reportlab.lib import colors
   from xml.sax.saxutils import escape
-  signed=brasilia_stamp(e.signed_at or e.released_at)
+  signed=brasilia_stamp(display_signed_at)
   W,H=A4
   from reportlab.platypus import Flowable
   class TMJInlineSignature(Flowable):
@@ -1627,7 +1629,7 @@ def build_legacy_report_pdf_bytes(e):
    for markup,alignment in rich_report_blocks(e.report_html,e.report):
     sty=ParagraphStyle("rich_body",parent=body,alignment={"left":0,"center":1,"right":2,"justify":4}.get(alignment,0))
     story.append(Paragraph(markup,sty))
-  signer=escape(e.signed_by or "Dra. Marina"); signed=brasilia_stamp(e.signed_at or e.released_at)
+  signer=escape(e.signed_by or "Dra. Marina"); signed=brasilia_stamp(display_signed_at)
   if not has_pdf_model:
    story.append(KeepTogether([Spacer(1,5*mm),ReportSignature()]))
    doc.build(story)
