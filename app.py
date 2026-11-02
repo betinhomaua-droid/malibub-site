@@ -1256,7 +1256,7 @@ def admin_occurrences():
  for month in sorted(grouped,reverse=True):
   year,mm=month.split("-")
   rows="".join(
-   f"<tr><td>{html_escape(e.protocol or '')}</td><td>{html_escape(patient_by_exam.get(e.exam_id,"") or '')}</td><td>{html_escape(e.created_at.strftime('%d/%m/%Y %H:%M'))}</td><td>{html_escape(e.reason or '')}</td><td>{html_escape(e.status or '')}</td><td><a class='btn' href='/report/{e.exam_id}'>Ver exame</a></td></tr>"
+   f"<tr><td>{html_escape(e.protocol or '')}</td><td>{html_escape(patient_by_exam.get(e.exam_id, '') or '')}</td><td>{html_escape(e.created_at.strftime('%d/%m/%Y %H:%M'))}</td><td>{html_escape(e.reason or '')}</td><td>{html_escape(e.status or '')}</td><td><a class='btn' href='/report/{e.exam_id}'>Ver exame</a></td></tr>"
    for e in grouped[month]
   )
   sections.append(f"<details class='card' {'open' if month==max(grouped) else ''}><summary><b>{mm}/{year} — {len(grouped[month])} ocorrência(s)</b></summary><table><tr><th>Protocolo</th><th>Paciente</th><th>Data</th><th>Justificativa</th><th>Status</th><th>Ação</th></tr>{rows}</table></details>")
@@ -1324,7 +1324,7 @@ def report(eid):
    return redirect(url_for("report",eid=e.id))
   if not existing_revenue:
    db.session.add(Finance(description=f"Laudo {e.protocol}",kind="Entrada",amount=amount))
-  if e.revision_requested_at:
+  if e.status=="Liberado":
    occurrence=ExamOccurrence.query.filter_by(exam_id=e.id,status="Aberta").order_by(ExamOccurrence.created_at.desc()).first()
    if occurrence:
     occurrence.status="Resolvida"
