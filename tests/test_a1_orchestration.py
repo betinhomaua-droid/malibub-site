@@ -98,7 +98,7 @@ class OrchestrationTests(unittest.TestCase):
         prepared = "<p>Texto higienizado</p>"
         def builder(**metadata):
             self.events.append("pdf")
-            return sample_pdf(), prepared
+            return sample_pdf(), "Laudo preparado", prepared
         def transaction(**kwargs):
             self.events.append("commit")
             self.assertEqual(kwargs["report_html"], prepared)
@@ -109,7 +109,7 @@ class OrchestrationTests(unittest.TestCase):
     def test_html_mismatch_prevents_signing_and_release(self):
         def builder(**metadata):
             self.events.append("pdf")
-            return sample_pdf(), "<p>Final</p>"
+            return sample_pdf(), "Laudo preparado", "<p>Final</p>"
         with self.assertRaises(ValueError):
             self.run_flow(pdf_builder=builder, report_html="<p>Diferente</p>")
         self.assertEqual(self.events, ["pdf"])
@@ -118,6 +118,26 @@ class OrchestrationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.run_flow(pdf_builder=lambda **metadata: (sample_pdf(), None))
         self.assertEqual(self.events, [])
+
+    def test_prepared_text_is_identical_to_committed_text(self):
+        def builder(**metadata):
+            self.events.append("pdf")
+            return sample_pdf(), "Texto final", "<p>Texto final</p>"
+        def transaction(**kwargs):
+            self.events.append("commit")
+            self.assertEqual(kwargs["report_text"], "Texto final")
+            self.assertEqual(kwargs["report_html"], "<p>Texto final</p>")
+            return "released"
+        self.assertEqual(self.run_flow(pdf_builder=builder, transaction=transaction), "released")
+        self.assertEqual(self.events, ["pdf", "sign", "commit"])
+
+    def test_report_text_mismatch_blocks_signature(self):
+        def builder(**metadata):
+            self.events.append("pdf")
+            return sample_pdf(), "Texto final", "<p>Texto final</p>"
+        with self.assertRaises(ValueError):
+            self.run_flow(pdf_builder=builder, report_text="Texto diferente")
+        self.assertEqual(self.events, ["pdf"])
 
     def test_signing_precedes_release(self):
         self.assertEqual(self.run_flow(), "released")
