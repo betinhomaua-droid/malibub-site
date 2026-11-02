@@ -11,7 +11,7 @@ def sample_pdf():
     writer.add_blank_page(width=595, height=842)
     writer.write(out)
     return out.getvalue()
-from a1_orchestration import sign_and_release
+from a1_orchestration import sign_and_release, sign_and_release_revision
 
 
 class OrchestrationTests(unittest.TestCase):
@@ -253,3 +253,61 @@ class OrchestrationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RevisionOrchestrationTests(unittest.TestCase):
+    def setUp(self):
+        self.events = []
+        self.exam = SimpleNamespace(id=7, status="Em revisão",
+                                    revision_reason="Correção solicitada")
+        self.previous = SimpleNamespace(id=12, version=1)
+
+    def run_revision(self, **overrides):
+        class Query:
+            def filter_by(q, **kwargs): return q
+            def order_by(q, *args): return q
+            def first(q): return self.previous
+        class Session:
+            def query(s, model): return Query()
+        def builder(**kwargs):
+            self.events.append("pdf")
+            return sample_pdf(), "Texto revisado", "<p>Texto revisado</p>"
+        def pipeline(**kwargs):
+            self.events.append("sign")
+            return {"key": "signed-reports/7/revision.pdf", "sha256": "b"*64, "size": 123}
+        def transaction(**kwargs):
+            self.events.append("commit")
+            self.assertEqual(kwargs["report_text"], "Texto revisado")
+            return "released"
+        params=dict(pdf_builder=builder, model=SimpleNamespace(version=SimpleNamespace(desc=lambda: None)),
+                    db_session=Session(), exam=self.exam, signer_name="Dra. Marina",
+                    storage_client=object(), bucket="private", validation_context=object(),
+                    authorized=True, signing_pipeline=pipeline, transaction=transaction)
+        params.update(overrides)
+        return sign_and_release_revision(**params)
+
+    def test_revision_signs_then_commits(self):
+        self.assertEqual(self.run_revision(), "released")
+        self.assertEqual(self.events, ["pdf", "sign", "commit"])
+
+    def test_revision_requires_prior_version_before_pdf(self):
+        self.previous = None
+        with self.assertRaisesRegex(ValueError, "versão assinada anterior"):
+            self.run_revision()
+        self.assertEqual(self.events, [])
+
+    def test_revision_requires_reason_before_pdf(self):
+        self.exam.revision_reason = ""
+        with self.assertRaisesRegex(ValueError, "justificativa"):
+            self.run_revision()
+        self.assertEqual(self.events, [])
+
+    def test_revision_requires_authorization_before_pdf(self):
+        with self.assertRaises(PermissionError):
+            self.run_revision(authorized=False)
+        self.assertEqual(self.events, [])
+
+    def test_revision_rejects_unbound_pdf_before_signing(self):
+        with self.assertRaisesRegex(ValueError, "vinculados"):
+            self.run_revision(pdf_builder=lambda **kwargs: sample_pdf())
+        self.assertEqual(self.events, [])
