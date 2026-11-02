@@ -276,6 +276,17 @@ class ExamFile(db.Model):
  id=db.Column(db.Integer,primary_key=True); exam_id=db.Column(db.Integer); name=db.Column(db.String(255)); stored=db.Column(db.String(255)); kind=db.Column(db.String(30),default="entrada"); uploaded_by=db.Column(db.String(100)); scan_status=db.Column(db.String(20),default="PENDENTE"); scan_detail=db.Column(db.String(255))
 class Finance(db.Model):
  id=db.Column(db.Integer,primary_key=True); date=db.Column(db.Date,default=datetime.utcnow().date); description=db.Column(db.String(200)); kind=db.Column(db.String(20)); amount=db.Column(db.Float,default=0)
+class ExamOccurrence(db.Model):
+ id=db.Column(db.Integer,primary_key=True)
+ exam_id=db.Column(db.Integer,index=True,nullable=False)
+ clinic_id=db.Column(db.Integer,index=True,nullable=False)
+ protocol=db.Column(db.String(30),nullable=False)
+ kind=db.Column(db.String(40),nullable=False,default="revisao")
+ reason=db.Column(db.Text,nullable=False)
+ created_at=db.Column(db.DateTime,nullable=False,default=datetime.utcnow,index=True)
+ status=db.Column(db.String(30),nullable=False,default="Aberta")
+ resolved_at=db.Column(db.DateTime)
+
 class ClinicPrice(db.Model):
  id=db.Column(db.Integer,primary_key=True); clinic_id=db.Column(db.Integer,index=True,nullable=False); exam_type=db.Column(db.String(100),nullable=False); amount=db.Column(db.Float,nullable=False); active=db.Column(db.Boolean,default=True); __table_args__=(db.UniqueConstraint("clinic_id","exam_type",name="uq_clinic_exam_price"),)
 
@@ -1236,15 +1247,16 @@ def admin_occurrences():
  from collections import defaultdict
  # The current MALIBUB schema uses the radiologist role for administration.
  # Includes resolved revision requests while revision_requested_at is retained.
- entries=Exam.query.filter(Exam.revision_requested_at.isnot(None)).order_by(Exam.revision_requested_at.desc()).all()
+ entries=ExamOccurrence.query.order_by(ExamOccurrence.created_at.desc()).all()
  grouped=defaultdict(list)
- for e in entries:
-  grouped[e.revision_requested_at.strftime("%Y-%m")].append(e)
+ for item in entries:
+  grouped[item.created_at.strftime("%Y-%m")].append(item)
+ patient_by_exam={x.id:x.patient for x in Exam.query.filter(Exam.id.in_([e.exam_id for e in entries])).all()} if entries else {}
  sections=[]
  for month in sorted(grouped,reverse=True):
   year,mm=month.split("-")
   rows="".join(
-   f"<tr><td>{html_escape(e.protocol or '')}</td><td>{html_escape(e.patient or '')}</td><td>{html_escape(e.revision_requested_at.strftime('%d/%m/%Y %H:%M'))}</td><td>{html_escape(e.revision_reason or '')}</td><td>{html_escape(e.status or '')}</td><td><a class='btn' href='/report/{e.id}'>Ver exame</a></td></tr>"
+   f"<tr><td>{html_escape(e.protocol or '')}</td><td>{html_escape(patient_by_exam.get(e.exam_id,"") or '')}</td><td>{html_escape(e.created_at.strftime('%d/%m/%Y %H:%M'))}</td><td>{html_escape(e.reason or '')}</td><td>{html_escape(e.status or '')}</td><td><a class='btn' href='/report/{e.exam_id}'>Ver exame</a></td></tr>"
    for e in grouped[month]
   )
   sections.append(f"<details class='card' {'open' if month==max(grouped) else ''}><summary><b>{mm}/{year} — {len(grouped[month])} ocorrência(s)</b></summary><table><tr><th>Protocolo</th><th>Paciente</th><th>Data</th><th>Justificativa</th><th>Status</th><th>Ação</th></tr>{rows}</table></details>")
@@ -1261,8 +1273,10 @@ def request_exam_revision(eid):
  if len(reason)<10 or len(reason)>2000:
   flash("Descreva a correção necessária entre 10 e 2000 caracteres.")
   return redirect("/dashboard")
+ now=datetime.utcnow()
+ db.session.add(ExamOccurrence(exam_id=e.id,clinic_id=e.clinic_id,protocol=e.protocol or "",kind="revisao",reason=reason,created_at=now,status="Aberta"))
  e.revision_reason=reason
- e.revision_requested_at=datetime.utcnow()
+ e.revision_requested_at=now
  e.status="Revisão solicitada"
  db.session.commit()
  flash("Revisão enviada à radiologista.")
@@ -1310,6 +1324,11 @@ def report(eid):
    return redirect(url_for("report",eid=e.id))
   if not existing_revenue:
    db.session.add(Finance(description=f"Laudo {e.protocol}",kind="Entrada",amount=amount))
+  if e.revision_requested_at:
+   occurrence=ExamOccurrence.query.filter_by(exam_id=e.id,status="Aberta").order_by(ExamOccurrence.created_at.desc()).first()
+   if occurrence:
+    occurrence.status="Resolvida"
+    occurrence.resolved_at=datetime.utcnow()
   db.session.commit(); return redirect("/dashboard")
  imgs="".join((f"<div class='exam-file'><div class='filebar'><b>{html_escape(f.name)}</b><span class='badge'>{html_escape(f.scan_status or 'NAO_VERIFICADO')}</span><form method='post' action='/exam-file/{f.id}/scan' style='display:inline'>{csrf_field()}<button type='submit'>Verificar com antivírus</button></form><a class='btn' href='/exam-file/{f.id}' target='_blank'>Abrir</a><a class='btn gold' href='/exam-file/{f.id}?download=1'>Baixar</a></div>" + (f"<img src='/exam-file/{f.id}' alt='{html_escape(f.name)}'>" if f.name.lower().endswith(('.jpg','.jpeg','.png','.webp')) else (f"<iframe src='/exam-file/{f.id}' title='{html_escape(f.name)}'></iframe>" if f.name.lower().endswith('.pdf') else "<div class='notice'>Pré-visualização indisponível para este formato. Use Abrir ou Baixar.</div>")) + "</div>") for f in files)
  request_html="".join((f"<div class='exam-file'><div class='filebar'><b>{html_escape(f.name)}</b><a class='btn' href='/exam-file/{f.id}' target='_blank'>Abrir</a><a class='btn gold' href='/exam-file/{f.id}?download=1'>Baixar</a></div>" + (f"<img src='/exam-file/{f.id}' alt='{html_escape(f.name)}'>" if f.name.lower().endswith(('.jpg','.jpeg','.png')) else f"<iframe src='/exam-file/{f.id}' title='{html_escape(f.name)}'></iframe>") + "</div>") for f in request_files)
