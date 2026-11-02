@@ -20,6 +20,7 @@ def persist_signed_pdf(client, bucket: str, exam_id: int, signed_pdf: bytes) -> 
         raise SignatureValidationError("PDF assinado inválido.")
     digest = hashlib.sha256(signed_pdf).hexdigest()
     key = f"signed-reports/{exam_id}/{uuid.uuid4().hex}.pdf"
+    uploaded = False
     try:
         client.put_object(
             Bucket=bucket, Key=key, Body=io.BytesIO(signed_pdf),
@@ -27,10 +28,16 @@ def persist_signed_pdf(client, bucket: str, exam_id: int, signed_pdf: bytes) -> 
             Metadata={"sha256": digest},
             IfNoneMatch="*",
         )
+        uploaded = True
         result = client.get_object(Bucket=bucket, Key=key)
         stored = result["Body"].read()
         if stored != signed_pdf:
             raise SignatureValidationError("Falha na conferência do PDF armazenado.")
-    except Exception as exc:
+    except Exception:
+        if uploaded:
+            try:
+                client.delete_object(Bucket=bucket, Key=key)
+            except Exception:
+                pass  # Cleanup is best-effort; the artifact must not be released.
         raise SignatureValidationError("Não foi possível preservar o PDF assinado.") from None
     return {"key": key, "sha256": digest, "size": len(signed_pdf)}
