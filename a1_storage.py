@@ -14,7 +14,7 @@ def persist_signed_pdf(client, bucket: str, exam_id: int, signed_pdf: bytes) -> 
     Never overwrite an existing report key. The caller must retain the returned
     key and SHA-256 in a durable database transaction before clinical release.
     """
-    if not bucket or not isinstance(exam_id, int) or exam_id <= 0:
+    if not bucket or not isinstance(exam_id, int) or isinstance(exam_id, bool) or exam_id <= 0:
         raise ValueError("Destino do laudo inválido.")
     if not isinstance(signed_pdf, bytes) or not signed_pdf.startswith(b"%PDF-"):
         raise SignatureValidationError("PDF assinado inválido.")
@@ -25,6 +25,7 @@ def persist_signed_pdf(client, bucket: str, exam_id: int, signed_pdf: bytes) -> 
             Bucket=bucket, Key=key, Body=io.BytesIO(signed_pdf),
             ContentType="application/pdf",
             Metadata={"sha256": digest},
+            IfNoneMatch="*",
         )
         result = client.get_object(Bucket=bucket, Key=key)
         stored = result["Body"].read()
