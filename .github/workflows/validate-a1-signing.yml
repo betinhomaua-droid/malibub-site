@@ -5,6 +5,8 @@ on:
       - 'app.py'
       - 'a1_signing.py'
       - 'tests/test_a1_signing.py'
+      - 'a1_release_gate.py'
+      - 'tests/test_a1_release_gate.py'
       - 'a1_revisions.py'
       - 'tests/test_a1_revisions.py'
       - 'a1_delivery.py'
@@ -38,3 +40,4 @@ jobs:
           python -m unittest discover -s tests -p 'test_a1_pipeline.py' -v
           python -m unittest discover -s tests -p 'test_a1_delivery.py' -v
           python -m unittest discover -s tests -p 'test_a1_revisions.py' -v
+          python -m unittest discover -s tests -p 'test_a1_release_gate.py' -v
