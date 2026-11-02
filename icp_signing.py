@@ -5,6 +5,8 @@ A integração deve ocorrer DEPOIS da composição final do PDF.
 """
 import io
 import os
+import base64
+import binascii
 from pathlib import Path
 
 
@@ -33,9 +35,22 @@ def sign_pdf_bytes(pdf_bytes: bytes) -> bytes:
         raise SigningConfigurationError("Certificado A1 não configurado no servidor")
     if not pdf_bytes.startswith(b"%PDF-"):
         raise ValueError("Documento de entrada não é um PDF")
-    signer = signers.SimpleSigner.load_pkcs12(
-        pfx_file=path, passphrase=password.encode("utf-8")
-    )
+    # Arquivos .b64 do Render sao decodificados apenas em memoria.
+    if Path(path).suffix.lower() == ".b64":
+        try:
+            encoded = Path(path).read_bytes()
+            pkcs12_data = base64.b64decode(b"".join(encoded.split()), validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise SigningConfigurationError("Arquivo A1 Base64 invalido") from exc
+        if not pkcs12_data:
+            raise SigningConfigurationError("Arquivo A1 vazio")
+        signer = signers.SimpleSigner.load_pkcs12(
+            pfx_file=io.BytesIO(pkcs12_data), passphrase=password.encode("utf-8")
+        )
+    else:
+        signer = signers.SimpleSigner.load_pkcs12(
+            pfx_file=path, passphrase=password.encode("utf-8")
+        )
     if signer is None:
         raise SigningConfigurationError("Não foi possível carregar o certificado A1")
     roots_path = os.environ.get("MALIBUB_ICP_TRUST_ROOTS_PATH")
