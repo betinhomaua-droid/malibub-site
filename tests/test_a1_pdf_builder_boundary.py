@@ -181,3 +181,15 @@ class VisibleA1SignatureTests(unittest.TestCase):
         self.assertIn("stamp_style=TextStampStyle(", body)
         self.assertIn("%(signer)s", body)
         self.assertIn("%(ts)s", body)
+
+
+class A1CertificatePinBoundaryTests(unittest.TestCase):
+    def test_pipeline_requires_exact_signer_certificate_fingerprint(self):
+        source = (SOURCE.parent / "a1_pipeline.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        pipeline = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "prepare_signed_report")
+        body = ast.get_source_segment(source, pipeline)
+        self.assertIn('MALIBUB_A1_SIGNER_CERT_SHA256', body)
+        self.assertIn('certificate.public_bytes(Encoding.DER)', body)
+        self.assertIn('actual != expected', body)
+        self.assertLess(body.index('actual != expected'), body.index('signed_pdf = sign_pdf_pades('))
