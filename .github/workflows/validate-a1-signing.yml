@@ -1,0 +1,64 @@
+name: Validate A1 signing integration
+on:
+  pull_request:
+    paths:
+      - 'app.py'
+      - 'a1_signing.py'
+      - 'tests/test_a1_signing.py'
+      - 'a1_report_link.py'
+      - 'a1_transaction.py'
+      - 'a1_orchestration.py'
+      - 'tests/test_a1_orchestration.py'
+      - 'tests/test_a1_pdf_builder_boundary.py'
+      - 'tests/test_a1_transaction.py'
+      - 'tests/test_a1_transaction_db.py'
+      - 'tests/test_a1_report_link.py'
+      - 'a1_report_model.py'
+      - 'tests/test_a1_report_model.py'
+      - 'a1_release_gate.py'
+      - 'tests/test_a1_release_gate.py'
+      - 'a1_revisions.py'
+      - 'tests/test_a1_revisions.py'
+      - 'a1_delivery.py'
+      - 'tests/test_a1_delivery.py'
+      - 'tests/test_a1_delivery_failures.py'
+      - 'tests/test_a1_approval_guard.py'
+      - 'a1_pipeline.py'
+      - 'tests/test_a1_pipeline.py'
+      - 'a1_storage.py'
+      - 'tests/test_a1_storage.py'
+      - 'a1_secrets.py'
+      - 'tests/test_a1_secrets.py'
+      - 'requirements.txt'
+      - '.github/workflows/validate-a1-signing.yml'
+  workflow_dispatch:
+jobs:
+  signing-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install signing and PDF dependencies
+        run: python -m pip install 'pyHanko>=0.25,<0.34' 'cryptography>=42,<47' 'reportlab>=4.2,<5' 'Flask-SQLAlchemy>=3.1,<4' 'pypdf>=4,<7'
+      - name: Compile application and signing modules
+        run: python -m compileall -q app.py a1_*.py
+      - name: Execute real A1 test-signature round trip
+        run: |
+          python -m unittest discover -s tests -p 'test_a1_signing.py' -v
+          python -m unittest discover -s tests -p 'test_a1_secrets.py' -v
+          python -m unittest discover -s tests -p 'test_a1_storage.py' -v
+          python -m unittest discover -s tests -p 'test_a1_pipeline.py' -v
+          python -m unittest discover -s tests -p 'test_a1_delivery.py' -v
+          python -m unittest discover -s tests -p 'test_a1_delivery_failures.py' -v
+          python -m unittest discover -s tests -p 'test_a1_approval_guard.py' -v
+          python -m unittest discover -s tests -p 'test_a1_revisions.py' -v
+          python -m unittest discover -s tests -p 'test_a1_release_gate.py' -v
+          python -m unittest discover -s tests -p 'test_a1_report_link.py' -v
+          python -m unittest discover -s tests -p 'test_a1_report_model.py' -v
+          python -m unittest discover -s tests -p 'test_a1_transaction.py' -v
+          python -m unittest discover -s tests -p 'test_a1_transaction_db.py' -v
+          python -m unittest discover -s tests -p 'test_a1_orchestration.py' -v
+          python -m unittest discover -s tests -p 'test_a1_pdf_builder_boundary.py' -v
+          python -m unittest discover -s tests -p 'test_a1_trust.py' -v

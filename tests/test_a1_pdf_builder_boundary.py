@@ -1,0 +1,200 @@
+"""Regression checks for the HTTP-independent PDF builder extraction.
+
+These checks do not replace live render tests with clinic models.
+"""
+import ast
+import pathlib
+import unittest
+
+
+SOURCE = pathlib.Path(__file__).resolve().parents[1] / "app.py"
+
+
+class PdfBuilderBoundaryTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tree = ast.parse(SOURCE.read_text(encoding="utf-8"))
+        cls.functions = {n.name: n for n in cls.tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+
+    def test_pdf_builder_exists_and_is_not_a_route(self):
+        builder = self.functions["build_legacy_report_pdf_bytes"]
+        self.assertEqual(builder.decorator_list, [])
+        self.assertEqual([a.arg for a in builder.args.args], ["e"])
+        self.assertEqual([a.arg for a in builder.args.kwonlyargs], ["signer_name", "signing_at"])
+
+    def test_pdf_builder_does_not_read_http_request_or_session(self):
+        builder = self.functions["build_legacy_report_pdf_bytes"]
+        names = {n.id for n in ast.walk(builder) if isinstance(n, ast.Name)}
+        self.assertFalse(names.intersection({"request", "session", "send_file", "redirect", "Response"}))
+
+    def test_authorized_route_still_checks_access_and_signed_versions(self):
+        route = ast.get_source_segment(SOURCE.read_text(encoding="utf-8"), self.functions["result_pdf"])
+        self.assertIn('session.get("uid")', route)
+        self.assertIn('session.get("role")', route)
+        self.assertIn("SignedReport.query", route)
+        self.assertIn("render_legacy_report_pdf_response(e)", route)
+
+    def test_download_wrapper_uses_shared_builder(self):
+        wrapper = ast.get_source_segment(SOURCE.read_text(encoding="utf-8"), self.functions["render_legacy_report_pdf_response"])
+        self.assertIn("build_legacy_report_pdf_bytes(e)", wrapper)
+        self.assertIn("send_file(io.BytesIO(pdf_bytes)", wrapper)
+
+    def test_signing_metadata_is_passed_without_changing_exam(self):
+        builder = self.functions["build_legacy_report_pdf_bytes"]
+        source = ast.get_source_segment(SOURCE.read_text(encoding="utf-8"), builder)
+        self.assertIn("display_signer=signer_name if signer_name is not None", source)
+        self.assertIn("display_signed_at=signing_at if signing_at is not None", source)
+        self.assertIn("brasilia_stamp(display_signed_at)", source)
+        self.assertNotIn("e.signed_at=", source)
+        self.assertNotIn("e.signed_by=", source)
+
+    def test_a1_final_builder_uses_detached_snapshot(self):
+        source = ast.get_source_segment(SOURCE.read_text(encoding="utf-8"),
+                                        self.functions["build_a1_final_pdf_bytes"])
+        self.assertIn("SimpleNamespace(", source)
+        self.assertIn("snapshot.report=report_text", source)
+        self.assertIn("snapshot.report_html=report_html", source)
+        self.assertIn("build_legacy_report_pdf_bytes(snapshot", source)
+        self.assertNotIn("exam.report=", source)
+        self.assertNotIn("exam.report_html=", source)
+        self.assertNotIn("db.session", source)
+
+    def test_a1_builder_receives_identical_signing_metadata(self):
+        source = ast.get_source_segment(SOURCE.read_text(encoding="utf-8"),
+                                        self.functions["build_a1_final_pdf_bytes"])
+        self.assertIn("signer_name=signer_name.strip()", source)
+        self.assertIn("signing_at=signing_at", source)
+        self.assertIn("Data de assinatura UTC inválida", source)
+
+    def test_orchestration_builder_closes_over_final_text_and_sanitized_html(self):
+        source = ast.get_source_segment(SOURCE.read_text(encoding="utf-8"),
+                                        self.functions["make_a1_report_builder"])
+        self.assertIn("final_text=report_text.strip()", source)
+        self.assertIn("final_html=clean_report_html(report_html)", source)
+        self.assertIn("def build(*, signer_name, signing_at):", source)
+        self.assertIn("prepare_a1_final_report(", source)
+        self.assertNotIn("db.session", source)
+
+    def test_temporary_model_cleanup_runs_in_finally(self):
+        builder = self.functions["build_legacy_report_pdf_bytes"]
+        finally_blocks = [n.finalbody for n in ast.walk(builder) if isinstance(n, ast.Try) and n.finalbody]
+        self.assertTrue(finally_blocks, "Temporary clinic PDF must be cleaned even on failure")
+        self.assertTrue(any(
+            any(isinstance(node, ast.Attribute) and node.attr == "unlink"
+                for statement in block for node in ast.walk(statement))
+            for block in finally_blocks
+        ), "Temporary model must be unlinked in finally")
+
+    def test_builder_covers_standard_tmj_and_custom_pdf(self):
+        builder = ast.get_source_segment(SOURCE.read_text(encoding="utf-8"), self.functions["build_legacy_report_pdf_bytes"])
+        self.assertIn("tdoc.build(story_tmj)", builder)
+        self.assertIn("doc.build(", builder)
+        self.assertIn("has_pdf_model", builder)
+        self.assertIn("temp_model_path", builder)
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+class SignedVersionRouteBoundaryTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tree = ast.parse(SOURCE.read_text(encoding="utf-8"))
+        cls.functions = {n.name: n for n in cls.tree.body if isinstance(n, ast.FunctionDef)}
+
+    def test_historical_route_requires_authenticated_clinic_ownership(self):
+        route = self.functions["result_signed_version_pdf"]
+        source = ast.get_source_segment(SOURCE.read_text(encoding="utf-8"), route)
+        self.assertIn('session.get("uid")', source)
+        self.assertIn('session.get("role")', source)
+        self.assertIn('e.clinic_id!=session.get("uid")', source)
+        self.assertIn('e.status!="Liberado"', source)
+
+    def test_historical_route_uses_database_version_not_user_storage_key(self):
+        route = self.functions["result_signed_version_pdf"]
+        source = ast.get_source_segment(SOURCE.read_text(encoding="utf-8"), route)
+        self.assertIn("read_signed_version(", source)
+        self.assertIn("exam_id=e.id,version=version", source)
+        self.assertIn("Cache-Control", source)
+        self.assertNotIn("request.args.get(\"key\")", source)
+
+
+class SignedHistoryPageBoundaryTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        source = SOURCE.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        cls.result = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "result")
+        cls.source = ast.get_source_segment(source, cls.result)
+
+    def test_result_checks_login_role_ownership_before_history_query(self):
+        source = self.source
+        login = source.index('session.get("uid")')
+        role = source.index('session.get("role")')
+        ownership = source.index('e.clinic_id!=session.get("uid")')
+        released = source.index('e.status!="Liberado"')
+        history = source.index('signed_versions=SignedReport.query.filter_by(exam_id=e.id)')
+        self.assertTrue(login < role < ownership < released < history)
+
+    def test_history_links_use_internal_exam_and_version(self):
+        self.assertIn('/result/{e.id}/signed-version/{v.version}/pdf', self.source)
+        self.assertIn('history_html=""', self.source)
+        self.assertIn('if signed_versions:', self.source)
+        self.assertIn('rel=\'noopener\'', self.source)
+        self.assertIn('{history_html}', self.source)
+
+
+class A1ClinicalReleaseWiringTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        source = SOURCE.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        route = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "report")
+        cls.source = ast.get_source_segment(source, route)
+
+    def test_a1_route_requires_server_authorized_account(self):
+        self.assertIn('MALIBUB_A1_SIGNING_ENABLED', self.source)
+        self.assertIn('MALIBUB_A1_AUTHORIZED_USER_ID', self.source)
+        self.assertIn('actor.id!=int(authorized_uid)', self.source)
+        self.assertIn('actor.role!="Radiologista"', self.source)
+        self.assertIn('not actor.active', self.source)
+
+    def test_a1_release_uses_verified_transaction_and_fails_closed(self):
+        self.assertIn('load_icp_brasil_validation_context()', self.source)
+        self.assertIn('sign_and_release(', self.source)
+        self.assertIn('pdf_builder=make_a1_report_builder(', self.source)
+        self.assertIn('model=SignedReport,db_session=db.session,exam=e', self.source)
+        self.assertIn('db.session.rollback()', self.source)
+        self.assertIn('Exame preservado sem liberação', self.source)
+
+
+class VisibleA1SignatureTests(unittest.TestCase):
+    def test_pades_signature_has_visible_field_on_final_page(self):
+        source = (SOURCE.parent / "a1_signing.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        sign = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "sign_pdf_pades")
+        body = ast.get_source_segment(source, sign)
+        self.assertIn('sig_field_name="AssinaturaDigital"', body)
+        self.assertIn("on_page=-1", body)
+        self.assertIn("box=(42, 32, 290, 100)", body)
+        self.assertIn("stamp_style=TextStampStyle(", body)
+        self.assertIn("%(signer)s", body)
+        self.assertIn("%(ts)s", body)
+
+
+class A1CertificatePinBoundaryTests(unittest.TestCase):
+    def test_pipeline_requires_exact_signer_certificate_fingerprint(self):
+        source = (SOURCE.parent / "a1_pipeline.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        pipeline = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "prepare_signed_report")
+        body = ast.get_source_segment(source, pipeline)
+        helper = next(n for n in tree.body if isinstance(n, ast.FunctionDef)
+                      and n.name == "verify_pinned_signer_certificate")
+        helper_body = ast.get_source_segment(source, helper)
+        self.assertIn('MALIBUB_A1_SIGNER_CERT_SHA256', helper_body)
+        self.assertIn('certificate.public_bytes(Encoding.DER)', helper_body)
+        self.assertIn('actual != expected', helper_body)
+        self.assertIn('verify_pinned_signer_certificate(pfx, password)', body)
+        self.assertLess(body.index('verify_pinned_signer_certificate('),
+                        body.index('signed_pdf = sign_pdf_pades('))
