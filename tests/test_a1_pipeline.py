@@ -46,28 +46,29 @@ class PipelineTests(unittest.TestCase):
 
     def test_invalid_signature_never_reaches_storage(self):
         with patch.dict(os.environ, {"MALIBUB_A1_SIGNING_ENABLED": "true"}):
-            with patch("a1_pipeline.sign_pdf_pades", return_value=b"%PDF-1.7 signed"):
-                with patch("a1_pipeline.verify_embedded_signature", return_value=False):
-                    with patch("a1_pipeline.persist_signed_pdf") as persist:
-                        with self.assertRaises(SignatureValidationError):
-                            prepare_signed_report(pdf_bytes=b"%PDF-1.7", exam_id=1,
-                                                  storage_client=object(), bucket="private",
-                                                  validation_context=object(), authorized=True,
-                                                  credentials_loader=lambda: (b"test", "test"))
-                        persist.assert_not_called()
+            with patch("a1_pipeline.verify_pinned_signer_certificate", return_value=None):
+             with patch("a1_pipeline.sign_pdf_pades", return_value=b"%PDF-1.7 signed"):
+                 with patch("a1_pipeline.verify_embedded_signature", return_value=False):
+                     with patch("a1_pipeline.persist_signed_pdf") as persist:
+                         with self.assertRaises(SignatureValidationError):
+                             prepare_signed_report(pdf_bytes=b"%PDF-1.7", exam_id=1,
+                                                   storage_client=object(), bucket="private",
+                                                   validation_context=object(), authorized=True,
+                                                   credentials_loader=lambda: (b"test", "test"))
+                         persist.assert_not_called()
 
     def test_untrusted_certificate_never_reaches_storage(self):
         with patch.dict(os.environ, {"MALIBUB_A1_SIGNING_ENABLED": "true"}):
             with patch("a1_pipeline.sign_pdf_pades", return_value=b"%PDF-1.7 signed"):
-                with patch("a1_pipeline.verify_embedded_signature", return_value=True):
-                    with patch("a1_pipeline.validate_signer_trust", return_value=False):
-                        with patch("a1_pipeline.persist_signed_pdf") as persist:
-                            with self.assertRaises(SignatureValidationError):
-                                prepare_signed_report(pdf_bytes=b"%PDF-1.7", exam_id=1,
-                                                      storage_client=object(), bucket="private",
-                                                      validation_context=object(), authorized=True,
-                                                      credentials_loader=lambda: (b"test", "test"))
-                            persist.assert_not_called()
+                 with patch("a1_pipeline.verify_embedded_signature", return_value=True):
+                     with patch("a1_pipeline.validate_signer_trust", return_value=False):
+                         with patch("a1_pipeline.persist_signed_pdf") as persist:
+                             with self.assertRaises(SignatureValidationError):
+                                 prepare_signed_report(pdf_bytes=b"%PDF-1.7", exam_id=1,
+                                                       storage_client=object(), bucket="private",
+                                                       validation_context=object(), authorized=True,
+                                                       credentials_loader=lambda: (b"test", "test"))
+                             persist.assert_not_called()
 
 
 if __name__ == "__main__":
