@@ -60,6 +60,22 @@ class LinkTests(unittest.TestCase):
                     stage_signed_version(model=Model, db_session=db, exam_id=7, artifact=artifact(7))
                 self.assertEqual(db.rows, [])
 
+    def test_invalid_revision_flag_does_not_write(self):
+        for flag in (None, 1, "true", [], {}):
+            with self.subTest(flag=flag):
+                db = Session()
+                with self.assertRaisesRegex(ValueError, "Indicador"):
+                    stage_signed_version(model=Model, db_session=db,
+                                         exam_id=7, artifact=artifact(7), revision=flag)
+                self.assertEqual(db.rows, [])
+
+    def test_predecessor_from_other_exam_does_not_write(self):
+        db = Session(SimpleNamespace(version=2, id=18, exam_id=8))
+        with self.assertRaisesRegex(ValueError, "outro exame"):
+            stage_signed_version(model=Model, db_session=db,
+                                 exam_id=7, artifact=artifact(7), revision=True)
+        self.assertEqual(db.rows, [])
+
     def test_wrong_exam_does_not_write(self):
         db = Session()
         with self.assertRaises(ReleaseBlocked):
