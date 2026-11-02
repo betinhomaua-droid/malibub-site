@@ -21,7 +21,7 @@ def sign_pdf_bytes(pdf_bytes: bytes) -> bytes:
     """
     from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
     from pyhanko.sign import signers
-    from pyhanko.sign.fields import SigSeedSubFilter
+    from pyhanko.sign.fields import SigSeedSubFilter, MDPPerm
     from pyhanko.pdf_utils.reader import PdfFileReader
     from pyhanko.sign.validation import validate_pdf_signature
     from pyhanko.keys import load_certs_from_pemder
@@ -51,6 +51,8 @@ def sign_pdf_bytes(pdf_bytes: bytes) -> bytes:
         IncrementalPdfFileWriter(io.BytesIO(pdf_bytes)),
         signature_meta=signers.PdfSignatureMetadata(
             field_name="AssinaturaDigital",
+            certify=True,
+            docmdp_permissions=MDPPerm.NO_CHANGES,
             md_algorithm="sha256",
             subfilter=SigSeedSubFilter.PADES,
             validation_context=context,
