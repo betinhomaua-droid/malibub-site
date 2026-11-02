@@ -1407,6 +1407,29 @@ def due_date_label(value,priority="NORMAL"):
  if not local: return "—"
  return local.strftime("%d/%m/%Y %H:%M") if priority=="URG" else local.strftime("%d/%m/%Y")
 
+@app.route("/result/<int:eid>/signed-version/<int:version>/pdf")
+def result_signed_version_pdf(eid,version):
+ if not session.get("uid"): return redirect("/")
+ if session.get("role") not in {"Clinica","Radiologista"}: return redirect("/")
+ e=Exam.query.get_or_404(eid)
+ if session.get("role")=="Clinica" and e.clinic_id!=session.get("uid"): return redirect("/dashboard")
+ if e.status!="Liberado": return redirect("/dashboard")
+ from a1_delivery import read_signed_version
+ try:
+  if not object_storage_enabled():
+   raise RuntimeError("Private signed document storage is unavailable")
+  signed_bytes=read_signed_version(
+   r2_client(),R2_BUCKET,model=SignedReport,db_session=db.session,
+   exam_id=e.id,version=version)
+ except Exception as exc:
+  app.logger.error("signed_report_version_delivery_failed exam_id=%s version=%s error_type=%s",e.id,version,type(exc).__name__)
+  return Response("Versão assinada indisponível. Contate o suporte.",status=503,mimetype="text/plain")
+ response=send_file(io.BytesIO(signed_bytes),mimetype="application/pdf",
+                    as_attachment=False,download_name=f"laudo-{e.protocol or e.id}-v{version}-assinado.pdf")
+ response.headers["Cache-Control"]="private, no-store"
+ return response
+
+
 @app.route("/result/<int:eid>/pdf")
 def result_pdf(eid):
  if not session.get("uid"): return redirect("/")
