@@ -20,6 +20,7 @@ class PdfBuilderBoundaryTests(unittest.TestCase):
         builder = self.functions["build_legacy_report_pdf_bytes"]
         self.assertEqual(builder.decorator_list, [])
         self.assertEqual([a.arg for a in builder.args.args], ["e"])
+        self.assertEqual([a.arg for a in builder.args.kwonlyargs], ["signer_name", "signing_at"])
 
     def test_pdf_builder_does_not_read_http_request_or_session(self):
         builder = self.functions["build_legacy_report_pdf_bytes"]
@@ -37,6 +38,15 @@ class PdfBuilderBoundaryTests(unittest.TestCase):
         wrapper = ast.get_source_segment(SOURCE.read_text(encoding="utf-8"), self.functions["render_legacy_report_pdf_response"])
         self.assertIn("build_legacy_report_pdf_bytes(e)", wrapper)
         self.assertIn("send_file(io.BytesIO(pdf_bytes)", wrapper)
+
+    def test_signing_metadata_is_passed_without_changing_exam(self):
+        builder = self.functions["build_legacy_report_pdf_bytes"]
+        source = ast.get_source_segment(SOURCE.read_text(encoding="utf-8"), builder)
+        self.assertIn("display_signer=signer_name if signer_name is not None", source)
+        self.assertIn("display_signed_at=signing_at if signing_at is not None", source)
+        self.assertIn("brasilia_stamp(display_signed_at)", source)
+        self.assertNotIn("e.signed_at=", source)
+        self.assertNotIn("e.signed_by=", source)
 
     def test_temporary_model_cleanup_runs_in_finally(self):
         builder = self.functions["build_legacy_report_pdf_bytes"]
