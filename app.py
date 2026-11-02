@@ -1303,6 +1303,10 @@ def report(eid):
   if e.status=="Liberado":
    flash("Este laudo já foi liberado. Nenhuma nova receita foi lançada.")
    return redirect("/dashboard")
+  # A prior signed version must never be replaced through the legacy unsigned release path.
+  if SignedReport.query.filter_by(exam_id=e.id).first() is not None:
+   flash("Este exame possui laudo assinado. Nova liberação exige o fluxo de revisão A1.")
+   return redirect(url_for("report",eid=e.id))
   if not ready_files:
    flash("Anexe o exame pronto/template antes de finalizar e liberar.")
    return redirect(url_for("report",eid=e.id))
