@@ -1322,7 +1322,11 @@ def report(eid):
    except (TypeError,ValueError):
     flash("Informe o valor do laudo. Para evitar cobrança incorreta, o valor deve ser maior que R$ 0,00.")
     return redirect(url_for("report",eid=e.id))
-  # Fail closed until the A1 signing and transactional release pipeline is integrated.\n  if os.getenv("MALIBUB_A1_SIGNING_ENABLED", "").lower()=="true":\n   flash("Liberação com assinatura A1 ainda não integrada. Exame preservado sem liberação.")\n   return redirect(url_for("report",eid=e.id))\n  e.report=report_text; e.report_html=clean_report_html(request.form.get("report_html","")); e.status="Liberado"; e.revision_reason=None; e.revision_requested_at=None; e.released_at=datetime.utcnow(); e.signed_by=session.get("name") or "Dra. Marina"; e.signed_at=datetime.utcnow()
+  # Fail closed until the A1 signing and transactional release pipeline is integrated.
+  if os.getenv("MALIBUB_A1_SIGNING_ENABLED", "").lower()=="true":
+   flash("Liberação com assinatura A1 ainda não integrada. Exame preservado sem liberação.")
+   return redirect(url_for("report",eid=e.id))
+  e.report=report_text; e.report_html=clean_report_html(request.form.get("report_html","")); e.status="Liberado"; e.revision_reason=None; e.revision_requested_at=None; e.released_at=datetime.utcnow(); e.signed_by=session.get("name") or "Dra. Marina"; e.signed_at=datetime.utcnow()
   db.session.flush()
   check=result_pdf(e.id)
   if getattr(check,"status_code",200) >= 400:
