@@ -1,8 +1,38 @@
 import unittest
-from a1_signing import sign_pdf_pades, SignatureConfigurationError
+from io import BytesIO
+from datetime import datetime, timedelta, timezone
+from cryptography import x509
+from cryptography.x509.oid import NameOID
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.serialization import pkcs12
+from reportlab.pdfgen import canvas
+from a1_signing import sign_pdf_pades, verify_embedded_signature, SignatureConfigurationError
 
 
 class A1SigningTests(unittest.TestCase):
+    def test_sign_and_verify_with_ephemeral_test_certificate(self):
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, 'CERTIFICADO FICTICIO TESTE')])
+        now = datetime.now(timezone.utc)
+        cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name)
+                .public_key(key.public_key()).serial_number(x509.random_serial_number())
+                .not_valid_before(now - timedelta(days=1))
+                .not_valid_after(now + timedelta(days=1))
+                .sign(key, hashes.SHA256()))
+        pfx = pkcs12.serialize_key_and_certificates(
+            b'test', key, cert, None,
+            serialization.BestAvailableEncryption(b'test-password'))
+        stream = BytesIO()
+        pdf = canvas.Canvas(stream)
+        pdf.drawString(70, 760, 'PDF FICTICIO - SEM DADOS DE PACIENTES')
+        pdf.save()
+        original = stream.getvalue()
+        signed = sign_pdf_pades(original, pfx, 'test-password')
+        self.assertNotEqual(original, signed)
+        self.assertTrue(verify_embedded_signature(signed))
+        self.assertFalse(verify_embedded_signature(original))
+
     def test_rejects_non_pdf(self):
         with self.assertRaises(ValueError):
             sign_pdf_pades(b"not a PDF", b"cert", "password")
