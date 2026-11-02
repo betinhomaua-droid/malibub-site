@@ -1433,6 +1433,15 @@ def result_pdf(eid):
  if os.getenv("MALIBUB_A1_SIGNING_ENABLED","").lower()=="true":
   app.logger.error("signed_report_missing_for_release exam_id=%s",e.id)
   return Response("Documento assinado não encontrado. Contate o suporte.",status=503,mimetype="text/plain")
+ return render_legacy_report_pdf_response(e)
+
+
+def render_legacy_report_pdf_response(e):
+ """Render the legacy report only after the caller has authorized access.
+
+ This function is intentionally separate from clinical release. Do not call
+ it for A1 signing until a byte-oriented builder is extracted and audited.
+ """
  from reportlab.lib.pagesizes import A4
  from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
  from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
