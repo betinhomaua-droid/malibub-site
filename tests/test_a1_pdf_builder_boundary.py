@@ -118,3 +118,28 @@ class SignedVersionRouteBoundaryTests(unittest.TestCase):
         self.assertIn("exam_id=e.id,version=version", source)
         self.assertIn("Cache-Control", source)
         self.assertNotIn("request.args.get(\"key\")", source)
+
+
+class SignedHistoryPageBoundaryTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        source = SOURCE.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        cls.result = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "result")
+        cls.source = ast.get_source_segment(source, cls.result)
+
+    def test_result_checks_login_role_ownership_before_history_query(self):
+        source = self.source
+        login = source.index('session.get("uid")')
+        role = source.index('session.get("role")')
+        ownership = source.index('e.clinic_id!=session.get("uid")')
+        released = source.index('e.status!="Liberado"')
+        history = source.index('signed_versions=SignedReport.query.filter_by(exam_id=e.id)')
+        self.assertTrue(login < role < ownership < released < history)
+
+    def test_history_links_use_internal_exam_and_version(self):
+        self.assertIn('/result/{e.id}/signed-version/{v.version}/pdf', self.source)
+        self.assertIn('history_html=""', self.source)
+        self.assertIn('if signed_versions:', self.source)
+        self.assertIn('rel=\'noopener\'', self.source)
+        self.assertIn('{history_html}', self.source)
