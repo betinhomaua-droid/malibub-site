@@ -22,6 +22,8 @@ def sign_pdf_bytes(pdf_bytes: bytes) -> bytes:
     from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
     from pyhanko.sign import signers
     from pyhanko.sign.fields import SigSeedSubFilter
+    from pyhanko.pdf_utils.reader import PdfFileReader
+    from pyhanko.sign.validation import validate_pdf_signature
     from pyhanko.keys import load_certs_from_pemder
     from pyhanko_certvalidator import ValidationContext
 
@@ -60,4 +62,11 @@ def sign_pdf_bytes(pdf_bytes: bytes) -> bytes:
     signed = output.getvalue()
     if not signed.startswith(b"%PDF-") or b"/ByteRange" not in signed:
         raise RuntimeError("Assinatura digital não foi incorporada ao PDF")
+    reader = PdfFileReader(io.BytesIO(signed))
+    signatures = reader.embedded_signatures
+    if len(signatures) != 1:
+        raise RuntimeError("Quantidade inesperada de assinaturas no PDF")
+    status = validate_pdf_signature(signatures[0], signer_validation_context=context)
+    if not (status.intact and status.valid and status.trusted):
+        raise RuntimeError("Assinatura inválida ou cadeia não confiável")
     return signed
