@@ -22,6 +22,7 @@ def register_signed_report_model(db):
             db.CheckConstraint("size > 0", name="ck_signed_report_size_positive"),
             db.CheckConstraint("length(sha256) = 64", name="ck_signed_report_digest_length"),
             db.CheckConstraint("storage_key LIKE 'signed-reports/%'", name="ck_signed_report_storage_prefix"),
+            db.CheckConstraint("length(storage_key) > length('signed-reports/')", name="ck_signed_report_storage_nonempty"),
         )
 
     return SignedReport
