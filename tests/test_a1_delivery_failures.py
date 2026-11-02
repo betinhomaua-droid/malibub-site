@@ -58,6 +58,23 @@ class DeliveryFailureTests(unittest.TestCase):
         with self.assertRaises(SignatureValidationError):
             self.fetch(StorageClient(self.pdf), key="signed-reports/21/other/immutable.pdf")
 
+    def test_recorded_size_mismatch_blocks(self):
+        with self.assertRaises(SignatureValidationError):
+            self.fetch(StorageClient(self.pdf), expected_size=len(self.pdf) + 1)
+
+    def test_invalid_recorded_size_blocks(self):
+        for value in (0, -1, True, "123"):
+            with self.subTest(value=value):
+                with self.assertRaises(SignatureValidationError):
+                    self.fetch(StorageClient(self.pdf), expected_size=value)
+
+    def test_invalid_digest_format_blocks(self):
+        with self.assertRaises(SignatureValidationError):
+            self.fetch(StorageClient(self.pdf), sha256="z" * 64)
+
+    def test_recorded_size_matches(self):
+        self.assertEqual(self.fetch(StorageClient(self.pdf), expected_size=len(self.pdf)), self.pdf)
+
     def test_original_bytes_are_returned_unchanged(self):
         self.assertEqual(self.fetch(StorageClient(self.pdf)), self.pdf)
 
