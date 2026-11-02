@@ -7,7 +7,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.serialization import pkcs12
 from reportlab.pdfgen import canvas
-from a1_signing import sign_pdf_pades, verify_embedded_signature, SignatureConfigurationError
+from a1_signing import sign_pdf_pades, verify_embedded_signature, validate_signer_trust, SignatureConfigurationError
 
 
 class A1SigningTests(unittest.TestCase):
@@ -37,6 +37,10 @@ class A1SigningTests(unittest.TestCase):
         if altered == signed:
             altered = signed[:-30] + bytes([signed[-30] ^ 1]) + signed[-29:]
         self.assertFalse(verify_embedded_signature(altered))
+
+    def test_requires_explicit_trust_context(self):
+        with self.assertRaises(SignatureConfigurationError):
+            validate_signer_trust(b'%PDF-1.7', None)
 
     def test_rejects_non_pdf(self):
         with self.assertRaises(ValueError):
