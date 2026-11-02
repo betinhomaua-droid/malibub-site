@@ -1326,10 +1326,37 @@ def report(eid):
    except (TypeError,ValueError):
     flash("Informe o valor do laudo. Para evitar cobrança incorreta, o valor deve ser maior que R$ 0,00.")
     return redirect(url_for("report",eid=e.id))
-  # Fail closed until the A1 signing and transactional release pipeline is integrated.
+  # A1 release is opt-in and bound to a server-authorized radiologist account.
+  # The credential's certificate identity must also be verified before deployment.
   if os.getenv("MALIBUB_A1_SIGNING_ENABLED", "").lower()=="true":
-   flash("Liberação com assinatura A1 ainda não integrada. Exame preservado sem liberação.")
-   return redirect(url_for("report",eid=e.id))
+   try:
+    authorized_uid=os.environ.get("MALIBUB_A1_AUTHORIZED_USER_ID","").strip()
+    actor=User.query.get(session.get("uid"))
+    if (not authorized_uid.isdecimal() or actor is None
+        or actor.id!=int(authorized_uid) or not actor.active
+        or actor.role!="Radiologista" or not actor.name or not actor.name.strip()):
+     raise PermissionError("Conta da radiologista não autorizada para assinatura A1.")
+    if not object_storage_enabled():
+     raise RuntimeError("Armazenamento privado de laudos indisponível.")
+    from a1_trust import load_icp_brasil_validation_context
+    from a1_orchestration import sign_and_release
+    validation_context=load_icp_brasil_validation_context()
+    finance_entry=(None if existing_revenue else
+                   Finance(description=f"Laudo {e.protocol}",kind="Entrada",amount=amount))
+    sign_and_release(
+     pdf_builder=make_a1_report_builder(
+      e,report_text=report_text,report_html=request.form.get("report_html","")),
+     model=SignedReport,db_session=db.session,exam=e,
+     signer_name=actor.name.strip(),storage_client=r2_client(),bucket=R2_BUCKET,
+     validation_context=validation_context,authorized=True,
+     finance_entry=finance_entry,
+     occurrences=ExamOccurrence.query.filter_by(exam_id=e.id,status="Aberta").all())
+   except Exception as exc:
+    db.session.rollback()
+    app.logger.error("a1_clinical_release_failed exam_id=%s error_type=%s",e.id,type(exc).__name__)
+    flash("Assinatura digital A1 indisponível. Exame preservado sem liberação; contate o suporte.")
+    return redirect(url_for("report",eid=e.id))
+   return redirect("/dashboard")
   e.report=report_text; e.report_html=clean_report_html(request.form.get("report_html","")); e.status="Liberado"; e.revision_reason=None; e.revision_requested_at=None; e.released_at=datetime.utcnow(); e.signed_by=session.get("name") or "Dra. Marina"; e.signed_at=datetime.utcnow()
   db.session.flush()
   check=result_pdf(e.id)
