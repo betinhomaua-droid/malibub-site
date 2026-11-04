@@ -272,6 +272,21 @@ class ReportModel(db.Model):
  id=db.Column(db.Integer,primary_key=True); clinic_id=db.Column(db.Integer,index=True,nullable=False); name=db.Column(db.String(255)); stored=db.Column(db.String(255)); created_at=db.Column(db.DateTime,default=datetime.utcnow)
 class Exam(db.Model):
  id=db.Column(db.Integer,primary_key=True); protocol=db.Column(db.String(30),unique=True); patient=db.Column(db.String(120)); sex=db.Column(db.String(20)); birth=db.Column(db.String(20)); dentist=db.Column(db.String(120)); exam_date=db.Column(db.String(20)); exam_type=db.Column(db.String(100)); observation=db.Column(db.String(500)); anamnesis=db.Column(db.String(500)); priority=db.Column(db.String(20),default="NORMAL"); contracted_amount=db.Column(db.Float); status=db.Column(db.String(50),default="Enviado"); clinic_id=db.Column(db.Integer); due_at=db.Column(db.DateTime); report=db.Column(db.Text,default=""); report_html=db.Column(db.Text,default=""); revision_reason=db.Column(db.Text); revision_requested_at=db.Column(db.DateTime); released_at=db.Column(db.DateTime); signed_by=db.Column(db.String(120)); signed_at=db.Column(db.DateTime); created_at=db.Column(db.DateTime,default=datetime.utcnow)
+def next_exam_protocol():
+ # Sequencia anual global, protegida por lock transacional no PostgreSQL.
+ # Deve ser chamada na mesma transacao que insere o exame.
+ year=datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%y")
+ if db.engine.dialect.name=="postgresql":
+  from sqlalchemy import text
+  db.session.execute(text("SELECT pg_advisory_xact_lock(:key)"),{"key":2600123})
+ prefix=year
+ # Somente identificadores novos com sete digitos entram na contagem.
+ existing=db.session.query(Exam.protocol).filter(Exam.protocol.like(prefix+"_____")).all()
+ used=[int(p[0][2:]) for p in existing if p[0] and len(p[0])==7 and p[0].isdigit() and p[0].startswith(prefix)]
+ number=max(used,default=0)+1
+ if number>99999: raise RuntimeError("Limite anual de protocolos atingido")
+ return f"{year}{number:05d}"
+
 class ExamFile(db.Model):
  id=db.Column(db.Integer,primary_key=True); exam_id=db.Column(db.Integer); name=db.Column(db.String(255)); stored=db.Column(db.String(255)); kind=db.Column(db.String(30),default="entrada"); uploaded_by=db.Column(db.String(100)); scan_status=db.Column(db.String(20),default="PENDENTE"); scan_detail=db.Column(db.String(255))
 class Finance(db.Model):
@@ -886,7 +901,7 @@ def direct_upload_finalize():
  try:
   verified=[verify_direct_upload_grant(item,"exam") for item in files]
   verified_requests=[verify_direct_upload_grant(item,"request") for item in request_files]
-  e=Exam(protocol="MB"+datetime.now().strftime("%y%m%d%H%M%S"),patient=patient,sex=str(data.get("sex","Não informado")).strip(),birth=str(data.get("birth",""))[:20],dentist=dentist,exam_date=str(data.get("exam_date",""))[:20],exam_type=exam_type,observation=str(data.get("observation","")).strip()[:500],priority=priority,contracted_amount=round(price.amount*(1.5 if priority=="URG" else 1.0),2),clinic_id=session["uid"],status="Aguardando laudo",due_at=(datetime.utcnow()+timedelta(hours=24) if priority=="URG" else add_business_days_utc(datetime.utcnow(),2)))
+  e=Exam(protocol=next_exam_protocol(),patient=patient,sex=str(data.get("sex","Não informado")).strip(),birth=str(data.get("birth",""))[:20],dentist=dentist,exam_date=str(data.get("exam_date",""))[:20],exam_type=exam_type,observation=str(data.get("observation","")).strip()[:500],priority=priority,contracted_amount=round(price.amount*(1.5 if priority=="URG" else 1.0),2),clinic_id=session["uid"],status="Aguardando laudo",due_at=(datetime.utcnow()+timedelta(hours=24) if priority=="URG" else add_business_days_utc(datetime.utcnow(),2)))
   db.session.add(e); db.session.flush()
   for key,name in verified: db.session.add(ExamFile(exam_id=e.id,name=name,stored=key,scan_status="NAO_VERIFICADO",scan_detail="Verificação antivírus opcional pela radiologista."))
   for request_key,request_name in verified_requests:
@@ -948,7 +963,7 @@ def new():
   if priority not in {"NORMAL","URG"}:
    flash("Selecione um prazo válido.")
    return redirect("/new")
-  e=Exam(protocol="MB"+datetime.now().strftime("%y%m%d%H%M%S"),patient=patient,sex=sex,birth=request.form.get("birth",""),dentist=dentist,exam_date=request.form.get("exam_date",""),exam_type=exam_type,observation=request.form.get("observation","").strip()[:500],anamnesis=request.form.get("anamnesis","").strip()[:500],priority=priority,contracted_amount=round(price.amount*(1.5 if priority=="URG" else 1.0),2),clinic_id=session["uid"],status="Aguardando laudo",due_at=(datetime.utcnow()+timedelta(hours=24) if priority=="URG" else add_business_days_utc(datetime.utcnow(),2)))
+  e=Exam(protocol=next_exam_protocol(),patient=patient,sex=sex,birth=request.form.get("birth",""),dentist=dentist,exam_date=request.form.get("exam_date",""),exam_type=exam_type,observation=request.form.get("observation","").strip()[:500],anamnesis=request.form.get("anamnesis","").strip()[:500],priority=priority,contracted_amount=round(price.amount*(1.5 if priority=="URG" else 1.0),2),clinic_id=session["uid"],status="Aguardando laudo",due_at=(datetime.utcnow()+timedelta(hours=24) if priority=="URG" else add_business_days_utc(datetime.utcnow(),2)))
   db.session.add(e); db.session.flush()
   uploaded=[]
   try:
