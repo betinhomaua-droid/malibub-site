@@ -1666,8 +1666,16 @@ def finance():
    if amount < 0: raise ValueError
   except (TypeError,ValueError):
    flash("Informe um valor financeiro válido."); return redirect("/finance")
+  competence=request.form.get("competence","").strip()
+  try:
+   year,month_num=map(int,competence.split("-"))
+   if not (2000<=year<=2100 and 1<=month_num<=12): raise ValueError
+   competence_date=datetime(year,month_num,1).date()
+  except (ValueError,TypeError):
+   flash("Informe um mês de competência válido.")
+   return redirect("/finance")
   label=" · ".join(x for x in (category,cost_class,description) if x)
-  db.session.add(Finance(description=label[:200],kind=kind,amount=amount)); db.session.commit()
+  db.session.add(Finance(date=competence_date,description=label[:200],kind=kind,amount=amount)); db.session.commit()
   return redirect("/finance")
  month=request.args.get("month","").strip()
  q=Finance.query
@@ -1704,19 +1712,19 @@ def finance():
   else:
    action="<form method='post' action='/finance/"+str(x.id)+"/excluir' style='margin:0' onsubmit=\"return confirm('Excluir este lançamento?')\">"+csrf_field()+"<button type='submit'>Excluir</button></form>"
   month_key=(x.date.year,x.date.month)
-  rows_by_month.setdefault(month_key,[]).append("<tr><td>"+x.date.strftime("%d/%m/%Y")+"</td><td>"+str(html_escape(x.description or ""))+"</td><td>"+str(html_escape(x.kind or ""))+"</td><td>R$ "+format(x.amount,".2f")+"</td><td>"+action+"</td></tr>")
+  rows_by_month.setdefault(month_key,[]).append("<tr><td>"+x.date.strftime("%m/%Y")+"</td><td>"+str(html_escape(x.description or ""))+"</td><td>"+str(html_escape(x.kind or ""))+"</td><td>R$ "+format(x.amount,".2f")+"</td><td>"+action+"</td></tr>")
  rows="".join(
   "<details "+("open" if idx==0 else "")+" style='border:1px solid #dce8ec;border-radius:10px;margin:10px 0;overflow:hidden'>"
   +"<summary style='cursor:pointer;padding:14px;background:#eef5f7;font-weight:700'>"
   +month_names[key[1]-1]+" de "+str(key[0])+" — "+str(len(items))+" movimentação(ões)</summary>"
-  +"<div style='overflow-x:auto'><table><tr><th>Data</th><th>Categoria / descrição</th><th>Tipo</th><th>Valor</th><th>Ação</th></tr>"
+  +"<div style='overflow-x:auto'><table><tr><th>Competência</th><th>Categoria / descrição</th><th>Tipo</th><th>Valor</th><th>Ação</th></tr>"
   +"".join(items)+"</table></div></details>"
   for idx,(key,items) in enumerate(sorted(rows_by_month.items(),reverse=True))
  )
  body=f'''<h1>Financeiro MALIBUB</h1><p class="muted">Acompanhe receitas, custos da plataforma e saúde financeira.</p>
  <form method="get" class="card"><label>Período mensal<input type="month" name="month" value="{html_escape(month)}"></label><button type="submit">Filtrar</button><a class="btn" href="/finance">Todo o período</a></form>
  <div class="cards"><div class="card">Entradas<b>R$ {ent:.2f}</b></div><div class="card">Saídas<b>R$ {sai:.2f}</b></div><div class="card">Saldo<b>R$ {saldo:.2f}</b></div><div class="card">Infraestrutura<b>R$ {infra:.2f}</b></div><div class="card">Custos fixos<b>R$ {fixed:.2f}</b></div><div class="card">Custos variáveis<b>R$ {variable:.2f}</b></div><div class="card">Margem<b>{margem:.1f}%</b></div><div class="card">Saúde financeira<b>{health}</b></div><div class="card">Laudos liberados<b>{released}</b></div><div class="card">Receita de laudos<b>R$ {report_revenue:.2f}</b></div><div class="card">Ticket médio<b>R$ {ticket:.2f}</b></div><div class="card">Ponto de equilíbrio<b>{break_even:.1f} laudos</b></div></div>
- <div class="card"><h2>Relatório de produção para cobrança</h2><p class="muted">Gere o demonstrativo mensal em PDF com quantidade de laudos e valores da clínica.</p><form method="get" action="/finance/relatorio-producao"><div class="grid"><label>Clínica<select name="clinic_id" required><option value="">Selecione</option>{clinic_options}</select></label><label>Período<input type="month" name="month" value="{html_escape(month)}" required></label></div><button class="gold" type="submit">Gerar relatório PDF</button></form></div> <div class="card"><h2>Novo lançamento</h2><form method="post">{csrf_field()}<div class="grid"><label>Categoria<select name="category"><option>Laudos</option><option>Registro</option><option>Hospedagem</option><option>Armazenamento</option><option>Domínio</option><option>Infraestrutura</option><option>Marketing</option><option>Impostos</option><option>Outros</option></select></label><label>Classificação do custo<select name="cost_class"><option value="">Não se aplica</option><option>Fixo</option><option>Variável</option></select></label><label>Descrição<input name="description" placeholder="Ex.: renovação anual, mensalidade, consumo R2" required></label><label>Tipo<select name="kind"><option>Entrada</option><option>Saída</option></select></label><label>Valor (R$)<input type="number" min="0" step="0.01" name="amount" required></label></div><button class="gold">Adicionar lançamento</button></form></div>
+ <div class="card"><h2>Relatório de produção para cobrança</h2><p class="muted">Gere o demonstrativo mensal em PDF com quantidade de laudos e valores da clínica.</p><form method="get" action="/finance/relatorio-producao"><div class="grid"><label>Clínica<select name="clinic_id" required><option value="">Selecione</option>{clinic_options}</select></label><label>Período<input type="month" name="month" value="{html_escape(month)}" required></label></div><button class="gold" type="submit">Gerar relatório PDF</button></form></div> <div class="card"><h2>Novo lançamento</h2><form method="post">{csrf_field()}<div class="grid"><label>Categoria<select name="category"><option>Laudos</option><option>Registro</option><option>Hospedagem</option><option>Armazenamento</option><option>Domínio</option><option>Infraestrutura</option><option>Marketing</option><option>Impostos</option><option>Outros</option></select></label><label>Classificação do custo<select name="cost_class"><option value="">Não se aplica</option><option>Fixo</option><option>Variável</option></select></label><label>Descrição<input name="description" placeholder="Ex.: renovação anual, mensalidade, consumo R2" required></label><label>Mês de competência<input type="month" name="competence" value="{datetime.now(ZoneInfo('America/Sao_Paulo')).strftime('%Y-%m')}" required><small class="muted">O lançamento entrará nos totais do mês escolhido, mesmo se cadastrado depois.</small></label><label>Tipo<select name="kind"><option>Entrada</option><option>Saída</option></select></label><label>Valor (R$)<input type="number" min="0" step="0.01" name="amount" required></label></div><button class="gold">Adicionar lançamento</button></form></div>
  <div class="card"><h2>Movimentações</h2><p class="muted">Clique no mês para expandir ou recolher os lançamentos.</p>{rows or '<p>Nenhum lançamento neste período.</p>'}</div>'''
  return page(body)
 
