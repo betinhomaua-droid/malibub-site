@@ -1705,14 +1705,16 @@ def finance_production_report():
  styles=getSampleStyleSheet()
  title=ParagraphStyle("malibub_title",parent=styles["Title"],fontName="Helvetica-Bold",fontSize=17,leading=21,alignment=TA_CENTER,textColor=colors.HexColor("#087b9b"))
  story=[Paragraph("MALIBUB IMAGINOLOGIA ODONTOLÓGICA",title),Paragraph("Relatório de Produção por Período",styles["Heading2"]),Spacer(1,5*mm),Paragraph(f"<b>Clínica:</b> {escape(clinic.name)}",styles["BodyText"]),Paragraph(f"<b>Período:</b> {first.strftime('%d/%m/%Y')} a {(last-timedelta(days=1)).strftime('%d/%m/%Y')}",styles["BodyText"]),Paragraph(f"<b>Quantidade de laudos:</b> {len(exams)}",styles["BodyText"]),Spacer(1,5*mm)]
- data=[["Data","Protocolo","Exame","Valor"]]
+ patient_style=ParagraphStyle("production_patient",parent=styles["BodyText"],fontName="Helvetica",fontSize=8,leading=10)
+ exam_style=ParagraphStyle("production_exam",parent=patient_style)
+ data=[["Data","Paciente","Protocolo","Exame","Valor"]]
  for e in exams:
   value=values[e.protocol]
   value_text="PENDENTE" if value is None or value<=0 else f"R$ {value:.2f}"
-  data.append([(e.released_at or e.created_at).strftime("%d/%m/%Y"),e.protocol,e.exam_type or "-",value_text])
- data.append(["","","TOTAL VÁLIDO",f"R$ {total:.2f}"])
- table=Table(data,colWidths=[30*mm,42*mm,75*mm,30*mm],repeatRows=1)
- table.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,0),colors.HexColor("#087b9b")),("TEXTCOLOR",(0,0),(-1,0),colors.white),("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),("FONTNAME",(2,-1),(-1,-1),"Helvetica-Bold"),("GRID",(0,0),(-1,-1),0.4,colors.HexColor("#b8cbd2")),("VALIGN",(0,0),(-1,-1),"TOP"),("ALIGN",(-1,1),(-1,-1),"RIGHT"),("PADDING",(0,0),(-1,-1),6)]))
+  data.append([(e.released_at or e.created_at).strftime("%d/%m/%Y"),Paragraph(escape(e.patient or "-"),patient_style),e.protocol,Paragraph(escape(e.exam_type or "-"),exam_style),value_text])
+ data.append(["","","","TOTAL VÁLIDO",f"R$ {total:.2f}"])
+ table=Table(data,colWidths=[24*mm,45*mm,38*mm,47*mm,24*mm],repeatRows=1)
+ table.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,0),colors.HexColor("#087b9b")),("TEXTCOLOR",(0,0),(-1,0),colors.white),("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),("FONTNAME",(3,-1),(-1,-1),"Helvetica-Bold"),("GRID",(0,0),(-1,-1),0.4,colors.HexColor("#b8cbd2")),("VALIGN",(0,0),(-1,-1),"TOP"),("ALIGN",(-1,1),(-1,-1),"RIGHT"),("PADDING",(0,0),(-1,-1),6)]))
  story.extend([table,Spacer(1,7*mm)])
  if billing_issues:
   warning=ParagraphStyle("billing_warning",parent=styles["BodyText"],fontName="Helvetica-Bold",textColor=colors.HexColor("#9a5b00"),backColor=colors.HexColor("#fff4d6"),borderPadding=7,spaceAfter=5*mm)
