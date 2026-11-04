@@ -290,7 +290,7 @@ def next_exam_protocol():
 class ExamFile(db.Model):
  id=db.Column(db.Integer,primary_key=True); exam_id=db.Column(db.Integer); name=db.Column(db.String(255)); stored=db.Column(db.String(255)); kind=db.Column(db.String(30),default="entrada"); uploaded_by=db.Column(db.String(100)); scan_status=db.Column(db.String(20),default="PENDENTE"); scan_detail=db.Column(db.String(255))
 class Finance(db.Model):
- id=db.Column(db.Integer,primary_key=True); date=db.Column(db.Date,default=datetime.utcnow().date); description=db.Column(db.String(200)); kind=db.Column(db.String(20)); amount=db.Column(db.Float,default=0)
+ id=db.Column(db.Integer,primary_key=True); date=db.Column(db.Date,default=datetime.utcnow().date); description=db.Column(db.String(200)); kind=db.Column(db.String(20)); amount=db.Column(db.Float,default=0); created_at=db.Column(db.DateTime,default=datetime.utcnow)
 class ClinicPrice(db.Model):
  id=db.Column(db.Integer,primary_key=True); clinic_id=db.Column(db.Integer,index=True,nullable=False); exam_type=db.Column(db.String(100),nullable=False); amount=db.Column(db.Float,nullable=False); active=db.Column(db.Boolean,default=True); __table_args__=(db.UniqueConstraint("clinic_id","exam_type",name="uq_clinic_exam_price"),)
 
@@ -404,6 +404,7 @@ def init():
    db.session.execute(db.text("ALTER TABLE exam ADD COLUMN IF NOT EXISTS anamnesis VARCHAR(500)"))
    db.session.execute(db.text("ALTER TABLE exam ADD COLUMN IF NOT EXISTS revision_reason TEXT"))
    db.session.execute(db.text("ALTER TABLE exam ADD COLUMN IF NOT EXISTS revision_response TEXT"))
+   db.session.execute(db.text("ALTER TABLE finance ADD COLUMN IF NOT EXISTS created_at TIMESTAMP"))
    db.session.execute(db.text("ALTER TABLE exam ADD COLUMN IF NOT EXISTS revision_requested_at TIMESTAMP"))
    db.session.execute(db.text("UPDATE \"user\" SET active=TRUE WHERE active IS NULL"))
    db.session.commit()
@@ -418,6 +419,8 @@ def init():
    if "anamnesis" not in cols: db.session.execute(db.text("ALTER TABLE exam ADD COLUMN anamnesis VARCHAR(500)"))
    if "revision_reason" not in cols: db.session.execute(db.text("ALTER TABLE exam ADD COLUMN revision_reason TEXT"))
    if "revision_response" not in cols: db.session.execute(db.text("ALTER TABLE exam ADD COLUMN revision_response TEXT"))
+   finance_cols=[r[1] for r in db.session.execute(db.text("PRAGMA table_info(finance)")).fetchall()]
+   if "created_at" not in finance_cols: db.session.execute(db.text("ALTER TABLE finance ADD COLUMN created_at DATETIME"))
    if "revision_requested_at" not in cols: db.session.execute(db.text("ALTER TABLE exam ADD COLUMN revision_requested_at DATETIME"))
    db.session.commit()
   except Exception:
@@ -1675,7 +1678,7 @@ def finance():
    flash("Informe um mês de competência válido.")
    return redirect("/finance")
   label=" · ".join(x for x in (category,cost_class,description) if x)
-  db.session.add(Finance(date=competence_date,description=label[:200],kind=kind,amount=amount)); db.session.commit()
+  db.session.add(Finance(date=competence_date,description=label[:200],kind=kind,amount=amount,created_at=datetime.utcnow())); db.session.commit()
   return redirect("/finance")
  month=request.args.get("month","").strip()
  q=Finance.query
@@ -1712,12 +1715,12 @@ def finance():
   else:
    action="<form method='post' action='/finance/"+str(x.id)+"/excluir' style='margin:0' onsubmit=\"return confirm('Excluir este lançamento?')\">"+csrf_field()+"<button type='submit'>Excluir</button></form>"
   month_key=(x.date.year,x.date.month)
-  rows_by_month.setdefault(month_key,[]).append("<tr><td>"+x.date.strftime("%m/%Y")+"</td><td>"+str(html_escape(x.description or ""))+"</td><td>"+str(html_escape(x.kind or ""))+"</td><td>R$ "+format(x.amount,".2f")+"</td><td>"+action+"</td></tr>")
+  rows_by_month.setdefault(month_key,[]).append("<tr><td>"+x.date.strftime("%m/%Y")+"</td><td>"+(x.created_at.strftime("%d/%m/%Y %H:%M UTC") if x.created_at else "Registro anterior")+"</td><td>"+str(html_escape(x.description or ""))+"</td><td>"+str(html_escape(x.kind or ""))+"</td><td>R$ "+format(x.amount,".2f")+"</td><td>"+action+"</td></tr>")
  rows="".join(
   "<details "+("open" if idx==0 else "")+" style='border:1px solid #dce8ec;border-radius:10px;margin:10px 0;overflow:hidden'>"
   +"<summary style='cursor:pointer;padding:14px;background:#eef5f7;font-weight:700'>"
   +month_names[key[1]-1]+" de "+str(key[0])+" — "+str(len(items))+" movimentação(ões)</summary>"
-  +"<div style='overflow-x:auto'><table><tr><th>Competência</th><th>Categoria / descrição</th><th>Tipo</th><th>Valor</th><th>Ação</th></tr>"
+  +"<div style='overflow-x:auto'><table><tr><th>Competência</th><th>Cadastrado em</th><th>Categoria / descrição</th><th>Tipo</th><th>Valor</th><th>Ação</th></tr>"
   +"".join(items)+"</table></div></details>"
   for idx,(key,items) in enumerate(sorted(rows_by_month.items(),reverse=True))
  )
