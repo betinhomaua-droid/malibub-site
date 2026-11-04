@@ -672,7 +672,11 @@ def dashboard():
   return f"<tr><td>{html_escape(e.protocol)}</td><td>{html_escape(e.patient)}</td><td>{html_escape(e.exam_type)}</td><td>{delivery}</td><td><span class='badge'>{html_escape(e.status)}</span></td><td>{action}</td></tr>"
 
  if is_radiologist:
-  pending_rows="".join(exam_row(e) for e in pending_exams)
+  revision_exams=sorted([e for e in pending_exams if e.status=="Revisão solicitada"],key=lambda e:e.revision_requested_at or datetime.min,reverse=True)
+  normal_pending=[e for e in pending_exams if e.status!="Revisão solicitada"]
+  pending_rows="".join(exam_row(e) for e in normal_pending)
+  occurrence_rows="".join(exam_row(e) for e in revision_exams)
+  occurrences_html=(f'<div class="card" style="margin-bottom:22px;border:2px solid #d69c27;background:#fffaf0"><h2 style="color:#925b00">⚠ Ocorrências abertas — {len(revision_exams)}</h2><p>Revisões solicitadas pelas clínicas. Clique em <b>Laudar</b> para abrir o exame e visualizar a justificativa.</p><div style="overflow-x:auto"><table>{headers}{occurrence_rows}</table></div></div>' if revision_exams else '<div class="card" style="margin-bottom:22px;border-left:4px solid #087b9b"><h2>Ocorrências abertas — 0</h2><p>Nenhuma revisão pendente.</p></div>')
   months=("Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro")
   groups={}
   for e in completed_exams:
@@ -687,6 +691,7 @@ def dashboard():
    completed_rows+=("<details"+open_attr+" class='completed-month' style='margin:12px 0;border:1px solid #d9e6eb;border-radius:10px;overflow:hidden'><summary style='cursor:pointer;padding:15px 18px;background:#f1f7f9;font-weight:700;color:#073e50'>"+label+" — "+str(len(items))+" exame(s)</summary><div style='overflow-x:auto'><table>"+headers+rows+"</table></div></details>")
   if not completed_rows: completed_rows="<p>Nenhum exame realizado.</p>"
   body=f'''<h1>Painel da Radiologista</h1><p>Olá, {html_escape(session["name"])}.</p>
+  {occurrences_html}
   <div class="card"><h2>Exames a fazer</h2><p style="color:#60747d">Ordenados pela prioridade de entrega: os prazos mais próximos aparecem primeiro.</p><table>{headers}{pending_rows or f'<tr><td colspan={colspan}>Nenhum exame pendente.</td></tr>'}</table></div>
   <div class="card" style="margin-top:24px"><h2>Exames já realizados</h2><p style="color:#60747d">Clique no mês para expandir ou recolher os exames.</p>{completed_rows}</div>'''
  else:
