@@ -656,10 +656,22 @@ def dashboard():
 
  if is_radiologist:
   pending_rows="".join(exam_row(e) for e in pending_exams)
-  completed_rows="".join(exam_row(e) for e in completed_exams)
+  months=("Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro")
+  groups={}
+  for e in completed_exams:
+   dt=e.released_at or e.created_at
+   key=(dt.year,dt.month) if dt else (0,0)
+   groups.setdefault(key,[]).append(e)
+  completed_rows=""
+  for (year,month),items in groups.items():
+   label=(months[month-1]+" de "+str(year)) if month else "Sem data"
+   rows="".join(exam_row(e) for e in items)
+   open_attr=" open" if not completed_rows else ""
+   completed_rows+=("<details"+open_attr+" class='completed-month' style='margin:12px 0;border:1px solid #d9e6eb;border-radius:10px;overflow:hidden'><summary style='cursor:pointer;padding:15px 18px;background:#f1f7f9;font-weight:700;color:#073e50'>"+label+" — "+str(len(items))+" exame(s)</summary><div style='overflow-x:auto'><table>"+headers+rows+"</table></div></details>")
+  if not completed_rows: completed_rows="<p>Nenhum exame realizado.</p>"
   body=f'''<h1>Painel da Radiologista</h1><p>Olá, {html_escape(session["name"])}.</p>
   <div class="card"><h2>Exames a fazer</h2><p style="color:#60747d">Ordenados pela prioridade de entrega: os prazos mais próximos aparecem primeiro.</p><table>{headers}{pending_rows or f'<tr><td colspan={colspan}>Nenhum exame pendente.</td></tr>'}</table></div>
-  <div class="card" style="margin-top:24px"><h2>Exames já realizados</h2><table>{headers}{completed_rows or f'<tr><td colspan={colspan}>Nenhum exame realizado.</td></tr>'}</table></div>'''
+  <div class="card" style="margin-top:24px"><h2>Exames já realizados</h2><p style="color:#60747d">Clique no mês para expandir ou recolher os exames.</p>{completed_rows}</div>'''
  else:
   rows="".join(exam_row(e) for e in exams)
   body=f'''<h1>Painel da Clínica</h1><p>Olá, {html_escape(session["name"])}.</p><a class="btn gold" href="/new">+ Novo Exame</a><a class="btn" href="/modelo-laudo">Modelo de laudo</a><div class="card"><h2>Exames</h2><table>{headers}{rows or f'<tr><td colspan={colspan}>Nenhum exame.</td></tr>'}</table></div>'''
