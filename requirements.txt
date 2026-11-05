@@ -8,3 +8,4 @@ pypdf>=5,<7
 boto3>=1.35,<2
 
 requests>=2.32,<3
+pyHanko>=0.25,<0.33

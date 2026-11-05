@@ -1323,14 +1323,40 @@ def report(eid):
   e.revision_response=response_note if is_revision else None
   e.report=report_text; e.report_html=clean_report_html(request.form.get("report_html","")); e.status="Liberado"; e.revision_reason=None; e.revision_requested_at=None; e.released_at=datetime.utcnow(); e.signed_by=session.get("name") or "Dra. Marina"; e.signed_at=datetime.utcnow()
   db.session.flush()
-  check=result_pdf(e.id)
-  if getattr(check,"status_code",200) >= 400:
+  # Assinar UMA VEZ durante a aprovacao; o PDF oficial e imutavel.
+  request._malibub_generating_signed_pdf=True
+  try:
+   check=result_pdf(e.id)
+  finally:
+   request._malibub_generating_signed_pdf=False
+  if getattr(check,"status_code",200) >= 400 or getattr(check,"mimetype","")!="application/pdf":
    db.session.rollback()
-   flash("PDF final indisponível. O exame não foi liberado nem faturado.")
+   flash("Assinatura digital indisponivel. O exame nao foi liberado nem faturado.")
    return redirect(url_for("report",eid=e.id))
-  if not existing_revenue:
-   db.session.add(Finance(description=f"Laudo {e.protocol}",kind="Entrada",amount=amount))
-  db.session.commit(); return redirect("/dashboard")
+  try:
+   check.direct_passthrough=False
+   signed_pdf=check.get_data()
+   if not signed_pdf.startswith(b"%PDF-") or b"/ByteRange" not in signed_pdf:
+    raise ValueError("PDF sem assinatura criptografica")
+   from werkzeug.datastructures import FileStorage
+   signed_key=f"laudo_assinado_{e.id}_{uuid.uuid4().hex}.pdf"
+   store_upload(FileStorage(stream=io.BytesIO(signed_pdf),filename="laudo_assinado.pdf"),signed_key,"application/pdf")
+   if storage_bytes(signed_key)!=signed_pdf:
+    raise ValueError("Falha de integridade do arquivo assinado")
+   previous=ExamFile.query.filter_by(exam_id=e.id,kind="laudo_assinado").all()
+   db.session.add(ExamFile(exam_id=e.id,name=f"{e.protocol}_laudo_assinado.pdf",stored=signed_key,kind="laudo_assinado",uploaded_by=e.signed_by,scan_status="ASSINADO"))
+   for old_file in previous:
+    # Preservar versoes anteriores para rastreabilidade de revisoes.
+    old_file.kind="laudo_assinado_anterior"
+   if not existing_revenue:
+    db.session.add(Finance(description=f"Laudo {e.protocol}",kind="Entrada",amount=amount))
+   db.session.commit()
+  except Exception:
+   db.session.rollback()
+   app.logger.exception("Falha ao armazenar PDF assinado; liberacao cancelada")
+   flash("Nao foi possivel armazenar o laudo assinado. Liberacao cancelada.")
+   return redirect(url_for("report",eid=e.id))
+  return redirect("/dashboard")
  imgs="".join((f"<div class='exam-file'><div class='filebar'><b>{html_escape(f.name)}</b><span class='badge'>{html_escape(f.scan_status or 'NAO_VERIFICADO')}</span><form method='post' action='/exam-file/{f.id}/scan' style='display:inline'>{csrf_field()}<button type='submit'>Verificar com antivírus</button></form><a class='btn' href='/exam-file/{f.id}' target='_blank'>Abrir</a><a class='btn gold' href='/exam-file/{f.id}?download=1'>Baixar</a></div>" + (f"<img src='/exam-file/{f.id}' alt='{html_escape(f.name)}'>" if f.name.lower().endswith(('.jpg','.jpeg','.png','.webp')) else (f"<iframe src='/exam-file/{f.id}' title='{html_escape(f.name)}'></iframe>" if f.name.lower().endswith('.pdf') else "<div class='notice'>Pré-visualização indisponível para este formato. Use Abrir ou Baixar.</div>")) + "</div>") for f in files)
  request_html="".join((f"<div class='exam-file'><div class='filebar'><b>{html_escape(f.name)}</b><a class='btn' href='/exam-file/{f.id}' target='_blank'>Abrir</a><a class='btn gold' href='/exam-file/{f.id}?download=1'>Baixar</a></div>" + (f"<img src='/exam-file/{f.id}' alt='{html_escape(f.name)}'>" if f.name.lower().endswith(('.jpg','.jpeg','.png')) else f"<iframe src='/exam-file/{f.id}' title='{html_escape(f.name)}'></iframe>") + "</div>") for f in request_files)
  ready_html="".join((f"<div class='exam-file'><div class='filebar'><b>{html_escape(f.name)}</b><a class='btn' href='/exam-file/{f.id}' target='_blank'>Abrir</a><a class='btn gold' href='/exam-file/{f.id}?download=1'>Baixar</a><form method='post' action='/report/{e.id}/exame-pronto/{f.id}/excluir' style='display:inline-block;margin:0' onsubmit=\"return confirm('Excluir este anexo individualmente? Esta ação não pode ser desfeita.')\">{csrf_field()}<button type='submit'>Excluir</button></form></div>" + (f"<img src='/exam-file/{f.id}'>" if f.name.lower().endswith(('.jpg','.jpeg')) else f"<iframe src='/exam-file/{f.id}#navpanes=0&view=FitH' title='Pré-visualização do PDF sem miniaturas laterais' loading='lazy'></iframe>") + "</div>") for f in ready_files)
@@ -1396,6 +1422,16 @@ def result_pdf(eid):
  e=Exam.query.get_or_404(eid)
  if session.get("role")=="Clinica" and e.clinic_id!=session.get("uid"): return redirect("/dashboard")
  if e.status!="Liberado": return redirect("/dashboard")
+ # Downloads usam os mesmos bytes assinados na aprovacao, sem regeneracao.
+ if request.endpoint!="preview_report_pdf" and not getattr(request,"_malibub_generating_signed_pdf",False):
+  saved=ExamFile.query.filter_by(exam_id=e.id,kind="laudo_assinado").order_by(ExamFile.id.desc()).first()
+  if saved:
+   try:
+    return storage_response(saved.stored,name=f"{e.protocol}_laudo_assinado.pdf",download=request.args.get("print")!="1")
+   except Exception:
+    app.logger.exception("PDF assinado indisponivel para exame %s",e.id)
+    return "PDF assinado indisponivel; contate o suporte.",503
+  return "PDF assinado ainda nao foi gerado para este exame.",503
  from reportlab.lib.pagesizes import A4
  from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
  from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
@@ -1523,6 +1559,13 @@ def result_pdf(eid):
   story_tmj.append(KeepTogether([Spacer(1,3*mm),ReportSignature()]))
   tdoc.build(story_tmj)
   buf=apply_final_footer(buf.getvalue())
+  try:
+   if request.endpoint!="preview_report_pdf":
+    from icp_signing import sign_pdf_bytes
+    buf=io.BytesIO(sign_pdf_bytes(buf.getvalue()))
+  except Exception:
+   app.logger.exception("Falha na assinatura digital do laudo TMJ")
+   return "Assinatura digital indisponível. O laudo não pode ser liberado.",503
   return send_file(buf,mimetype="application/pdf",as_attachment=True,download_name=f"{e.protocol}_laudo.pdf")
  doc=SimpleDocTemplate(buf,pagesize=A4,rightMargin=22*mm,leftMargin=22*mm,topMargin=((clinic.report_top_mm or 72)*mm if has_pdf_model else 16*mm),bottomMargin=((clinic.report_bottom_mm or 48)*mm if has_pdf_model else 48*mm),title=f"{e.protocol} - Laudo MALIBUB",author="MALIBUB Imaginologia Odontológica")
  styles=getSampleStyleSheet(); navy=colors.HexColor("#06394C"); teal=colors.HexColor("#087B9B"); gold=colors.HexColor("#C99B3B")
@@ -1628,6 +1671,13 @@ def result_pdf(eid):
   except Exception:
    return "Não foi possível gerar o PDF personalizado. Verifique o modelo de laudo cadastrado.",500
  print_mode=request.args.get("print")=="1"
+ try:
+  if request.endpoint!="preview_report_pdf":
+   from icp_signing import sign_pdf_bytes
+   buf=io.BytesIO(sign_pdf_bytes(buf.getvalue()))
+ except Exception:
+  app.logger.exception("Falha na assinatura digital do laudo")
+  return "Assinatura digital indisponível. O laudo não pode ser liberado.",503
  response=send_file(buf,mimetype="application/pdf",as_attachment=not print_mode,download_name=f"{e.protocol}_laudo.pdf")
  if print_mode:
   response.headers["Content-Disposition"]=f'inline; filename="{e.protocol}_laudo.pdf"'
