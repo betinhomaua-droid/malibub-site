@@ -1484,7 +1484,9 @@ def result_pdf(eid):
    if index==total-1:
     width=float(page.mediabox.width); height=float(page.mediabox.height)
     overlay=io.BytesIO(); cv=canvas.Canvas(overlay,pagesize=(width,height))
-    # Assinatura manuscrita acima do selo PAdES, sem textos duplicados.\n    if not has_pdf_model:\n     draw_report_signature(cv,width,baseline=144)\n    cv.setStrokeColor(colors.HexColor("#DCE8EC")); cv.line(22*mm,24*mm,width-22*mm,24*mm)
+    # Assinatura manuscrita acima do selo PAdES, sem textos duplicados.
+    draw_report_signature(cv,width,baseline=144)
+    cv.setStrokeColor(colors.HexColor("#DCE8EC")); cv.line(22*mm,24*mm,width-22*mm,24*mm)
     cv.setFillColor(colors.HexColor("#06394C")); cv.setFont("Helvetica-Bold",7.8)
     cv.drawCentredString(width/2,18*mm,"MALIBUB Imaginologia Odontológica")
     cv.setFillColor(colors.HexColor("#52666E")); cv.setFont("Helvetica",7.2)
