@@ -34,27 +34,28 @@ def _add_visible_signature_panel(pdf_bytes: bytes, signer_name: str) -> bytes:
     width = float(box.width)
     height = float(box.height)
     # Position above the usual MALIBUB footer, to the left of the handwritten signature.
-    x, y, w, h = 35, 82, min(245, width - 70), 72
+    w, h = min(205, width - 70), 55
+    x, y = (width - w) / 2, 82
     overlay = io.BytesIO()
     c = canvas.Canvas(overlay, pagesize=(width, height))
-    c.setStrokeColorRGB(0.13, 0.39, 0.55)
-    c.setFillColorRGB(0.95, 0.98, 1.0)
+    c.setStrokeColorRGB(0.48, 0.65, 0.73)
+    c.setFillColorRGB(0.985, 0.993, 1.0)
     c.roundRect(x, y, w, h, 5, stroke=1, fill=1)
     c.setFillColorRGB(0.05, 0.27, 0.43)
-    c.setFont("Helvetica-Bold", 9)
-    c.drawString(x + 9, y + h - 17, "ASSINATURA DIGITAL ICP-BRASIL")
-    c.setFont("Helvetica-Bold", 8)
-    safe_name = signer_name.encode("latin-1", "replace").decode("latin-1")[:37]
-    c.drawString(x + 9, y + h - 32, safe_name)
-    c.setFont("Helvetica", 6.5)
-    c.drawString(x + 9, y + h - 44, "Certificado A1 - assinatura PAdES")
-    c.drawString(x + 9, y + 14, "Verifique o PDF original no portal ITI")
+    c.setFont("Helvetica-Bold", 7.2)
+    c.drawString(x + 7, y + h - 13, "ASSINATURA DIGITAL ICP-BRASIL")
+    c.setFont("Helvetica-Bold", 6.8)
+    safe_name = signer_name.encode("latin-1", "replace").decode("latin-1")[:29]
+    c.drawString(x + 7, y + h - 26, safe_name)
+    c.setFont("Helvetica", 5.7)
+    c.drawString(x + 7, y + h - 36, "Certificado A1 - assinatura PAdES")
+    c.drawString(x + 7, y + 7, "Verifique o PDF original no portal ITI")
     code = qr.QrCodeWidget("https://validar.iti.gov.br/")
     bounds = code.getBounds()
     qrw, qrh = bounds[2] - bounds[0], bounds[3] - bounds[1]
-    drawing = Drawing(51, 51, transform=[51 / qrw, 0, 0, 51 / qrh, 0, 0])
+    drawing = Drawing(39, 39, transform=[39 / qrw, 0, 0, 39 / qrh, 0, 0])
     drawing.add(code)
-    renderPDF.draw(drawing, c, x + w - 59, y + 11)
+    renderPDF.draw(drawing, c, x + w - 45, y + 8)
     c.save()
     overlay.seek(0)
     page.merge_page(PdfReader(overlay).pages[0])
