@@ -1490,9 +1490,21 @@ def result_pdf(eid):
     cv.setFillColor(colors.HexColor("#06394C")); cv.setFont("Helvetica-Bold",7.8)
     cv.drawCentredString(width/2,18*mm,"MALIBUB Imaginologia Odontológica")
     cv.setFillColor(colors.HexColor("#52666E")); cv.setFont("Helvetica",7.2)
-    cv.drawCentredString(width/2,14*mm,"Assinado eletronicamente por Marina Bub - CRO-SP 113752")
+    cv.drawCentredString(width/2,14*mm,"Assinado eletronicamente por Marina Linhares Bub - CRO-SP 113.752.")
     cv.setFont("Helvetica",6.8)
     cv.drawCentredString(width/2,9*mm,f"Data: {brasilia_stamp(e.signed_at or e.released_at)} - Protocolo {e.protocol or ''}")
+    # QR discreto ao lado direito do nome MALIBUB, dentro do rodape e antes da assinatura.
+    from reportlab.graphics.barcode import qr
+    from reportlab.graphics.shapes import Drawing
+    from reportlab.graphics import renderPDF
+    qr_code=qr.QrCodeWidget("https://validar.iti.gov.br/")
+    qr_bounds=qr_code.getBounds()
+    qr_width=qr_bounds[2]-qr_bounds[0]
+    qr_height=qr_bounds[3]-qr_bounds[1]
+    qr_size=34
+    qr_drawing=Drawing(qr_size,qr_size,transform=[qr_size/qr_width,0,0,qr_size/qr_height,0,0])
+    qr_drawing.add(qr_code)
+    renderPDF.draw(qr_drawing,cv,width/2+150,10*mm)
     cv.save(); overlay.seek(0); page.merge_page(PdfReader(overlay).pages[0])
    writer.add_page(page)
   out=io.BytesIO(); writer.write(out); out.seek(0); return out
