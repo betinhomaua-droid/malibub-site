@@ -1339,7 +1339,7 @@ def report(eid):
    if not signed_pdf.startswith(b"%PDF-") or b"/ByteRange" not in signed_pdf:
     raise ValueError("PDF sem assinatura criptografica")
    from werkzeug.datastructures import FileStorage
-   signed_key=f"laudos-assinados/{e.id}/{uuid.uuid4().hex}.pdf"
+   signed_key=f"laudo_assinado_{e.id}_{uuid.uuid4().hex}.pdf"
    store_upload(FileStorage(stream=io.BytesIO(signed_pdf),filename="laudo_assinado.pdf"),signed_key,"application/pdf")
    if storage_bytes(signed_key)!=signed_pdf:
     raise ValueError("Falha de integridade do arquivo assinado")
