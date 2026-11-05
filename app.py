@@ -1485,7 +1485,7 @@ def result_pdf(eid):
     width=float(page.mediabox.width); height=float(page.mediabox.height)
     overlay=io.BytesIO(); cv=canvas.Canvas(overlay,pagesize=(width,height))
     # Assinatura manuscrita acima do selo PAdES, sem textos duplicados.
-    draw_report_signature(cv,width,baseline=144)
+    draw_report_signature(cv,width,baseline=104)
     cv.setStrokeColor(colors.HexColor("#DCE8EC")); cv.line(22*mm,24*mm,width-22*mm,24*mm)
     cv.setFillColor(colors.HexColor("#06394C")); cv.setFont("Helvetica-Bold",7.8)
     cv.drawCentredString(width/2,18*mm,"MALIBUB Imaginologia Odontológica")
@@ -1540,8 +1540,8 @@ def result_pdf(eid):
    canv.setStrokeColor(colors.HexColor("#DCE8EC")); canv.setLineWidth(.5)
    canv.line(22*mm,H-49*mm,W-22*mm,H-49*mm)
    canv.restoreState()
-  frame=Frame(22*mm,68*mm,W-44*mm,H-129*mm,leftPadding=0,rightPadding=0,topPadding=0,bottomPadding=0,id="tmj_body")
-  tdoc=BaseDocTemplate(buf,pagesize=A4,leftMargin=22*mm,rightMargin=22*mm,topMargin=61*mm,bottomMargin=68*mm,title=f"{e.protocol} - Laudo TMJ",author="MALIBUB Imaginologia Odontológica")
+  frame=Frame(22*mm,44*mm,W-44*mm,H-105*mm,leftPadding=0,rightPadding=0,topPadding=0,bottomPadding=0,id="tmj_body")
+  tdoc=BaseDocTemplate(buf,pagesize=A4,leftMargin=22*mm,rightMargin=22*mm,topMargin=61*mm,bottomMargin=44*mm,title=f"{e.protocol} - Laudo TMJ",author="MALIBUB Imaginologia Odontológica")
   tdoc.addPageTemplates(PageTemplate(id="TMJ",frames=[frame],onPage=tmj_header_footer))
   normal=ParagraphStyle("tmjn",fontName="Helvetica",fontSize=9.2,leading=14,spaceAfter=4,textColor=colors.black)
   bold=ParagraphStyle("tmjb",parent=normal,fontName="Helvetica-Bold")
@@ -1581,7 +1581,7 @@ def result_pdf(eid):
    app.logger.exception("Falha na assinatura digital do laudo TMJ")
    return "Assinatura digital indisponível. O laudo não pode ser liberado.",503
   return send_file(buf,mimetype="application/pdf",as_attachment=True,download_name=f"{e.protocol}_laudo.pdf")
- doc=SimpleDocTemplate(buf,pagesize=A4,rightMargin=22*mm,leftMargin=22*mm,topMargin=((clinic.report_top_mm or 72)*mm if has_pdf_model else 16*mm),bottomMargin=((clinic.report_bottom_mm or 48)*mm if has_pdf_model else 68*mm),title=f"{e.protocol} - Laudo MALIBUB",author="MALIBUB Imaginologia Odontológica")
+ doc=SimpleDocTemplate(buf,pagesize=A4,rightMargin=22*mm,leftMargin=22*mm,topMargin=((clinic.report_top_mm or 72)*mm if has_pdf_model else 16*mm),bottomMargin=((clinic.report_bottom_mm or 48)*mm if has_pdf_model else 44*mm),title=f"{e.protocol} - Laudo MALIBUB",author="MALIBUB Imaginologia Odontológica")
  styles=getSampleStyleSheet(); navy=colors.HexColor("#06394C"); teal=colors.HexColor("#087B9B"); gold=colors.HexColor("#C99B3B")
  title=ParagraphStyle("t",parent=styles["Heading1"],alignment=TA_CENTER,textColor=navy,fontSize=16,leading=20); body=ParagraphStyle("b",parent=styles["BodyText"],fontSize=10,leading=15,textColor=colors.HexColor("#26383D"))
  story=[]
