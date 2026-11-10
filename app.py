@@ -1779,7 +1779,7 @@ def finance():
   else:
    action="<form method='post' action='/finance/"+str(x.id)+"/excluir' style='margin:0' onsubmit=\"return confirm('Excluir este lançamento?')\">"+csrf_field()+"<button type='submit'>Excluir</button></form>"
   month_key=(x.date.year,x.date.month)
-  rows_by_month.setdefault(month_key,[]).append("<tr><td>"+x.date.strftime("%m/%Y")+"</td><td>"+(x.created_at.strftime("%d/%m/%Y %H:%M UTC") if x.created_at else "Registro anterior")+"</td><td>"+str(html_escape(x.description or ""))+"</td><td>"+str(html_escape(x.kind or ""))+"</td><td>R$ "+format(x.amount,".2f")+"</td><td>"+action+"</td></tr>")
+  rows_by_month.setdefault(month_key,[]).append("<tr><td>"+x.date.strftime("%m/%Y")+"</td><td>"+(brasilia_stamp(x.created_at) if x.created_at else "Registro anterior")+"</td><td>"+str(html_escape(x.description or ""))+"</td><td>"+str(html_escape(x.kind or ""))+"</td><td>R$ "+format(x.amount,".2f")+"</td><td>"+action+"</td></tr>")
  rows="".join(
   "<details "+("open" if idx==0 else "")+" style='border:1px solid #dce8ec;border-radius:10px;margin:10px 0;overflow:hidden'>"
   +"<summary style='cursor:pointer;padding:14px;background:#eef5f7;font-weight:700'>"
