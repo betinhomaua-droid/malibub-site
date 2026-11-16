@@ -583,8 +583,11 @@ def admin_users():
   if u.cnpj and User.query.filter_by(cnpj=u.cnpj,role="Clinica").first():
    flash("CNPJ já cadastrado."); return redirect("/admin/usuarios")
   db.session.add(u)
+  db.session.flush()
+  for exam_type,amount in STANDARD_PRICES_2026:
+   db.session.add(ClinicPrice(clinic_id=u.id,exam_type=exam_type,amount=amount,active=True))
   db.session.commit()
-  flash("Clínica cadastrada com acesso ativo.")
+  flash("Clínica cadastrada com acesso ativo e tabela padrão MALIBUB 2026.")
   return redirect("/admin/usuarios")
  clinics=User.query.filter_by(role="Clinica").order_by(User.name).all()
  rows="".join(f"<tr><td>{html_escape(u.name)}</td><td>{html_escape(u.email)}</td><td>{'Bloqueado' if u.access_locked else ('Ativo' if u.active is not False else 'Inativo')}</td><td><a class='btn' href='/admin/usuarios/{u.id}/editar'>Editar</a> <a class='btn' href='/admin/usuarios/{u.id}/precos'>Preços</a> <form method='post' action='/admin/usuarios/{u.id}/desbloquear' style='display:inline-block;margin:0'>{csrf_field()}<button type='submit' {'disabled' if not u.access_locked else ''}>Desbloquear</button></form> <form method='post' action='/admin/usuarios/{u.id}/status' style='display:inline-block;margin:0'>{csrf_field()}<button type='submit'>{'Desativar' if u.active is not False else 'Ativar'}</button></form></td></tr>" for u in clinics)
