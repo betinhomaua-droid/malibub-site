@@ -18,5 +18,11 @@ jobs:
           python-version: '3.12'
       - name: Python syntax
         run: python -m py_compile app.py
+      - name: Install test dependencies
+        run: pip install -r requirements.txt
+      - name: Exam type and finance integration tests
+        env:
+          APP_ENV: test
+        run: python -m unittest discover -s tests -p 'test_exam_type_finance.py' -v
       - name: Security regression checks
         run: python -m unittest discover -s tests -p 'test_security_static.py' -v

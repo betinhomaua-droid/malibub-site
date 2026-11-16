@@ -299,6 +299,16 @@ def next_exam_protocol():
  if number>99999: raise RuntimeError("Limite anual de protocolos atingido")
  return f"{year}{number:05d}"
 
+class ExamTypeChange(db.Model):
+ id=db.Column(db.Integer,primary_key=True)
+ exam_id=db.Column(db.Integer,index=True,nullable=False)
+ old_type=db.Column(db.String(100),nullable=False)
+ new_type=db.Column(db.String(100),nullable=False)
+ changed_by=db.Column(db.Integer,nullable=False)
+ changed_at=db.Column(db.DateTime,default=datetime.utcnow,nullable=False)
+ old_amount=db.Column(db.Float,nullable=True)
+ new_amount=db.Column(db.Float,nullable=True)
+
 class ExamFile(db.Model):
  id=db.Column(db.Integer,primary_key=True); exam_id=db.Column(db.Integer); name=db.Column(db.String(255)); stored=db.Column(db.String(255)); kind=db.Column(db.String(30),default="entrada"); uploaded_by=db.Column(db.String(100)); scan_status=db.Column(db.String(20),default="PENDENTE"); scan_detail=db.Column(db.String(255))
 class Finance(db.Model):
@@ -719,6 +729,38 @@ def admin_unlock_clinic(uid):
  flash("Acesso da clínica desbloqueado.")
  return redirect("/admin/usuarios")
 
+@app.route("/exam/<int:eid>/editar-tipo",methods=["GET","POST"])
+def edit_exam_type(eid):
+ if session.get("role")!="Radiologista": return redirect("/")
+ e=Exam.query.get_or_404(eid)
+ if e.status=="Liberado":
+  flash("Exame liberado: alteração bloqueada para preservar o laudo.")
+  return redirect("/dashboard")
+ prices=ClinicPrice.query.filter_by(clinic_id=e.clinic_id,active=True).order_by(ClinicPrice.exam_type.asc()).all()
+ allowed={p.exam_type:p for p in prices}
+ if request.method=="POST":
+  new_type=request.form.get("exam_type","").strip()
+  if new_type not in allowed:
+   flash("Selecione um tipo de exame ativo da clínica.")
+   return redirect(url_for("edit_exam_type",eid=eid))
+  if new_type!=e.exam_type:
+   existing_revenue=Finance.query.filter_by(description=f"Laudo {e.protocol}",kind="Entrada").first()
+   if existing_revenue:
+    flash("Este exame já possui lançamento financeiro. Corrija o lançamento antes de alterar o tipo.")
+    return redirect(url_for("edit_exam_type",eid=eid))
+   old_amount=e.contracted_amount
+   new_amount=round(allowed[new_type].amount*(1.5 if (e.priority or "NORMAL")=="URG" else 1.0),2)
+   db.session.add(ExamTypeChange(exam_id=e.id,old_type=e.exam_type,new_type=new_type,changed_by=session["uid"],old_amount=old_amount,new_amount=new_amount))
+   e.exam_type=new_type
+   e.contracted_amount=new_amount
+   db.session.commit()
+   flash(f"Tipo atualizado. Valor contratado recalculado para R$ {new_amount:.2f}. Protocolo, anexos e prazo preservados.")
+  return redirect("/dashboard")
+ options="".join(f'<option value="{html_escape(p.exam_type)}"'+(' selected' if p.exam_type==e.exam_type else '')+f'>{html_escape(p.exam_type)}</option>' for p in prices)
+ if e.exam_type not in allowed: options='<option value="" selected disabled>Selecione o tipo</option>'+options
+ body=f"""<h1>Editar tipo de exame</h1><div class="card"><p>Protocolo: {html_escape(e.protocol)}</p><p>Paciente: {html_escape(e.patient)}</p><p>Tipo atual: {html_escape(e.exam_type)}</p><form method="post">{csrf_field()}<label>Tipo de exame<select name="exam_type" required>{options}</select></label><p>O valor contratado será recalculado pela tabela ativa da clínica, incluindo adicional de 50% para urgência. O prazo será mantido.</p><button type="submit">Salvar alteração</button><a class="btn" href="/dashboard">Cancelar</a></form></div>"""
+ return page(body,"Editar tipo de exame")
+
 @app.route("/dashboard")
 def dashboard():
  if not session.get("uid"): return redirect("/")
@@ -749,9 +791,10 @@ def dashboard():
    action="<span style='display:inline-block;background:#b42318;color:white;font-weight:800;padding:9px 12px;border-radius:8px'>SUSPEITO/INFECTADO</span>"
   else:
    primary_action=(f'<a class="btn" href="/report/{e.id}">Laudar</a>' if is_radiologist and e.status!="Liberado" else (f'<a class="btn" href="/result/{e.id}">Resultado</a>' if e.status=="Liberado" else ""))
+   edit_action=(f'<a class="btn" href="/exam/{e.id}/editar-tipo" style="margin-left:6px;background:#376878">Editar exame</a>' if is_radiologist and e.status!="Liberado" else "")
    delete_action=(f'<form method="post" action="/exam/{e.id}/excluir" style="display:inline" onsubmit="return confirm(\'Excluir definitivamente este exame, seus arquivos e o lançamento financeiro vinculado? Esta ação não pode ser desfeita.\')">{csrf_field()}<button type="submit" style="background:#b42318">Excluir</button></form>' if is_radiologist else "")
    review_action=(f'<a class="btn" style="margin-left:6px;background:#fff;color:#b97700;border:1px solid #d69c27" href="#revisao" data-exam-id="{e.id}" data-protocol="{html_escape(e.protocol)}" data-patient="{html_escape(e.patient)}" onclick="openRevisionDialog(this);return false">Revisão</a>' if not is_radiologist and e.status=="Liberado" else "")
-   action=primary_action+review_action+delete_action
+   action=primary_action+edit_action+review_action+delete_action
   delivery=("<b style='color:#b42318'>URG</b><br>" if (e.priority or "NORMAL")=="URG" else "")+due_date_label(e.due_at,e.priority or "NORMAL")
   if is_radiologist:
    clinic=clinics.get(e.clinic_id)
