@@ -306,6 +306,8 @@ class ExamTypeChange(db.Model):
  new_type=db.Column(db.String(100),nullable=False)
  changed_by=db.Column(db.Integer,nullable=False)
  changed_at=db.Column(db.DateTime,default=datetime.utcnow,nullable=False)
+ old_amount=db.Column(db.Float,nullable=True)
+ new_amount=db.Column(db.Float,nullable=True)
 
 class ExamFile(db.Model):
  id=db.Column(db.Integer,primary_key=True); exam_id=db.Column(db.Integer); name=db.Column(db.String(255)); stored=db.Column(db.String(255)); kind=db.Column(db.String(30),default="entrada"); uploaded_by=db.Column(db.String(100)); scan_status=db.Column(db.String(20),default="PENDENTE"); scan_detail=db.Column(db.String(255))
@@ -735,21 +737,28 @@ def edit_exam_type(eid):
   flash("Exame liberado: alteração bloqueada para preservar o laudo.")
   return redirect("/dashboard")
  prices=ClinicPrice.query.filter_by(clinic_id=e.clinic_id,active=True).order_by(ClinicPrice.exam_type.asc()).all()
- allowed={p.exam_type for p in prices}
+ allowed={p.exam_type:p for p in prices}
  if request.method=="POST":
   new_type=request.form.get("exam_type","").strip()
   if new_type not in allowed:
    flash("Selecione um tipo de exame ativo da clínica.")
    return redirect(url_for("edit_exam_type",eid=eid))
   if new_type!=e.exam_type:
-   db.session.add(ExamTypeChange(exam_id=e.id,old_type=e.exam_type,new_type=new_type,changed_by=session["uid"]))
+   existing_revenue=Finance.query.filter_by(description=f"Laudo {e.protocol}",kind="Entrada").first()
+   if existing_revenue:
+    flash("Este exame já possui lançamento financeiro. Corrija o lançamento antes de alterar o tipo.")
+    return redirect(url_for("edit_exam_type",eid=eid))
+   old_amount=e.contracted_amount
+   new_amount=round(allowed[new_type].amount*(1.5 if (e.priority or "NORMAL")=="URG" else 1.0),2)
+   db.session.add(ExamTypeChange(exam_id=e.id,old_type=e.exam_type,new_type=new_type,changed_by=session["uid"],old_amount=old_amount,new_amount=new_amount))
    e.exam_type=new_type
+   e.contracted_amount=new_amount
    db.session.commit()
-   flash("Tipo alterado; protocolo, anexos, prazo e valor preservados.")
+   flash(f"Tipo atualizado. Valor contratado recalculado para R$ {new_amount:.2f}. Protocolo, anexos e prazo preservados.")
   return redirect("/dashboard")
  options="".join(f'<option value="{html_escape(p.exam_type)}"'+(' selected' if p.exam_type==e.exam_type else '')+f'>{html_escape(p.exam_type)}</option>' for p in prices)
  if e.exam_type not in allowed: options='<option value="" selected disabled>Selecione o tipo</option>'+options
- body=f"""<h1>Editar tipo de exame</h1><div class="card"><p>Protocolo: {html_escape(e.protocol)}</p><p>Paciente: {html_escape(e.patient)}</p><p>Tipo atual: {html_escape(e.exam_type)}</p><form method="post">{csrf_field()}<label>Tipo de exame<select name="exam_type" required>{options}</select></label><p>O valor e o prazo originais serão mantidos.</p><button type="submit">Salvar alteração</button><a class="btn" href="/dashboard">Cancelar</a></form></div>"""
+ body=f"""<h1>Editar tipo de exame</h1><div class="card"><p>Protocolo: {html_escape(e.protocol)}</p><p>Paciente: {html_escape(e.patient)}</p><p>Tipo atual: {html_escape(e.exam_type)}</p><form method="post">{csrf_field()}<label>Tipo de exame<select name="exam_type" required>{options}</select></label><p>O valor contratado será recalculado pela tabela ativa da clínica, incluindo adicional de 50% para urgência. O prazo será mantido.</p><button type="submit">Salvar alteração</button><a class="btn" href="/dashboard">Cancelar</a></form></div>"""
  return page(body,"Editar tipo de exame")
 
 @app.route("/dashboard")
