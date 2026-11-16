@@ -267,6 +267,18 @@ def assets(filename):
  return send_from_directory(Path(app.root_path)/"assets", filename)
 
 class User(db.Model):
+ legal_name=db.Column(db.String(180),nullable=True)
+ cnpj=db.Column(db.String(18),nullable=True)
+ phone=db.Column(db.String(25),nullable=True)
+ address=db.Column(db.String(180),nullable=True)
+ address_number=db.Column(db.String(20),nullable=True)
+ address_extra=db.Column(db.String(100),nullable=True)
+ district=db.Column(db.String(100),nullable=True)
+ city=db.Column(db.String(100),nullable=True)
+ state=db.Column(db.String(2),nullable=True)
+ postal_code=db.Column(db.String(9),nullable=True)
+ contact_name=db.Column(db.String(120),nullable=True)
+ billing_email=db.Column(db.String(120),nullable=True)
  id=db.Column(db.Integer,primary_key=True); name=db.Column(db.String(100)); email=db.Column(db.String(120),unique=True); password=db.Column(db.String(255)); role=db.Column(db.String(30)); active=db.Column(db.Boolean,default=True); logo=db.Column(db.String(255)); logo_name=db.Column(db.String(255)); report_model=db.Column(db.String(255)); report_model_name=db.Column(db.String(255)); report_top_mm=db.Column(db.Integer,default=72); report_bottom_mm=db.Column(db.Integer,default=42); privacy_version=db.Column(db.String(20)); privacy_ack_at=db.Column(db.DateTime); failed_login_count=db.Column(db.Integer,default=0,nullable=False); access_locked=db.Column(db.Boolean,default=False,nullable=False)
 class ReportModel(db.Model):
  id=db.Column(db.Integer,primary_key=True); clinic_id=db.Column(db.Integer,index=True,nullable=False); name=db.Column(db.String(255)); stored=db.Column(db.String(255)); created_at=db.Column(db.DateTime,default=datetime.utcnow)
@@ -406,12 +418,37 @@ def init():
    db.session.execute(db.text("ALTER TABLE exam ADD COLUMN IF NOT EXISTS revision_response TEXT"))
    db.session.execute(db.text("ALTER TABLE finance ADD COLUMN IF NOT EXISTS created_at TIMESTAMP"))
    db.session.execute(db.text("ALTER TABLE exam ADD COLUMN IF NOT EXISTS revision_requested_at TIMESTAMP"))
+   db.session.execute(db.text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS legal_name VARCHAR(180)'))
+   db.session.execute(db.text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS cnpj VARCHAR(18)'))
+   db.session.execute(db.text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS phone VARCHAR(25)'))
+   db.session.execute(db.text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS address VARCHAR(180)'))
+   db.session.execute(db.text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS address_number VARCHAR(20)'))
+   db.session.execute(db.text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS address_extra VARCHAR(100)'))
+   db.session.execute(db.text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS district VARCHAR(100)'))
+   db.session.execute(db.text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS city VARCHAR(100)'))
+   db.session.execute(db.text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS state VARCHAR(2)'))
+   db.session.execute(db.text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS postal_code VARCHAR(9)'))
+   db.session.execute(db.text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS contact_name VARCHAR(120)'))
+   db.session.execute(db.text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS billing_email VARCHAR(120)'))
    db.session.execute(db.text("UPDATE \"user\" SET active=TRUE WHERE active IS NULL"))
    db.session.commit()
   except Exception:
    db.session.rollback()
  if db.engine.dialect.name=="sqlite":
   try:
+   user_cols=[r[1] for r in db.session.execute(db.text("PRAGMA table_info('user')")).fetchall()]
+   if "legal_name" not in user_cols: db.session.execute(db.text('ALTER TABLE "user" ADD COLUMN legal_name VARCHAR(180)'))
+   if "cnpj" not in user_cols: db.session.execute(db.text('ALTER TABLE "user" ADD COLUMN cnpj VARCHAR(18)'))
+   if "phone" not in user_cols: db.session.execute(db.text('ALTER TABLE "user" ADD COLUMN phone VARCHAR(25)'))
+   if "address" not in user_cols: db.session.execute(db.text('ALTER TABLE "user" ADD COLUMN address VARCHAR(180)'))
+   if "address_number" not in user_cols: db.session.execute(db.text('ALTER TABLE "user" ADD COLUMN address_number VARCHAR(20)'))
+   if "address_extra" not in user_cols: db.session.execute(db.text('ALTER TABLE "user" ADD COLUMN address_extra VARCHAR(100)'))
+   if "district" not in user_cols: db.session.execute(db.text('ALTER TABLE "user" ADD COLUMN district VARCHAR(100)'))
+   if "city" not in user_cols: db.session.execute(db.text('ALTER TABLE "user" ADD COLUMN city VARCHAR(100)'))
+   if "state" not in user_cols: db.session.execute(db.text('ALTER TABLE "user" ADD COLUMN state VARCHAR(2)'))
+   if "postal_code" not in user_cols: db.session.execute(db.text('ALTER TABLE "user" ADD COLUMN postal_code VARCHAR(9)'))
+   if "contact_name" not in user_cols: db.session.execute(db.text('ALTER TABLE "user" ADD COLUMN contact_name VARCHAR(120)'))
+   if "billing_email" not in user_cols: db.session.execute(db.text('ALTER TABLE "user" ADD COLUMN billing_email VARCHAR(120)'))
    cols=[r[1] for r in db.session.execute(db.text("PRAGMA table_info(exam)")).fetchall()]
    if "signed_by" not in cols: db.session.execute(db.text("ALTER TABLE exam ADD COLUMN signed_by VARCHAR(120)"))
    if "signed_at" not in cols: db.session.execute(db.text("ALTER TABLE exam ADD COLUMN signed_at DATETIME"))
@@ -505,6 +542,27 @@ def login():
 <div class="login-footer">© 2026 Malibub Radiologia &nbsp; Todos os Direitos Reservados</div></div>'''
  return page(body,"Entrar · MALIBUB")
 
+
+CLINIC_FIELDS=["legal_name","cnpj","phone","address","address_number","address_extra","district","city","state","postal_code","contact_name","billing_email"]
+CLINIC_LABELS=["Razão social","CNPJ","Telefone / WhatsApp","Endereço","Número","Complemento","Bairro","Cidade","UF","CEP","Responsável","E-mail de cobrança"]
+STANDARD_PRICES_2026=[("Panorâmica 2D",20.0),("Implante até 3 elementos",45.0),("Maxila ou mandíbula",50.0),("Dentes inclusos",50.0),("Endodontia",70.0),("ATM",70.0),("Periodontia",70.0),("Seio maxilar",70.0),("Patologia",70.0),("Tomografia de face",120.0),("Tomografia zigomática",120.0)]
+def clinic_fields_form(u=None):
+ return "".join("<label>"+html_escape(label)+"<input name='"+field+"' maxlength='180' value='"+html_escape(str(getattr(u,field,None) or ""),quote=True)+"'></label>" for field,label in zip(CLINIC_FIELDS,CLINIC_LABELS))
+def clinic_fields_save(u):
+ for field in CLINIC_FIELDS: setattr(u,field,request.form.get(field,"").strip()[:180] or None)
+def valid_clinic_cnpj(u):
+ digits="".join(c for c in (u.cnpj or "") if c.isdigit())
+ if not digits: return True
+ if len(digits)!=14 or len(set(digits))==1: return False
+ for length in (12,13):
+  weights=list(range(length-7,1,-1))+list(range(9,1,-1))
+  total=sum(int(x)*w for x,w in zip(digits[:length],weights))
+  check=(total*10)%11
+  if check==10: check=0
+  if check!=int(digits[length]): return False
+ u.cnpj=digits
+ return True
+
 @app.route("/admin/usuarios",methods=["GET","POST"])
 def admin_users():
  if session.get("role")!="Radiologista": return redirect("/")
@@ -518,13 +576,22 @@ def admin_users():
   if User.query.filter_by(email=email).first():
    flash("Este e-mail já está cadastrado.")
    return redirect("/admin/usuarios")
-  db.session.add(User(name=name,email=email,password=generate_password_hash(password),role="Clinica",active=True))
+  u=User(name=name,email=email,password=generate_password_hash(password),role="Clinica",active=True)
+  clinic_fields_save(u)
+  if not valid_clinic_cnpj(u):
+   flash("CNPJ inválido."); return redirect("/admin/usuarios")
+  if u.cnpj and User.query.filter_by(cnpj=u.cnpj,role="Clinica").first():
+   flash("CNPJ já cadastrado."); return redirect("/admin/usuarios")
+  db.session.add(u)
+  db.session.flush()
+  for exam_type,amount in STANDARD_PRICES_2026:
+   db.session.add(ClinicPrice(clinic_id=u.id,exam_type=exam_type,amount=amount,active=True))
   db.session.commit()
-  flash("Clínica cadastrada com acesso ativo.")
+  flash("Clínica cadastrada com acesso ativo e tabela padrão MALIBUB 2026.")
   return redirect("/admin/usuarios")
  clinics=User.query.filter_by(role="Clinica").order_by(User.name).all()
  rows="".join(f"<tr><td>{html_escape(u.name)}</td><td>{html_escape(u.email)}</td><td>{'Bloqueado' if u.access_locked else ('Ativo' if u.active is not False else 'Inativo')}</td><td><a class='btn' href='/admin/usuarios/{u.id}/editar'>Editar</a> <a class='btn' href='/admin/usuarios/{u.id}/precos'>Preços</a> <form method='post' action='/admin/usuarios/{u.id}/desbloquear' style='display:inline-block;margin:0'>{csrf_field()}<button type='submit' {'disabled' if not u.access_locked else ''}>Desbloquear</button></form> <form method='post' action='/admin/usuarios/{u.id}/status' style='display:inline-block;margin:0'>{csrf_field()}<button type='submit'>{'Desativar' if u.active is not False else 'Ativar'}</button></form></td></tr>" for u in clinics)
- body=f"""<h1>Administração</h1><div class='card'><h2>Cadastrar clínica</h2><form method='post'>{csrf_field()}<label>Nome da clínica<input name='name' maxlength='100' required></label><label>E-mail de acesso<input type='email' name='email' maxlength='120' required></label><label>Senha inicial<input type='password' name='password' minlength='10' maxlength='256' required></label><button class='gold' type='submit'>Criar acesso</button></form></div><div class='card'><h2>Clínicas cadastradas</h2><table><tr><th>Clínica</th><th>E-mail</th><th>Status</th><th>Ação</th></tr>{rows or '<tr><td colspan=4>Nenhuma clínica cadastrada.</td></tr>'}</table></div>"""
+ body=f"""<h1>Administração</h1><div class='card'><h2>Cadastrar clínica</h2><form method='post'>{csrf_field()}<label>Nome da clínica<input name='name' maxlength='100' required></label><label>E-mail de acesso<input type='email' name='email' maxlength='120' required></label><label>Senha inicial<input type='password' name='password' minlength='10' maxlength='256' required></label>{clinic_fields_form()}<button class='gold' type='submit'>Criar acesso</button></form></div><div class='card'><h2>Clínicas cadastradas</h2><table><tr><th>Clínica</th><th>E-mail</th><th>Status</th><th>Ação</th></tr>{rows or '<tr><td colspan=4>Nenhuma clínica cadastrada.</td></tr>'}</table></div>"""
  return page(body)
 
 @app.route("/admin/usuarios/<int:uid>/editar",methods=["GET","POST"])
@@ -542,11 +609,32 @@ def admin_user_edit(uid):
    flash("Este e-mail já está cadastrado."); return redirect(url_for("admin_user_edit",uid=u.id))
   if password and len(password)<10:
    flash("A nova senha deve ter pelo menos 10 caracteres."); return redirect(url_for("admin_user_edit",uid=u.id))
+  clinic_fields_save(u)
+  if not valid_clinic_cnpj(u):
+   flash("CNPJ inválido."); return redirect(url_for("admin_user_edit",uid=u.id))
+  if u.cnpj and User.query.filter(User.cnpj==u.cnpj,User.id!=u.id,User.role=="Clinica").first():
+   flash("CNPJ já cadastrado."); return redirect(url_for("admin_user_edit",uid=u.id))
   u.name=name; u.email=email
   if password: u.password=generate_password_hash(password)
   db.session.commit(); flash("Cadastro da clínica atualizado."); return redirect("/admin/usuarios")
- body=f"""<h1>Editar clínica</h1><div class='card'><form method='post'>{csrf_field()}<label>Nome da clínica<input name='name' maxlength='100' value='{html_escape(u.name)}' required></label><label>E-mail de acesso<input type='email' name='email' maxlength='120' value='{html_escape(u.email)}' required></label><label>Nova senha (opcional)<input type='password' name='password' minlength='10' maxlength='256'></label><button class='gold' type='submit'>Salvar alterações</button></form></div>"""
+ body=f"""<h1>Editar clínica</h1><div class='card'><form method='post'>{csrf_field()}<label>Nome da clínica<input name='name' maxlength='100' value='{html_escape(u.name)}' required></label><label>E-mail de acesso<input type='email' name='email' maxlength='120' value='{html_escape(u.email)}' required></label><label>Nova senha (opcional)<input type='password' name='password' minlength='10' maxlength='256'></label>{clinic_fields_form(u)}<button class='gold' type='submit'>Salvar alterações</button></form></div>"""
  return page(body)
+
+
+@app.route("/admin/usuarios/<int:uid>/precos/padrao",methods=["POST"])
+def admin_clinic_prices_standard(uid):
+ if session.get("role")!="Radiologista": return redirect("/")
+ u=User.query.get_or_404(uid)
+ if u.role!="Clinica": return redirect("/admin/usuarios")
+ existing={p.exam_type:p for p in ClinicPrice.query.filter_by(clinic_id=u.id).all()}
+ added=0
+ for exam_type,amount in STANDARD_PRICES_2026:
+  if exam_type not in existing:
+   db.session.add(ClinicPrice(clinic_id=u.id,exam_type=exam_type,amount=amount,active=True))
+   added+=1
+ db.session.commit()
+ flash(f"Tabela padrão aplicada: {added} modalidades adicionadas. Preços existentes preservados.")
+ return redirect(url_for("admin_clinic_prices",uid=u.id))
 
 @app.route("/admin/usuarios/<int:uid>/precos",methods=["GET","POST"])
 def admin_clinic_prices(uid):
@@ -568,7 +656,7 @@ def admin_clinic_prices(uid):
   db.session.commit(); flash("Preço da clínica salvo."); return redirect(url_for("admin_clinic_prices",uid=u.id))
  prices=ClinicPrice.query.filter_by(clinic_id=u.id).order_by(ClinicPrice.exam_type).all()
  rows="".join("<tr><td>"+str(html_escape(x.exam_type))+"</td><td>R$ "+format(x.amount,".2f")+"</td><td><a class='btn' href='/admin/usuarios/"+str(u.id)+"/precos/"+str(x.id)+"/editar'>Editar</a> <form method='post' action='/admin/usuarios/"+str(u.id)+"/precos/"+str(x.id)+"/excluir' style='display:inline-block;margin:0' onsubmit=\"return confirm('Excluir este preço contratado?')\">"+csrf_field()+"<button type='submit'>Excluir</button></form></td></tr>" for x in prices)
- body=f"""<h1>Tabela de preços — {html_escape(u.name)}</h1><div class='card'><p class='muted'>Cadastre o valor contratado por tipo de exame. O sistema usará este preço automaticamente ao laudar.</p><form method='post'>{csrf_field()}<label>Tipo de exame<input name='exam_type' maxlength='100' placeholder='Ex.: Panorâmica' required></label><label>Valor contratado (R$)<input type='number' name='amount' min='0.01' step='0.01' required></label><button class='gold' type='submit'>Salvar preço</button></form></div><div class='card'><h2>Preços cadastrados</h2><table><tr><th>Tipo de exame</th><th>Valor</th><th>Ação</th></tr>{rows or '<tr><td colspan=3>Nenhum preço cadastrado.</td></tr>'}</table></div>"""
+ body=f"""<h1>Tabela de preços — {html_escape(u.name)}</h1><div class='card'><h2>Tabela padrão MALIBUB 2026</h2><p>Adiciona modalidades ausentes sem alterar valores existentes. Urgência: acréscimo de 50%.</p><form method='post' action='/admin/usuarios/{u.id}/precos/padrao'>{csrf_field()}<button type='submit'>Aplicar tabela padrão MALIBUB 2026</button></form></div><div class='card'><p class='muted'>Cadastre o valor contratado por tipo de exame. O sistema usará este preço automaticamente ao laudar.</p><form method='post'>{csrf_field()}<label>Tipo de exame<input name='exam_type' maxlength='100' placeholder='Ex.: Panorâmica' required></label><label>Valor contratado (R$)<input type='number' name='amount' min='0.01' step='0.01' required></label><button class='gold' type='submit'>Salvar preço</button></form></div><div class='card'><h2>Preços cadastrados</h2><table><tr><th>Tipo de exame</th><th>Valor</th><th>Ação</th></tr>{rows or '<tr><td colspan=3>Nenhum preço cadastrado.</td></tr>'}</table></div>"""
  return page(body)
 
 @app.route("/admin/usuarios/<int:uid>/precos/<int:pid>/editar",methods=["GET","POST"])
