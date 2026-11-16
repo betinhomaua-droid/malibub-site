@@ -547,7 +547,7 @@ CLINIC_FIELDS=["legal_name","cnpj","phone","address","address_number","address_e
 CLINIC_LABELS=["Razão social","CNPJ","Telefone / WhatsApp","Endereço","Número","Complemento","Bairro","Cidade","UF","CEP","Responsável","E-mail de cobrança"]
 STANDARD_PRICES_2026=[("Panorâmica 2D",20.0),("Implante até 3 elementos",45.0),("Maxila ou mandíbula",50.0),("Dentes inclusos",50.0),("Endodontia",70.0),("ATM",70.0),("Periodontia",70.0),("Seio maxilar",70.0),("Patologia",70.0),("Tomografia de face",120.0),("Tomografia zigomática",120.0)]
 def clinic_fields_form(u=None):
- return "".join("<label>"+html_escape(label)+"<input name='"+field+"' maxlength='180' value='"+html_escape(str(getattr(u,field,None) or ""))+"'></label>" for field,label in zip(CLINIC_FIELDS,CLINIC_LABELS))
+ return "".join("<label>"+str(html_escape(label))+"<input name='"+field+"' maxlength='180' value='"+str(html_escape(str(getattr(u,field,None) or "")))+"'></label>" for field,label in zip(CLINIC_FIELDS,CLINIC_LABELS))
 def clinic_fields_save(u):
  for field in CLINIC_FIELDS: setattr(u,field,request.form.get(field,"").strip()[:180] or None)
 def valid_clinic_cnpj(u):
