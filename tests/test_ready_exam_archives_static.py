@@ -13,10 +13,10 @@ class ReadyExamArchiveTests(unittest.TestCase):
         route = next(n for n in self.tree.body if isinstance(n, ast.FunctionDef) and n.name == "upload_ready_exam")
         text = ast.get_source_segment(self.source, route)
         for extension in (".jpg", ".jpeg", ".pdf", ".zip", ".rar"):
-            self.assertIn(repr(extension), text)
+            self.assertIn('"' + extension + '"', text)
 
     def test_form_offers_archives(self):
-        self.assertIn('accept=\\".jpg,.jpeg,.pdf,.zip,.rar,', self.source)
+        self.assertIn('accept=".jpg,.jpeg,.pdf,.zip,.rar,', self.source)
 
     def test_archive_does_not_use_pdf_preview(self):
         self.assertIn("if f.name.lower().endswith('.pdf') else", self.source)
