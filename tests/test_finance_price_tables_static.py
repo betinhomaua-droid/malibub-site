@@ -18,9 +18,10 @@ class FinancePriceTablesTests(unittest.TestCase):
    self.assertIn(value,s)
  def test_catalog_rows_render_as_elements(self):
   s=self.method("finance_price_tables")
-  self.assertIn("price-line",s)
-  self.assertIn("price-catalog",s)
+  self.assertIn("price-catalog-text",s)
+  self.assertIn('standard="\\n".join',s)
   self.assertNotIn('standard="".join("<tr>',s)
+  self.assertNotIn('standard="".join("<div',s)
  def test_price_change_does_not_rewrite_finance(self):
   s=self.method('finance_apply_preset')
   self.assertNotIn('Finance.query',s)
