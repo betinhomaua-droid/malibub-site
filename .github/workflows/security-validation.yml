@@ -26,5 +26,7 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_exam_type_finance.py' -v
       - name: Archive upload regression checks
         run: python -m unittest discover -s tests -p 'test_ready_exam_archives_static.py' -v
+      - name: Admin clinic logo regression checks
+        run: python -m unittest discover -s tests -p 'test_admin_clinic_logo_static.py' -v
       - name: Security regression checks
         run: python -m unittest discover -s tests -p 'test_security_static.py' -v
