@@ -604,6 +604,37 @@ def admin_users():
  body=f"""<h1>Administração</h1><div class='card'><h2>Cadastrar clínica</h2><form method='post'>{csrf_field()}<label>Nome da clínica<input name='name' maxlength='100' required></label><label>E-mail de acesso<input type='email' name='email' maxlength='120' required></label><label>Senha inicial<span style='display:flex;align-items:center;gap:8px'><input id='clinic-password-new' type='password' name='password' minlength='10' maxlength='256' autocomplete='new-password' required style='flex:1;min-width:0'><button type='button' aria-label='Mostrar senha' aria-pressed='false' title='Mostrar senha' style='width:auto;flex:none;background:#eef5f8;color:#123e52;border:1px solid #cadde5;padding:10px' onclick=\"const p=document.getElementById('clinic-password-new');const show=p.type==='password';p.type=show?'text':'password';this.textContent=show?'🙈':'👁';this.setAttribute('aria-label',show?'Ocultar senha':'Mostrar senha');this.setAttribute('aria-pressed',String(show))\">👁</button></span></label>{clinic_fields_form()}<button class='gold' type='submit'>Criar acesso</button></form></div><div class='card'><h2>Clínicas cadastradas</h2><table><tr><th>Clínica</th><th>E-mail</th><th>Status</th><th>Ação</th></tr>{rows or '<tr><td colspan=4>Nenhuma clínica cadastrada.</td></tr>'}</table></div>"""
  return page(body)
 
+@app.route("/admin/usuarios/<int:uid>/logo",methods=["POST"])
+def admin_clinic_logo(uid):
+ if session.get("role")!="Radiologista": return redirect("/")
+ u=User.query.get_or_404(uid)
+ if u.role!="Clinica": return redirect("/admin/usuarios")
+ logo=request.files.get("logo")
+ if not logo or not logo.filename:
+  flash("Selecione uma logomarca JPG ou PNG."); return redirect(url_for("admin_user_edit",uid=uid))
+ name=secure_filename(logo.filename); ext=Path(name).suffix.lower()
+ if not name or ext not in {".jpg",".jpeg",".png"}:
+  flash("A logomarca deve estar em JPG ou PNG."); return redirect(url_for("admin_user_edit",uid=uid))
+ scan_status,scan_detail=malware_scan(logo,name)
+ if scan_status in {"SUSPEITO","INFECTADO"} or (scan_status=="ERRO" and MALWARE_SCAN_REQUIRED):
+  flash("A logomarca não passou na verificação de segurança."); return redirect(url_for("admin_user_edit",uid=uid))
+ stored="logo_"+str(u.id)+"_"+uuid.uuid4().hex+ext
+ try:
+  store_upload(logo,stored,logo.mimetype)
+  old_logo=u.logo
+  u.logo=stored; u.logo_name=name
+  db.session.commit()
+ except Exception:
+  db.session.rollback()
+  try: storage_delete(stored)
+  except Exception: pass
+  flash("Não foi possível salvar a logomarca."); return redirect(url_for("admin_user_edit",uid=uid))
+ if old_logo:
+  try: storage_delete(old_logo)
+  except Exception: pass
+ flash("Logomarca da clínica atualizada.")
+ return redirect(url_for("admin_user_edit",uid=uid))
+
 @app.route("/admin/usuarios/<int:uid>/editar",methods=["GET","POST"])
 def admin_user_edit(uid):
  if session.get("role")!="Radiologista": return redirect("/")
@@ -627,7 +658,7 @@ def admin_user_edit(uid):
   u.name=name; u.email=email
   if password: u.password=generate_password_hash(password)
   db.session.commit(); flash("Cadastro da clínica atualizado."); return redirect("/admin/usuarios")
- body=f"""<h1>Editar clínica</h1><div class='card'><form method='post'>{csrf_field()}<label>Nome da clínica<input name='name' maxlength='100' value='{html_escape(u.name)}' required></label><label>E-mail de acesso<input type='email' name='email' maxlength='120' value='{html_escape(u.email)}' required></label><label>Nova senha (opcional)<span style='display:flex;align-items:center;gap:8px'><input id='clinic-password-edit' type='password' name='password' minlength='10' maxlength='256' autocomplete='new-password' style='flex:1;min-width:0'><button type='button' aria-label='Mostrar senha' aria-pressed='false' title='Mostrar senha' style='width:auto;flex:none;background:#eef5f8;color:#123e52;border:1px solid #cadde5;padding:10px' onclick=\"const p=document.getElementById('clinic-password-edit');const show=p.type==='password';p.type=show?'text':'password';this.textContent=show?'🙈':'👁';this.setAttribute('aria-label',show?'Ocultar senha':'Mostrar senha');this.setAttribute('aria-pressed',String(show))\">👁</button></span></label>{clinic_fields_form(u)}<button class='gold' type='submit'>Salvar alterações</button></form></div>"""
+ body=f"""<h1>Editar clínica</h1><div class='card'><form method='post'>{csrf_field()}<label>Nome da clínica<input name='name' maxlength='100' value='{html_escape(u.name)}' required></label><label>E-mail de acesso<input type='email' name='email' maxlength='120' value='{html_escape(u.email)}' required></label><label>Nova senha (opcional)<span style='display:flex;align-items:center;gap:8px'><input id='clinic-password-edit' type='password' name='password' minlength='10' maxlength='256' autocomplete='new-password' style='flex:1;min-width:0'><button type='button' aria-label='Mostrar senha' aria-pressed='false' title='Mostrar senha' style='width:auto;flex:none;background:#eef5f8;color:#123e52;border:1px solid #cadde5;padding:10px' onclick=\"const p=document.getElementById('clinic-password-edit');const show=p.type==='password';p.type=show?'text':'password';this.textContent=show?'🙈':'👁';this.setAttribute('aria-label',show?'Ocultar senha':'Mostrar senha');this.setAttribute('aria-pressed',String(show))\">👁</button></span></label>{clinic_fields_form(u)}<button class='gold' type='submit'>Salvar alterações</button></form><hr><h2>Logomarca da clínica</h2>{("<p><b>Atual:</b> "+html_escape(u.logo_name or "")+"</p><img src='/clinic-logo/"+str(u.id)+"' alt='Logomarca atual' style='max-width:220px;max-height:120px;object-fit:contain'>") if u.logo else "<p class='muted'>Nenhuma logomarca cadastrada.</p>"}<form method='post' action='/admin/usuarios/{u.id}/logo' enctype='multipart/form-data'>{csrf_field()}<label>Adicionar ou substituir logo (JPG ou PNG)<input type='file' name='logo' accept='.jpg,.jpeg,.png,image/jpeg,image/png' required></label><button class='gold' type='submit'>Salvar logomarca</button></form></div>"""
  return page(body)
 
 
