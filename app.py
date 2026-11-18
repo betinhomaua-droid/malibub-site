@@ -321,6 +321,13 @@ class ExamFile(db.Model):
  id=db.Column(db.Integer,primary_key=True); exam_id=db.Column(db.Integer); name=db.Column(db.String(255)); stored=db.Column(db.String(255)); kind=db.Column(db.String(30),default="entrada"); uploaded_by=db.Column(db.String(100)); scan_status=db.Column(db.String(20),default="PENDENTE"); scan_detail=db.Column(db.String(255))
 class Finance(db.Model):
  id=db.Column(db.Integer,primary_key=True); date=db.Column(db.Date,default=datetime.utcnow().date); description=db.Column(db.String(200)); kind=db.Column(db.String(20)); amount=db.Column(db.Float,default=0); created_at=db.Column(db.DateTime,default=datetime.utcnow)
+class PricePreset(db.Model):
+ id=db.Column(db.Integer,primary_key=True)
+ name=db.Column(db.String(100),nullable=False)
+ exam_type=db.Column(db.String(100),nullable=False)
+ amount=db.Column(db.Float,nullable=False)
+ __table_args__=(db.UniqueConstraint("name","exam_type",name="uq_price_preset_exam"),)
+
 class ClinicPrice(db.Model):
  id=db.Column(db.Integer,primary_key=True); clinic_id=db.Column(db.Integer,index=True,nullable=False); exam_type=db.Column(db.String(100),nullable=False); amount=db.Column(db.Float,nullable=False); active=db.Column(db.Boolean,default=True); __table_args__=(db.UniqueConstraint("clinic_id","exam_type",name="uq_clinic_exam_price"),)
 
@@ -1954,6 +1961,64 @@ def result(eid):
  body=f'''<section class="print-result"><h1>Resultado — {html_escape(e.protocol)}</h1>{revision_response_html}<div class="card"><div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap"><div><h2 style="margin:0 0 6px">{html_escape(e.patient)}</h2><div class="muted"><b>Sexo:</b> {html_escape(e.sex or 'Não informado')} · <b>Nascimento:</b> {html_escape(br_date(e.birth) or '—')} · <b>Exame:</b> {html_escape(e.exam_type)} · <b>Dentista:</b> {html_escape(e.dentist or 'Dentista não informado')} · <b>Data do exame:</b> {html_escape(br_date(e.exam_date) or '—')}</div></div><span class="badge">{html_escape(e.status)}</span></div><hr><h3>Laudo radiológico</h3><div style="white-space:pre-wrap;min-height:220px;line-height:1.6">{html_escape(e.report or 'Laudo não informado.')}</div><div style="margin-top:22px;padding-top:16px;border-top:1px solid #dce8ec"><b>{html_escape(e.signed_by or 'Dra. Marina')}</b><br><span class="muted">Radiologista responsável · Assinado eletronicamente {signed}</span></div><hr><div class="no-print"><a class="btn gold" href="/result/{e.id}/pdf">Baixar laudo assinado em PDF</a><a class="btn" href="/result/{e.id}/pdf?print=1" target="_blank">Imprimir</a></div></div></section><section class="card viewer no-print"><h2>Exame pronto / Templates</h2><p class="muted">Arquivos finais disponibilizados pela radiologista.</p>{ready_html or '<div class="notice">Nenhum arquivo final foi anexado.</div>'}</section>'''
  return page(body)
 
+@app.route("/finance/tabelas",methods=["GET","POST"])
+def finance_price_tables():
+ if session.get("role")!="Radiologista": return redirect("/")
+ if request.method=="POST":
+  name=request.form.get("name","").strip()[:100]
+  exam_type=request.form.get("exam_type","").strip()[:100]
+  try:
+   amount=float(request.form.get("amount","").replace(",","."))
+   if not 0<amount<1000000: raise ValueError
+  except (ValueError,TypeError):
+   flash("Informe um valor válido."); return redirect("/finance/tabelas")
+  if not name or not exam_type:
+   flash("Informe tabela e exame."); return redirect("/finance/tabelas")
+  p=PricePreset.query.filter_by(name=name,exam_type=exam_type).first()
+  if p: p.amount=round(amount,2)
+  else: db.session.add(PricePreset(name=name,exam_type=exam_type,amount=round(amount,2)))
+  db.session.commit()
+  flash("Valor salvo."); return redirect("/finance/tabelas")
+ standard="".join("<tr><td>"+html_escape(t)+"</td><td>R$ "+format(v,".2f").replace(".",",")+"</td></tr>" for t,v in STANDARD_PRICES_2026)
+ presets=PricePreset.query.order_by(PricePreset.name,PricePreset.exam_type).all()
+ groups={}
+ for p in presets: groups.setdefault(p.name,[]).append(p)
+ custom=""
+ for name,items in groups.items():
+  rows="".join("<tr><td>"+html_escape(p.exam_type)+"</td><td>R$ "+format(p.amount,".2f").replace(".",",")+"</td><td><form method='post' action='/finance/tabelas/"+str(p.id)+"/excluir'>"+csrf_field()+"<button>Excluir</button></form></td></tr>" for p in items)
+  custom+="<div class='card'><h3>"+html_escape(name)+"</h3><table><tr><th>Exame</th><th>Valor</th><th>Ação</th></tr>"+rows+"</table></div>"
+ clinics=User.query.filter_by(role="Clinica").order_by(User.name).all()
+ options="".join("<option value='"+str(u.id)+"'>"+html_escape(u.name)+"</option>" for u in clinics)
+ tables="".join("<option value='"+html_escape(n)+"'>"+html_escape(n)+"</option>" for n in groups)
+ types="".join("<option value='"+html_escape(t)+"'>" for t,_ in STANDARD_PRICES_2026)
+ body=f"""<h1>Financeiro — Tabelas de preços</h1><p><a class='btn' href='/finance'>Voltar ao financeiro</a></p><div class='card'><h2>Tipos de exames e valores padrão</h2><table><tr><th>Exame</th><th>Valor padrão</th></tr>{standard}</table></div><div class='card'><h2>Tabelas personalizadas para futuras clínicas</h2><p>Crie uma tabela comercial por nome e inclua valores por exame. O mesmo nome e exame atualiza o valor anterior.</p><form method='post'>{csrf_field()}<label>Nome da tabela<input name='name' maxlength='100' required></label><label>Tipo de exame<input name='exam_type' list='types' maxlength='100' required></label><datalist id='types'>{types}</datalist><label>Valor (R$)<input type='number' name='amount' min='0.01' step='0.01' required></label><button class='gold'>Salvar valor</button></form></div>{custom or "<div class='card'>Nenhuma tabela personalizada cadastrada.</div>"}<div class='card'><h2>Aplicar tabela à clínica</h2><p>Atualiza apenas os preços para novos exames. Não altera lançamentos anteriores.</p><form method='post' action='/finance/tabelas/aplicar'>{csrf_field()}<label>Tabela<select name='name' required>{tables}</select></label><label>Clínica<select name='clinic_id' required>{options}</select></label><button class='gold' onclick="return confirm('Atualizar preços contratados desta clínica?')">Aplicar tabela</button></form></div>"""
+ return page(body)
+
+@app.post("/finance/tabelas/<int:pid>/excluir")
+def finance_delete_preset(pid):
+ if session.get("role")!="Radiologista": return redirect("/")
+ p=PricePreset.query.get_or_404(pid)
+ db.session.delete(p); db.session.commit()
+ return redirect("/finance/tabelas")
+
+@app.post("/finance/tabelas/aplicar")
+def finance_apply_preset():
+ if session.get("role")!="Radiologista": return redirect("/")
+ try: uid=int(request.form.get("clinic_id",""))
+ except (ValueError,TypeError): return redirect("/finance/tabelas")
+ clinic=User.query.get_or_404(uid)
+ if clinic.role!="Clinica": return redirect("/finance/tabelas")
+ items=PricePreset.query.filter_by(name=request.form.get("name","").strip()).all()
+ if not items:
+  flash("Tabela não encontrada."); return redirect("/finance/tabelas")
+ for p in items:
+  existing=ClinicPrice.query.filter_by(clinic_id=clinic.id,exam_type=p.exam_type).first()
+  if existing: existing.amount=p.amount; existing.active=True
+  else: db.session.add(ClinicPrice(clinic_id=clinic.id,exam_type=p.exam_type,amount=p.amount,active=True))
+ db.session.commit()
+ flash("Tabela aplicada. Exames anteriores preservados.")
+ return redirect(url_for("admin_clinic_prices",uid=clinic.id))
+
 @app.route("/finance",methods=["GET","POST"])
 def finance():
  if session.get("role")!="Radiologista": return redirect("/")
@@ -2026,7 +2091,7 @@ def finance():
   +"".join(items)+"</table></div></details>"
   for idx,(key,items) in enumerate(sorted(rows_by_month.items(),reverse=True))
  )
- body=f'''<h1>Financeiro MALIBUB</h1><p class="muted">Acompanhe receitas, custos da plataforma e saúde financeira.</p>
+ body=f'''<h1>Financeiro MALIBUB</h1><p class="muted">Acompanhe receitas, custos da plataforma e saúde financeira.</p><p><a class="btn gold" href="/finance/tabelas">Tipos de exames e tabelas de preços</a></p>
  <form method="get" class="card"><label>Período mensal<input type="month" name="month" value="{html_escape(month)}"></label><button type="submit">Filtrar</button><a class="btn" href="/finance">Todo o período</a></form>
  <div class="cards"><div class="card">Entradas<b>R$ {ent:.2f}</b></div><div class="card">Saídas<b>R$ {sai:.2f}</b></div><div class="card">Saldo<b>R$ {saldo:.2f}</b></div><div class="card">Infraestrutura<b>R$ {infra:.2f}</b></div><div class="card">Custos fixos<b>R$ {fixed:.2f}</b></div><div class="card">Custos variáveis<b>R$ {variable:.2f}</b></div><div class="card">Margem<b>{margem:.1f}%</b></div><div class="card">Saúde financeira<b>{health}</b></div><div class="card">Laudos liberados<b>{released}</b></div><div class="card">Receita de laudos<b>R$ {report_revenue:.2f}</b></div><div class="card">Ticket médio<b>R$ {ticket:.2f}</b></div><div class="card">Ponto de equilíbrio<b>{break_even:.1f} laudos</b></div></div>
  <div class="card"><h2>Relatório de produção para cobrança</h2><p class="muted">Gere o demonstrativo mensal em PDF com quantidade de laudos e valores da clínica.</p><form method="get" action="/finance/relatorio-producao"><div class="grid"><label>Clínica<select name="clinic_id" required><option value="">Selecione</option>{clinic_options}</select></label><label>Período<input type="month" name="month" value="{html_escape(month)}" required></label></div><button class="gold" type="submit">Gerar relatório PDF</button></form></div> <div class="card"><h2>Novo lançamento</h2><form method="post">{csrf_field()}<div class="grid"><label>Categoria<select name="category"><option>Laudos</option><option>Registro</option><option>Hospedagem</option><option>Armazenamento</option><option>Domínio</option><option>Infraestrutura</option><option>Marketing</option><option>Impostos</option><option>Outros</option></select></label><label>Classificação do custo<select name="cost_class"><option value="">Não se aplica</option><option>Fixo</option><option>Variável</option></select></label><label>Descrição<input name="description" placeholder="Ex.: renovação anual, mensalidade, consumo R2" required></label><label>Mês de competência<input type="month" name="competence" value="{datetime.now(ZoneInfo('America/Sao_Paulo')).strftime('%Y-%m')}" required><small class="muted">O lançamento entrará nos totais do mês escolhido, mesmo se cadastrado depois.</small></label><label>Tipo<select name="kind"><option>Entrada</option><option>Saída</option></select></label><label>Valor (R$)<input type="number" min="0" step="0.01" name="amount" required></label></div><button class="gold">Adicionar lançamento</button></form></div>
