@@ -299,6 +299,14 @@ def next_exam_protocol():
  if number>99999: raise RuntimeError("Limite anual de protocolos atingido")
  return f"{year}{number:05d}"
 
+class ExamReturn(db.Model):
+ id=db.Column(db.Integer,primary_key=True)
+ exam_id=db.Column(db.Integer,index=True,nullable=False)
+ reason=db.Column(db.Text,nullable=False)
+ returned_by=db.Column(db.Integer,nullable=False)
+ returned_at=db.Column(db.DateTime,default=datetime.utcnow)
+ corrected_at=db.Column(db.DateTime)
+
 class ExamTypeChange(db.Model):
  id=db.Column(db.Integer,primary_key=True)
  exam_id=db.Column(db.Integer,index=True,nullable=False)
@@ -805,9 +813,9 @@ def dashboard():
    # Primeiro o prazo real de entrega; URG desempata antes dos normais.
    due=e.due_at or datetime.max
    return (due,0 if (e.priority or "NORMAL")=="URG" else 1,e.created_at or datetime.max)
-  pending_exams=sorted([e for e in exams if e.status!="Liberado"],key=pending_sort_key)
+  pending_exams=sorted([e for e in exams if e.status not in {"Liberado","Devolvido para correção"}],key=pending_sort_key)
   completed_exams=sorted([e for e in exams if e.status=="Liberado"],key=lambda e:(e.released_at or e.created_at or datetime.min,e.id or 0),reverse=True)
-  exams=pending_exams+completed_exams
+  exams=pending_exams+[e for e in exams if e.status=="Devolvido para correção"]+completed_exams
  clinics={}
  if is_radiologist:
   clinic_ids=list({e.clinic_id for e in exams if e.clinic_id})
@@ -825,7 +833,8 @@ def dashboard():
    edit_action=(f'<a class="btn" href="/exam/{e.id}/editar-tipo" style="margin-left:6px;background:#376878">Editar exame</a>' if is_radiologist and e.status!="Liberado" else "")
    delete_action=(f'<form method="post" action="/exam/{e.id}/excluir" style="display:inline" onsubmit="return confirm(\'Excluir definitivamente este exame, seus arquivos e o lançamento financeiro vinculado? Esta ação não pode ser desfeita.\')">{csrf_field()}<button type="submit" style="background:#b42318">Excluir</button></form>' if is_radiologist else "")
    review_action=(f'<a class="btn" style="margin-left:6px;background:#fff;color:#b97700;border:1px solid #d69c27" href="#revisao" data-exam-id="{e.id}" data-protocol="{html_escape(e.protocol)}" data-patient="{html_escape(e.patient)}" onclick="openRevisionDialog(this);return false">Revisão</a>' if not is_radiologist and e.status=="Liberado" else "")
-   action=primary_action+edit_action+review_action+delete_action
+   correction_action=(f'<a class="btn" href="/exam/{e.id}/corrigir" style="background:#b97700">Corrigir e reenviar</a>' if not is_radiologist and e.status=="Devolvido para correção" else "")
+   action=primary_action+edit_action+review_action+correction_action+delete_action
   delivery=("<b style='color:#b42318'>URG</b><br>" if (e.priority or "NORMAL")=="URG" else "")+due_date_label(e.due_at,e.priority or "NORMAL")
   if is_radiologist:
    clinic=clinics.get(e.clinic_id)
@@ -1422,6 +1431,66 @@ def rich_report_blocks(raw_html, plain):
   p.blocks=[(esc(line) if line else "&nbsp;","left") for line in (plain or "").splitlines()]
  return p.blocks or [("&nbsp;","left")]
 
+@app.post("/exam/<int:eid>/devolver-clinica")
+def return_exam_to_clinic(eid):
+ if session.get("role")!="Radiologista": return redirect("/")
+ e=Exam.query.get_or_404(eid)
+ if e.status in {"Liberado","Devolvido para correção"}:
+  flash("Exame não pode ser devolvido neste status."); return redirect("/dashboard")
+ reason=request.form.get("return_reason","").strip()
+ if not 10<=len(reason)<=2000:
+  flash("Justificativa obrigatória de 10 a 2000 caracteres."); return redirect(url_for("report",eid=eid))
+ db.session.add(ExamReturn(exam_id=e.id,reason=reason,returned_by=session["uid"]))
+ e.status="Devolvido para correção"
+ db.session.commit()
+ flash("Exame devolvido à clínica.")
+ return redirect("/dashboard")
+
+@app.route("/exam/<int:eid>/corrigir",methods=["GET","POST"])
+def correct_returned_exam(eid):
+ if session.get("role")!="Clinica": return redirect("/")
+ e=Exam.query.filter_by(id=eid,clinic_id=session["uid"]).first_or_404()
+ if e.status!="Devolvido para correção": return redirect("/dashboard")
+ occurrence=ExamReturn.query.filter_by(exam_id=e.id,corrected_at=None).order_by(ExamReturn.returned_at.desc()).first_or_404()
+ if request.method=="POST":
+  incoming=[f for f in request.files.getlist("files") if f and f.filename]
+  requisitions=[f for f in request.files.getlist("dentist_request") if f and f.filename]
+  if not incoming and not requisitions:
+   flash("Anexe arquivos corrigidos."); return redirect(url_for("correct_returned_exam",eid=eid))
+  for file,allowed in [(f,{".jpg",".jpeg",".png",".pdf",".dcm",".zip",".rar"}) for f in incoming]+[(f,{".jpg",".jpeg",".png",".pdf"}) for f in requisitions]:
+   name=secure_filename(file.filename)
+   if not name or Path(name).suffix.lower() not in allowed:
+    flash("Formato de arquivo inválido."); return redirect(url_for("correct_returned_exam",eid=eid))
+   if Path(name).suffix.lower()==".zip":
+    ok,message=validate_zip_upload(file)
+    if not ok:
+     flash(message); return redirect(url_for("correct_returned_exam",eid=eid))
+  uploaded=[]
+  try:
+   for file,kind in [(f,"entrada") for f in incoming]+[(f,"requisicao") for f in requisitions]:
+    name=secure_filename(file.filename)
+    stored="exames/"+uuid.uuid4().hex+"_"+name
+    store_upload(file,stored,file.mimetype)
+    uploaded.append(stored)
+    db.session.add(ExamFile(exam_id=e.id,name=name,stored=stored,kind=kind,uploaded_by=session.get("name"),scan_status="NAO_VERIFICADO",scan_detail="Aguardando verificação antivírus."))
+   if incoming:
+    for old in ExamFile.query.filter(ExamFile.exam_id==e.id,ExamFile.kind.in_(["entrada",None])).all(): old.kind="entrada_anterior"
+   if requisitions:
+    for old in ExamFile.query.filter_by(exam_id=e.id,kind="requisicao").all(): old.kind="requisicao_anterior"
+   occurrence.corrected_at=datetime.utcnow()
+   e.status="Aguardando laudo"
+   db.session.commit()
+  except Exception:
+   db.session.rollback()
+   for key in uploaded:
+    try: storage_delete(key)
+    except Exception: pass
+   flash("Não foi possível reenviar a correção."); return redirect(url_for("correct_returned_exam",eid=eid))
+  flash("Exame corrigido e reenviado com o mesmo protocolo.")
+  return redirect("/dashboard")
+ body=f"""<h1>Corrigir exame {html_escape(e.protocol)}</h1><div class='card'><p><b>Paciente:</b> {html_escape(e.patient)}</p><h3>Justificativa da radiologista</h3><div class='notice'>{html_escape(occurrence.reason)}</div><p>Envie os arquivos corrigidos. Os anteriores serão preservados no histórico.</p><form method='post' enctype='multipart/form-data'>{csrf_field()}<label>Arquivos corrigidos<input type='file' name='files' accept='.jpg,.jpeg,.png,.pdf,.dcm,.zip,.rar' multiple></label><label>Requisição corrigida (opcional)<input type='file' name='dentist_request' accept='.jpg,.jpeg,.png,.pdf' multiple></label><button class='gold' type='submit'>Reenviar correção</button></form></div>"""
+ return page(body)
+
 @app.post("/exam/<int:eid>/revisao")
 def request_exam_revision(eid):
  if session.get("role")!="Clinica": return redirect("/")
@@ -1452,8 +1521,8 @@ def report(eid):
  request_files=ExamFile.query.filter_by(exam_id=e.id,kind="requisicao").all()
  ready_files=ExamFile.query.filter_by(exam_id=e.id,kind="exame_pronto").all()
  if request.method=="POST":
-  if e.status=="Liberado":
-   flash("Este laudo já foi liberado. Nenhuma nova receita foi lançada.")
+  if e.status in {"Liberado","Devolvido para correção"}:
+   flash("Este laudo já foi liberado ou aguarda correção da clínica. Nenhuma nova receita foi lançada.")
    return redirect("/dashboard")
   if request.form.get("release_confirmed")!="yes":
    flash("Confirme a conferência do laudo antes da liberação.")
@@ -1520,6 +1589,7 @@ def report(eid):
    return redirect(url_for("report",eid=e.id))
   return redirect("/dashboard")
  imgs="".join((f"<div class='exam-file'><div class='filebar'><b>{html_escape(f.name)}</b><span class='badge'>{html_escape(f.scan_status or 'NAO_VERIFICADO')}</span><form method='post' action='/exam-file/{f.id}/scan' style='display:inline'>{csrf_field()}<button type='submit'>Verificar com antivírus</button></form><a class='btn' href='/exam-file/{f.id}' target='_blank'>Abrir</a><a class='btn gold' href='/exam-file/{f.id}?download=1'>Baixar</a></div>" + (f"<img src='/exam-file/{f.id}' alt='{html_escape(f.name)}'>" if f.name.lower().endswith(('.jpg','.jpeg','.png','.webp')) else (f"<iframe src='/exam-file/{f.id}' title='{html_escape(f.name)}'></iframe>" if f.name.lower().endswith('.pdf') else "<div class='notice'>Pré-visualização indisponível para este formato. Use Abrir ou Baixar.</div>")) + "</div>") for f in files)
+ return_form=(f"""<div class='card' style='margin-top:16px;border-left:4px solid #b97700'><h3>Devolver exame à clínica</h3><form method='post' action='/exam/{e.id}/devolver-clinica'>{csrf_field()}<label>Justificativa obrigatória<textarea name='return_reason' minlength='10' maxlength='2000' rows='4' required placeholder='Ex.: Exame tremido; DICOM de outro paciente.'></textarea></label><button type='submit' style='background:#b97700'>Devolver à clínica</button></form></div>""" if e.status not in {"Liberado","Devolvido para correção"} else "")
  request_html="".join((f"<div class='exam-file'><div class='filebar'><b>{html_escape(f.name)}</b><a class='btn' href='/exam-file/{f.id}' target='_blank'>Abrir</a><a class='btn gold' href='/exam-file/{f.id}?download=1'>Baixar</a></div>" + (f"<img src='/exam-file/{f.id}' alt='{html_escape(f.name)}'>" if f.name.lower().endswith(('.jpg','.jpeg','.png')) else f"<iframe src='/exam-file/{f.id}' title='{html_escape(f.name)}'></iframe>") + "</div>") for f in request_files)
  ready_html="".join((f"<div class='exam-file'><div class='filebar'><b>{html_escape(f.name)}</b><a class='btn' href='/exam-file/{f.id}' target='_blank'>Abrir</a><a class='btn gold' href='/exam-file/{f.id}?download=1'>Baixar</a><form method='post' action='/report/{e.id}/exame-pronto/{f.id}/excluir' style='display:inline-block;margin:0' onsubmit=\"return confirm('Excluir este anexo individualmente? Esta ação não pode ser desfeita.')\">{csrf_field()}<button type='submit'>Excluir</button></form></div>" + (f"<img src='/exam-file/{f.id}'>" if f.name.lower().endswith(('.jpg','.jpeg')) else (f"<iframe src='/exam-file/{f.id}#navpanes=0&view=FitH' title='Pré-visualização do PDF sem miniaturas laterais' loading='lazy'></iframe>" if f.name.lower().endswith('.pdf') else "<div class='notice'>Pré-visualização indisponível para ZIP/RAR. Use Abrir ou Baixar.</div>")) + "</div>") for f in ready_files)
  clinic=User.query.get(e.clinic_id); price=ClinicPrice.query.filter_by(clinic_id=e.clinic_id,exam_type=e.exam_type,active=True).first(); suggested_amount=(e.contracted_amount if e.contracted_amount is not None else ((price.amount*(1.5 if (e.priority or "NORMAL")=="URG" else 1.0)) if price else None)); model_link=(f"<a class='btn' href='/modelo-laudo/arquivo?exam={e.id}' target='_blank'>Ver modelo de laudo da clínica</a>" if clinic and clinic.report_model else "<span class='muted'>Clínica sem modelo de laudo cadastrado.</span>")
