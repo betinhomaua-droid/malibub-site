@@ -1275,6 +1275,9 @@ def exam_file(fid):
 def upload_ready_exam(eid):
  if session.get("role")!="Radiologista": return redirect("/")
  e=Exam.query.get_or_404(eid)
+ if e.status in {"Liberado","Devolvido para correção"}:
+  flash("Este exame não aceita anexos finais enquanto estiver liberado ou devolvido à clínica.")
+  return redirect("/dashboard")
  incoming=[file for file in request.files.getlist("finished_files") if file and file.filename]
  invalid=[secure_filename(file.filename) for file in incoming if Path(secure_filename(file.filename)).suffix.lower() not in {".jpg",".jpeg",".pdf",".zip",".rar"}]
  empty_names=[file.filename for file in incoming if not secure_filename(file.filename)]
@@ -1601,6 +1604,9 @@ def report(eid):
 def preview_report_pdf(eid):
  if session.get("role")!="Radiologista": return redirect("/")
  e=Exam.query.get_or_404(eid)
+ if e.status in {"Liberado","Devolvido para correção"}:
+  flash("Prévia indisponível enquanto o exame estiver liberado ou devolvido à clínica.")
+  return redirect("/dashboard")
  # Salva somente uma prévia temporária do texto no registro para reutilizar o mesmo gerador.
  old_report=e.report; old_report_html=e.report_html; old_status=e.status; old_signed_by=e.signed_by; old_signed_at=e.signed_at; old_released=e.released_at
  e.report=request.form.get("report","")
