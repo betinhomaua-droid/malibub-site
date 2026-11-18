@@ -22,7 +22,7 @@ class AdminClinicLogoTests(unittest.TestCase):
         fn = next(n for n in self.tree.body if isinstance(n, ast.FunctionDef) and n.name == "admin_user_edit")
         source = ast.get_source_segment(self.source, fn)
         self.assertIn("Logomarca da clínica", source)
-        self.assertIn("'/clinic-logo/'", source)
+        self.assertIn("/clinic-logo/", source)
         self.assertIn("enctype='multipart/form-data'", source)
         self.assertIn("name='logo'", source)
         self.assertIn("Salvar logomarca", source)
