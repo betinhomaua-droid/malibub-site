@@ -16,6 +16,10 @@ class FinancePriceTablesTests(unittest.TestCase):
   s=self.method("finance_price_tables")
   for value in ('STANDARD_PRICES_2026','PricePreset.query','Tabelas personalizadas','session.get("role")!="Radiologista"'):
    self.assertIn(value,s)
+ def test_price_change_does_not_rewrite_finance(self):
+  s=self.method('finance_apply_preset')
+  self.assertNotIn('Finance.query',s)
+  self.assertNotIn('Exam.query',s)
  def test_application_to_clinic(self):
   s=self.method("finance_apply_preset")
   for value in ('clinic.role!="Clinica"','ClinicPrice.query','existing.amount=p.amount','db.session.commit()'):
