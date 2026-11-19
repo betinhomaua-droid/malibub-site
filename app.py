@@ -1899,7 +1899,12 @@ def result_pdf(eid):
     continue
    sty=ParagraphStyle("rich_body",parent=body,alignment={"left":0,"center":1,"right":2,"justify":4}.get(alignment,0))
    story.append(Paragraph(markup,sty))
-  story += [Spacer(1,5*mm),Paragraph(escape(disclaimer_text),body)]
+  story += [Spacer(1,5*mm),Paragraph(escape(disclaimer_text),body),Spacer(1,3*mm),
+   Paragraph("CONSIDERAÇÕES FINAIS",ParagraphStyle("cbct_final_heading",parent=body,fontName="Helvetica-Bold",spaceBefore=0,spaceAfter=0)),
+   Spacer(1,2*mm),
+   Paragraph(escape("Demais estruturas e elementos não mencionados encontram-se dentro dos padrões de normalidade."),body),
+   Paragraph(escape("Para maiores detalhes indica-se correr o volume."),body),
+   Paragraph(escape("Este laudo não deve ser interpretado de modo conclusivo, devendo ser sempre analisado em conjunto com os demais dados clínicos e laboratoriais, exames prévios e/ou subsequentes."),body)]
 
  signer=escape(e.signed_by or "Dra. Marina"); signed=brasilia_stamp(e.signed_at or e.released_at)
  if not has_pdf_model:
