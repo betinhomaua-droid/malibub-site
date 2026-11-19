@@ -1861,12 +1861,13 @@ def result_pdf(eid):
   story=[Spacer(1,3*mm)]
  if not has_pdf_model:
   age_text="—"
-  if e.birth:
-   reference_date=e.exam_date or datetime.now(ZoneInfo("America/Sao_Paulo")).date()
-   birth_date=e.birth.date() if isinstance(e.birth,datetime) else e.birth
-   reference_date=reference_date.date() if isinstance(reference_date,datetime) else reference_date
+  try:
+   birth_date=datetime.strptime(str(e.birth).strip(),"%Y-%m-%d").date()
+   reference_date=datetime.strptime(str(e.exam_date).strip(),"%Y-%m-%d").date() if e.exam_date else datetime.now(ZoneInfo("America/Sao_Paulo")).date()
    age=reference_date.year-birth_date.year-((reference_date.month,reference_date.day)<(birth_date.month,birth_date.day))
-   if age>=0: age_text=f"{age} anos"
+   if 0<=age<=125: age_text=f"{age} anos"
+  except (ValueError,TypeError,AttributeError):
+   pass
   cell_style=ParagraphStyle("examcell",parent=styles["Normal"],fontSize=9,leading=12)
   def header_cell(label,value):
    return Paragraph("<b>"+escape(label)+":</b> "+escape(str(value or "—")),cell_style)
