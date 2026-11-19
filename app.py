@@ -1838,7 +1838,7 @@ def result_pdf(eid):
    logo_bytes=storage_bytes(clinic.logo)
    logo_img=Image(io.BytesIO(logo_bytes))
    logo_img._restrictSize(48*mm,22*mm)
-   story += [logo_img,Spacer(1,3*mm),Paragraph(escape(clinic.name or ""),ParagraphStyle("clinicbrand",parent=styles["Normal"],alignment=TA_CENTER,fontSize=9,textColor=teal)),Spacer(1,4*mm)]
+   story += [logo_img,Spacer(1,7*mm)]
   except Exception:
    story=[]
  model_path=None
@@ -1858,11 +1858,28 @@ def result_pdf(eid):
    bg=Image(str(model_path)); bg._restrictSize(170*mm,48*mm); story += [bg,Spacer(1,4*mm)]
   except Exception: pass
  if not story and not has_pdf_model:
-  clinic_title=escape((clinic.name if clinic and clinic.name else "Clínica solicitante"))
-  story=[Paragraph(clinic_title,title),Spacer(1,6*mm)]
+  story=[Spacer(1,3*mm)]
  if not has_pdf_model:
-  data=[["Protocolo",escape(e.protocol or "")],["Paciente",escape(e.patient or "")],["Sexo",escape(e.sex or "Não informado")],["Data de nascimento",escape(br_date(e.birth))],["Exame",escape(e.exam_type or "")],["Dentista solicitante",escape(e.dentist or "")],["Data do exame",escape(br_date(e.exam_date))]]
-  t=Table(data,colWidths=[42*mm,120*mm]); t.setStyle(TableStyle([("GRID",(0,0),(-1,-1),.4,colors.HexColor("#DCE8EC")),("BACKGROUND",(0,0),(0,-1),colors.HexColor("#F1F6F7")),("FONTNAME",(0,0),(0,-1),"Helvetica-Bold"),("FONTSIZE",(0,0),(-1,-1),9),("PADDING",(0,0),(-1,-1),6)])); story += [t,Spacer(1,7*mm),Paragraph("LAUDO RADIOLÓGICO",ParagraphStyle("h",parent=title,alignment=0,fontSize=12,textColor=navy)),Spacer(1,2*mm)]
+  age_text="—"
+  if e.birth:
+   reference_date=e.exam_date or datetime.now(ZoneInfo("America/Sao_Paulo")).date()
+   birth_date=e.birth.date() if isinstance(e.birth,datetime) else e.birth
+   reference_date=reference_date.date() if isinstance(reference_date,datetime) else reference_date
+   age=reference_date.year-birth_date.year-((reference_date.month,reference_date.day)<(birth_date.month,birth_date.day))
+   if age>=0: age_text=f"{age} anos"
+  cell_style=ParagraphStyle("examcell",parent=styles["Normal"],fontSize=9,leading=12)
+  def header_cell(label,value):
+   return Paragraph("<b>"+escape(label)+":</b> "+escape(str(value or "—")),cell_style)
+  data=[
+   [header_cell("Protocolo",e.protocol),""],
+   [header_cell("Paciente",e.patient),header_cell("Sexo",e.sex or "Não informado")],
+   [header_cell("Data de nascimento",br_date(e.birth)),header_cell("Idade",age_text)],
+   [header_cell("Exame",e.exam_type),header_cell("Data do exame",br_date(e.exam_date))],
+   [header_cell("Dentista solicitante",e.dentist),""]
+  ]
+  t=Table(data,colWidths=[96*mm,66*mm],hAlign="CENTER")
+  t.setStyle(TableStyle([("GRID",(0,0),(-1,-1),.4,colors.HexColor("#DCE8EC")),("VALIGN",(0,0),(-1,-1),"MIDDLE"),("SPAN",(0,0),(1,0)),("SPAN",(0,4),(1,4)),("FONTSIZE",(0,0),(-1,-1),9),("LEFTPADDING",(0,0),(-1,-1),8),("RIGHTPADDING",(0,0),(-1,-1),8),("TOPPADDING",(0,0),(-1,-1),7),("BOTTOMPADDING",(0,0),(-1,-1),7)]))
+  story += [t,Spacer(1,7*mm),Paragraph("TOMOGRAFIA DE FEIXE CÔNICO",ParagraphStyle("cbct_title",parent=title,alignment=TA_CENTER,fontSize=12,leading=16,textColor=navy)),Spacer(1,3*mm),Paragraph("Observa-se no volume adquirido:",body),Spacer(1,3*mm)]
  if not has_pdf_model:
   for markup,alignment in rich_report_blocks(e.report_html,e.report):
    sty=ParagraphStyle("rich_body",parent=body,alignment={"left":0,"center":1,"right":2,"justify":4}.get(alignment,0))
