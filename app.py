@@ -1879,7 +1879,7 @@ def result_pdf(eid):
    [header_cell("Dentista solicitante",e.dentist),""]
   ]
   t=Table(data,colWidths=[96*mm,66*mm],hAlign="CENTER")
-  t.setStyle(TableStyle([("GRID",(0,0),(-1,-1),.4,colors.HexColor("#DCE8EC")),("VALIGN",(0,0),(-1,-1),"MIDDLE"),("SPAN",(0,0),(1,0)),("SPAN",(0,4),(1,4)),("FONTSIZE",(0,0),(-1,-1),9),("LEFTPADDING",(0,0),(-1,-1),8),("RIGHTPADDING",(0,0),(-1,-1),8),("TOPPADDING",(0,0),(-1,-1),7),("BOTTOMPADDING",(0,0),(-1,-1),7)]))
+  t.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#EAF6FC")),("LINEBELOW",(0,0),(-1,-1),.3,colors.HexColor("#D5EAF4")),("VALIGN",(0,0),(-1,-1),"MIDDLE"),("SPAN",(0,0),(1,0)),("SPAN",(0,4),(1,4)),("FONTSIZE",(0,0),(-1,-1),9),("LEFTPADDING",(0,0),(-1,-1),8),("RIGHTPADDING",(0,0),(-1,-1),8),("TOPPADDING",(0,0),(-1,-1),7),("BOTTOMPADDING",(0,0),(-1,-1),7)]))
   technique_text="Obtidas imagens por Tomografia Computadorizada Feixe Cônico (Cone Beam) com aquisição do volume da região solicitada e, reconstruções sagitais, axiais e coronais, na reformatação do volume original."
   disclaimer_text="A mensuração (em milímetros) é uma simulação para localização nos cortes, é anatômica e não traduz a dimensão e inclinação do implante, devendo ser utilizada apenas em caráter ilustrativo, podendo ser medida qualquer outra área de interesse dentro do volume adquirido ou, diretamente nas imagens, seguindo as escalas milimétricas situadas nas laterais do corte sagital. As imagens 3D não devem ser utilizadas para mensurações."
   compact_body=ParagraphStyle("cbct_compact_body",parent=body,spaceBefore=0,spaceAfter=0)
@@ -1899,12 +1899,7 @@ def result_pdf(eid):
     continue
    sty=ParagraphStyle("rich_body",parent=body,alignment={"left":0,"center":1,"right":2,"justify":4}.get(alignment,0))
    story.append(Paragraph(markup,sty))
-  story += [Spacer(1,5*mm),Paragraph(escape(disclaimer_text),body),Spacer(1,3*mm),
-   Paragraph("CONSIDERAÇÕES FINAIS",ParagraphStyle("cbct_final_heading",parent=body,fontName="Helvetica-Bold",spaceBefore=0,spaceAfter=0)),
-   Spacer(1,2*mm),
-   Paragraph(escape("Demais estruturas e elementos não mencionados encontram-se dentro dos padrões de normalidade."),body),
-   Paragraph(escape("Para maiores detalhes indica-se correr o volume."),body),
-   Paragraph(escape("Este laudo não deve ser interpretado de modo conclusivo, devendo ser sempre analisado em conjunto com os demais dados clínicos e laboratoriais, exames prévios e/ou subsequentes."),body)]
+  story += [Spacer(1,5*mm),Paragraph(escape(disclaimer_text),body)]
 
  signer=escape(e.signed_by or "Dra. Marina"); signed=brasilia_stamp(e.signed_at or e.released_at)
  if not has_pdf_model:
