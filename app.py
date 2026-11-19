@@ -1879,7 +1879,7 @@ def result_pdf(eid):
   ]
   t=Table(data,colWidths=[96*mm,66*mm],hAlign="CENTER")
   t.setStyle(TableStyle([("GRID",(0,0),(-1,-1),.4,colors.HexColor("#DCE8EC")),("VALIGN",(0,0),(-1,-1),"MIDDLE"),("SPAN",(0,0),(1,0)),("SPAN",(0,4),(1,4)),("FONTSIZE",(0,0),(-1,-1),9),("LEFTPADDING",(0,0),(-1,-1),8),("RIGHTPADDING",(0,0),(-1,-1),8),("TOPPADDING",(0,0),(-1,-1),7),("BOTTOMPADDING",(0,0),(-1,-1),7)]))
-  story += [t,Spacer(1,7*mm),Paragraph("TOMOGRAFIA DE FEIXE CÔNICO",ParagraphStyle("cbct_title",parent=title,alignment=TA_CENTER,fontSize=12,leading=16,textColor=navy)),Spacer(1,3*mm),Paragraph("Observa-se no volume adquirido:",body),Spacer(1,3*mm)]
+  story += [t,Spacer(1,7*mm),Paragraph("TOMOGRAFIA VOLUMÉTRICA POR FEIXE CÔNICO",ParagraphStyle("cbct_title",parent=title,alignment=TA_CENTER,fontSize=12,leading=16,textColor=navy)),Spacer(1,3*mm),Paragraph("Observa-se no volume adquirido:",body),Spacer(1,3*mm)]
  if not has_pdf_model:
   for markup,alignment in rich_report_blocks(e.report_html,e.report):
    sty=ParagraphStyle("rich_body",parent=body,alignment={"left":0,"center":1,"right":2,"justify":4}.get(alignment,0))
