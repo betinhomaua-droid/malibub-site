@@ -1880,11 +1880,25 @@ def result_pdf(eid):
   ]
   t=Table(data,colWidths=[96*mm,66*mm],hAlign="CENTER")
   t.setStyle(TableStyle([("GRID",(0,0),(-1,-1),.4,colors.HexColor("#DCE8EC")),("VALIGN",(0,0),(-1,-1),"MIDDLE"),("SPAN",(0,0),(1,0)),("SPAN",(0,4),(1,4)),("FONTSIZE",(0,0),(-1,-1),9),("LEFTPADDING",(0,0),(-1,-1),8),("RIGHTPADDING",(0,0),(-1,-1),8),("TOPPADDING",(0,0),(-1,-1),7),("BOTTOMPADDING",(0,0),(-1,-1),7)]))
-  story += [t,Spacer(1,7*mm),Paragraph("TOMOGRAFIA VOLUMÉTRICA POR FEIXE CÔNICO",ParagraphStyle("cbct_title",parent=title,alignment=TA_CENTER,fontSize=11,leading=14,textColor=navy)),Spacer(1,3*mm),Paragraph("Observa-se no volume adquirido:",body),Spacer(1,3*mm)]
+  technique_text="Obtidas imagens por Tomografia Computadorizada Feixe Cônico (Cone Beam) com aquisição do volume da região solicitada e, reconstruções sagitais, axiais e coronais, na reformatação do volume original."
+  disclaimer_text="A mensuração (em milímetros) é uma simulação para localização nos cortes, é anatômica e não traduz a dimensão e inclinação do implante, devendo ser utilizada apenas em caráter ilustrativo, podendo ser medida qualquer outra área de interesse dentro do volume adquirido ou, diretamente nas imagens, seguindo as escalas milimétricas situadas nas laterais do corte sagital. As imagens 3D não devem ser utilizadas para mensurações."
+  story += [t,Spacer(1,7*mm),Paragraph("TOMOGRAFIA VOLUMÉTRICA POR FEIXE CÔNICO",ParagraphStyle("cbct_title",parent=title,alignment=TA_CENTER,fontSize=11,leading=14,textColor=navy)),Spacer(1,4*mm),Paragraph(escape(technique_text),body),Spacer(1,5*mm),Paragraph("Observa-se no volume adquirido:",body),Spacer(1,5*mm)]
  if not has_pdf_model:
-  for markup,alignment in rich_report_blocks(e.report_html,e.report):
+  from html import unescape as html_unescape
+  import re
+  report_blocks=rich_report_blocks(e.report_html,e.report)
+  def normalized_report_text(markup):
+   return " ".join(html_unescape(re.sub(r"<[^>]*>","",markup)).split()).casefold()
+  technique_key=normalized_report_text(technique_text)
+  disclaimer_key=normalized_report_text(disclaimer_text)
+  for markup,alignment in report_blocks:
+   cleaned=normalized_report_text(markup)
+   if cleaned in (technique_key,disclaimer_key):
+    continue
    sty=ParagraphStyle("rich_body",parent=body,alignment={"left":0,"center":1,"right":2,"justify":4}.get(alignment,0))
    story.append(Paragraph(markup,sty))
+  story += [Spacer(1,5*mm),Paragraph(escape(disclaimer_text),body)]
+
  signer=escape(e.signed_by or "Dra. Marina"); signed=brasilia_stamp(e.signed_at or e.released_at)
  if not has_pdf_model:
   # A assinatura visual fica no rodape, junto ao selo digital.
