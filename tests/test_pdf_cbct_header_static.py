@@ -14,7 +14,12 @@ class PdfCbctHeaderTests(unittest.TestCase):
   self.assertIn('header_label("Dentista solicitante"),header_value(e.dentist)',source)
   self.assertIn('("BACKGROUND",(0,0),(0,-1),colors.HexColor("#DCEFFA"))',source)
   self.assertIn('("BACKGROUND",(1,0),(1,-1),colors.white)',source)
-  self.assertIn('("GRID",(0,0),(-1,-1),.45,colors.HexColor("#A5C8DE"))',source)
+  self.assertIn('("INNERGRID",(0,0),(-1,-1),.35,colors.HexColor("#A5C8DE"))',source)
+  self.assertIn('class RoundedHeaderTable(Table):',source)
+  self.assertIn('clip.roundRect(0,0,self._width,self._height,5)',source)
+  self.assertIn('fontSize=8,leading=9.5',source)
+  self.assertIn('("TOPPADDING",(0,0),(-1,-1),2)',source)
+  self.assertIn('("BOTTOMPADDING",(0,0),(-1,-1),2)',source)
   self.assertNotIn('Paragraph(escape(clinic.name or ""),ParagraphStyle("clinicbrand"',source)
 
 if __name__=="__main__":
