@@ -1872,15 +1872,32 @@ def result_pdf(eid):
   cell_style=ParagraphStyle("examcell",parent=styles["Normal"],fontSize=9,leading=12)
   def header_cell(label,value):
    return Paragraph("<b>"+escape(label)+":</b> "+escape(str(value or "—")),cell_style)
+  def header_label(value):
+   return Paragraph("<b>"+escape(value)+":</b>",cell_style)
+  def header_value(value):
+   return Paragraph(escape(str(value or "—")),cell_style)
   data=[
-   [header_cell("Protocolo",e.protocol),""],
-   [header_cell("Paciente",e.patient),header_cell("Sexo",e.sex or "Não informado")],
-   [header_cell("Data de nascimento",br_date(e.birth)),header_cell("Idade",age_text)],
-   [header_cell("Exame",e.exam_type),header_cell("Data do exame",br_date(e.exam_date))],
-   [header_cell("Dentista solicitante",e.dentist),""]
+   [header_label("Protocolo"),header_value(e.protocol),"",""],
+   [header_label("Paciente"),header_value(e.patient),header_label("Sexo"),header_value(e.sex or "Não informado")],
+   [header_label("Nascimento"),header_value(br_date(e.birth)),header_label("Idade"),header_value(age_text)],
+   [header_label("Exame"),header_value(e.exam_type),header_label("Data do exame"),header_value(br_date(e.exam_date))],
+   [header_label("Dentista solicitante"),header_value(e.dentist),"",""]
   ]
-  t=Table(data,colWidths=[96*mm,66*mm],hAlign="CENTER")
-  t.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#EAF6FC")),("LINEBELOW",(0,0),(-1,-1),.3,colors.HexColor("#D5EAF4")),("VALIGN",(0,0),(-1,-1),"MIDDLE"),("SPAN",(0,0),(1,0)),("SPAN",(0,4),(1,4)),("FONTSIZE",(0,0),(-1,-1),9),("LEFTPADDING",(0,0),(-1,-1),8),("RIGHTPADDING",(0,0),(-1,-1),8),("TOPPADDING",(0,0),(-1,-1),7),("BOTTOMPADDING",(0,0),(-1,-1),7)]))
+  t=Table(data,colWidths=[35*mm,62*mm,30*mm,35*mm],hAlign="CENTER")
+  t.setStyle(TableStyle([
+   ("BACKGROUND",(0,0),(0,-1),colors.HexColor("#DCEFFA")),
+   ("BACKGROUND",(2,1),(2,3),colors.HexColor("#DCEFFA")),
+   ("BACKGROUND",(1,0),(1,-1),colors.white),
+   ("BACKGROUND",(3,1),(3,3),colors.white),
+   ("GRID",(0,0),(-1,-1),.45,colors.HexColor("#A5C8DE")),
+   ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
+   ("SPAN",(1,0),(3,0)),
+   ("SPAN",(1,4),(3,4)),
+   ("LEFTPADDING",(0,0),(-1,-1),6),
+   ("RIGHTPADDING",(0,0),(-1,-1),5),
+   ("TOPPADDING",(0,0),(-1,-1),5),
+   ("BOTTOMPADDING",(0,0),(-1,-1),5)
+  ]))
   technique_text="Obtidas imagens por Tomografia Computadorizada Feixe Cônico (Cone Beam) com aquisição do volume da região solicitada e, reconstruções sagitais, axiais e coronais, na reformatação do volume original."
   disclaimer_text="A mensuração (em milímetros) é uma simulação para localização nos cortes, é anatômica e não traduz a dimensão e inclinação do implante, devendo ser utilizada apenas em caráter ilustrativo, podendo ser medida qualquer outra área de interesse dentro do volume adquirido ou, diretamente nas imagens, seguindo as escalas milimétricas situadas nas laterais do corte sagital. As imagens 3D não devem ser utilizadas para mensurações."
   compact_body=ParagraphStyle("cbct_compact_body",parent=body,spaceBefore=0,spaceAfter=0)
