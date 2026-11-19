@@ -1869,7 +1869,22 @@ def result_pdf(eid):
    if 0<=age<=125: age_text=f"{age} anos"
   except (ValueError,TypeError,AttributeError):
    pass
-  cell_style=ParagraphStyle("examcell",parent=styles["Normal"],fontSize=9,leading=12)
+  cell_style=ParagraphStyle("examcell",parent=styles["Normal"],fontSize=8,leading=9.5)
+  class RoundedHeaderTable(Table):
+   def draw(self):
+    canvas=self.canv
+    canvas.saveState()
+    clip=canvas.beginPath()
+    clip.roundRect(0,0,self._width,self._height,5)
+    canvas.clipPath(clip,stroke=0,fill=0)
+    super().draw()
+    canvas.restoreState()
+    canvas.saveState()
+    canvas.setStrokeColor(colors.HexColor("#6BAED6"))
+    canvas.setLineWidth(.6)
+    canvas.roundRect(0,0,self._width,self._height,5,stroke=1,fill=0)
+    canvas.restoreState()
+
   def header_cell(label,value):
    return Paragraph("<b>"+escape(label)+":</b> "+escape(str(value or "—")),cell_style)
   def header_label(value):
@@ -1883,20 +1898,20 @@ def result_pdf(eid):
    [header_label("Exame"),header_value(e.exam_type),header_label("Data do exame"),header_value(br_date(e.exam_date))],
    [header_label("Dentista solicitante"),header_value(e.dentist),"",""]
   ]
-  t=Table(data,colWidths=[35*mm,62*mm,30*mm,35*mm],hAlign="CENTER")
+  t=RoundedHeaderTable(data,colWidths=[35*mm,62*mm,30*mm,35*mm],hAlign="CENTER")
   t.setStyle(TableStyle([
    ("BACKGROUND",(0,0),(0,-1),colors.HexColor("#DCEFFA")),
    ("BACKGROUND",(2,1),(2,3),colors.HexColor("#DCEFFA")),
    ("BACKGROUND",(1,0),(1,-1),colors.white),
    ("BACKGROUND",(3,1),(3,3),colors.white),
-   ("GRID",(0,0),(-1,-1),.45,colors.HexColor("#A5C8DE")),
+   ("INNERGRID",(0,0),(-1,-1),.35,colors.HexColor("#A5C8DE")),
    ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
    ("SPAN",(1,0),(3,0)),
    ("SPAN",(1,4),(3,4)),
    ("LEFTPADDING",(0,0),(-1,-1),6),
    ("RIGHTPADDING",(0,0),(-1,-1),5),
-   ("TOPPADDING",(0,0),(-1,-1),5),
-   ("BOTTOMPADDING",(0,0),(-1,-1),5)
+   ("TOPPADDING",(0,0),(-1,-1),2),
+   ("BOTTOMPADDING",(0,0),(-1,-1),2)
   ]))
   technique_text="Obtidas imagens por Tomografia Computadorizada Feixe Cônico (Cone Beam) com aquisição do volume da região solicitada e, reconstruções sagitais, axiais e coronais, na reformatação do volume original."
   disclaimer_text="A mensuração (em milímetros) é uma simulação para localização nos cortes, é anatômica e não traduz a dimensão e inclinação do implante, devendo ser utilizada apenas em caráter ilustrativo, podendo ser medida qualquer outra área de interesse dentro do volume adquirido ou, diretamente nas imagens, seguindo as escalas milimétricas situadas nas laterais do corte sagital. As imagens 3D não devem ser utilizadas para mensurações."
