@@ -1882,7 +1882,9 @@ def result_pdf(eid):
   t.setStyle(TableStyle([("GRID",(0,0),(-1,-1),.4,colors.HexColor("#DCE8EC")),("VALIGN",(0,0),(-1,-1),"MIDDLE"),("SPAN",(0,0),(1,0)),("SPAN",(0,4),(1,4)),("FONTSIZE",(0,0),(-1,-1),9),("LEFTPADDING",(0,0),(-1,-1),8),("RIGHTPADDING",(0,0),(-1,-1),8),("TOPPADDING",(0,0),(-1,-1),7),("BOTTOMPADDING",(0,0),(-1,-1),7)]))
   technique_text="Obtidas imagens por Tomografia Computadorizada Feixe Cônico (Cone Beam) com aquisição do volume da região solicitada e, reconstruções sagitais, axiais e coronais, na reformatação do volume original."
   disclaimer_text="A mensuração (em milímetros) é uma simulação para localização nos cortes, é anatômica e não traduz a dimensão e inclinação do implante, devendo ser utilizada apenas em caráter ilustrativo, podendo ser medida qualquer outra área de interesse dentro do volume adquirido ou, diretamente nas imagens, seguindo as escalas milimétricas situadas nas laterais do corte sagital. As imagens 3D não devem ser utilizadas para mensurações."
-  story += [t,Spacer(1,7*mm),Paragraph("TOMOGRAFIA VOLUMÉTRICA POR FEIXE CÔNICO",ParagraphStyle("cbct_title",parent=title,alignment=TA_CENTER,fontSize=11,leading=14,textColor=navy)),Spacer(1,4*mm),Paragraph(escape(technique_text),body),Spacer(1,5*mm),Paragraph("Observa-se no volume adquirido:",body),Spacer(1,5*mm)]
+  compact_body=ParagraphStyle("cbct_compact_body",parent=body,spaceBefore=0,spaceAfter=0)
+  observation_style=ParagraphStyle("cbct_observation",parent=compact_body,fontName="Helvetica-Bold",spaceBefore=0,spaceAfter=0)
+  story += [t,Spacer(1,7*mm),Paragraph("TOMOGRAFIA VOLUMÉTRICA POR FEIXE CÔNICO",ParagraphStyle("cbct_title",parent=title,alignment=TA_CENTER,fontSize=11,leading=14,textColor=navy)),Spacer(1,3*mm),Paragraph(escape(technique_text),compact_body),Spacer(1,2*mm),Paragraph("Observa-se no volume adquirido:",observation_style),Spacer(1,2*mm)]
  if not has_pdf_model:
   from html import unescape as html_unescape
   import re
