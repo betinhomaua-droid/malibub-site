@@ -32,5 +32,7 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_return_exam_static.py' -v
       - name: Finance price table checks
         run: python -m unittest discover -s tests -p 'test_finance_price_tables_static.py' -v
+      - name: CBCT PDF header regression checks
+        run: python -m unittest discover -s tests -p 'test_pdf_cbct_header_static.py' -v
       - name: Security regression checks
         run: python -m unittest discover -s tests -p 'test_security_static.py' -v
