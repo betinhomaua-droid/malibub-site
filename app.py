@@ -1733,7 +1733,7 @@ def result_pdf(eid):
     draw_report_signature(cv,width,baseline=74)
     cv.setStrokeColor(colors.HexColor("#DCE8EC")); cv.line(22*mm,24*mm,width-22*mm,24*mm)
     cv.setFillColor(colors.HexColor("#06394C")); cv.setFont("Helvetica-Bold",7.8)
-    cv.drawCentredString(width/2,18*mm,"MALIBUB Imaginologia Odontológica")
+    cv.drawCentredString(width/2,18*mm,"MALIBUB Imaginologia  |  www.malibub.com.br")
     cv.setFillColor(colors.HexColor("#52666E")); cv.setFont("Helvetica",7.2)
     cv.drawCentredString(width/2,14*mm,"Assinado eletronicamente por Marina Linhares Bub - CRO-SP 113.752.")
     cv.setFont("Helvetica",6.8)
@@ -1827,6 +1827,7 @@ def result_pdf(eid):
    return "Assinatura digital indisponível. O laudo não pode ser liberado.",503
   return send_file(buf,mimetype="application/pdf",as_attachment=True,download_name=f"{e.protocol}_laudo.pdf")
  doc=SimpleDocTemplate(buf,pagesize=A4,rightMargin=22*mm,leftMargin=22*mm,topMargin=((clinic.report_top_mm or 72)*mm if has_pdf_model else 16*mm),bottomMargin=((clinic.report_bottom_mm or 48)*mm if has_pdf_model else 44*mm),title=f"{e.protocol} - Laudo MALIBUB",author="MALIBUB Imaginologia Odontológica")
+ from reportlab.platypus import HRFlowable
  styles=getSampleStyleSheet(); navy=colors.HexColor("#06394C"); teal=colors.HexColor("#087B9B"); gold=colors.HexColor("#C99B3B")
  title=ParagraphStyle("t",parent=styles["Heading1"],alignment=TA_CENTER,textColor=navy,fontSize=16,leading=20); body=ParagraphStyle("b",parent=styles["BodyText"],fontSize=10,leading=15,textColor=colors.HexColor("#26383D"))
  story=[]
@@ -1884,7 +1885,7 @@ def result_pdf(eid):
   disclaimer_text="A mensuração (em milímetros) é uma simulação para localização nos cortes, é anatômica e não traduz a dimensão e inclinação do implante, devendo ser utilizada apenas em caráter ilustrativo, podendo ser medida qualquer outra área de interesse dentro do volume adquirido ou, diretamente nas imagens, seguindo as escalas milimétricas situadas nas laterais do corte sagital. As imagens 3D não devem ser utilizadas para mensurações."
   compact_body=ParagraphStyle("cbct_compact_body",parent=body,spaceBefore=0,spaceAfter=0)
   observation_style=ParagraphStyle("cbct_observation",parent=compact_body,fontName="Helvetica-Bold",spaceBefore=0,spaceAfter=0)
-  story += [t,Spacer(1,7*mm),Paragraph("TOMOGRAFIA VOLUMÉTRICA POR FEIXE CÔNICO",ParagraphStyle("cbct_title",parent=title,alignment=TA_CENTER,fontSize=11,leading=14,textColor=navy)),Spacer(1,3*mm),Paragraph(escape(technique_text),compact_body),Spacer(1,2*mm),Paragraph("Observa-se no volume adquirido:",observation_style),Spacer(1,2*mm)]
+  story += [t,Spacer(1,7*mm),HRFlowable(width="100%",thickness=0.7,color=gold,spaceBefore=0,spaceAfter=3*mm),Paragraph("TOMOGRAFIA VOLUMÉTRICA POR FEIXE CÔNICO",ParagraphStyle("cbct_title",parent=title,alignment=TA_CENTER,fontSize=11,leading=14,textColor=navy)),HRFlowable(width="100%",thickness=0.7,color=gold,spaceBefore=3*mm,spaceAfter=3*mm),Paragraph(escape(technique_text),compact_body),Spacer(1,2*mm),Paragraph("Observa-se no volume adquirido:",observation_style),Spacer(1,2*mm)]
  if not has_pdf_model:
   from html import unescape as html_unescape
   import re
