@@ -2146,6 +2146,8 @@ def finance():
  import re
  linked_protocols={match.group(1) for x in entries if (match:=re.fullmatch(r"Laudo (\d+)",x.description or ""))}
  linked_exams={e.protocol:e for e in Exam.query.filter(Exam.protocol.in_(linked_protocols)).all()} if linked_protocols else {}
+ linked_clinic_ids={e.clinic_id for e in linked_exams.values() if e.clinic_id}
+ linked_clinics={u.id:u for u in User.query.filter(User.id.in_(linked_clinic_ids)).all()} if linked_clinic_ids else {}
  rows_by_month={}
  month_names=("Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro")
  for x in entries:
@@ -2158,6 +2160,8 @@ def finance():
    action="<form method='post' action='/finance/"+str(x.id)+"/excluir' style='margin:0'>"+csrf_field()+"<button type='submit'>Excluir</button></form>"
   if e:
    protocol=str(html_escape(e.protocol or ""))
+   clinic=linked_clinics.get(e.clinic_id)
+   clinic_name=str(html_escape((clinic.name or clinic.legal_name) if clinic else "—"))
    patient=str(html_escape(e.patient or "—"))
    exam_type=str(html_escape(e.exam_type or "—"))
    priority=str(html_escape("Urgente" if (e.priority or "").upper()=="URG" else "Normal"))
@@ -2167,16 +2171,16 @@ def finance():
    action=view+" &nbsp; "+action
   else:
    protocol=str(html_escape(x.description or "Lançamento manual"))
-   patient="—"; exam_type="—"; priority="—"
+   clinic_name="—"; patient="—"; exam_type="—"; priority="—"
    status=str(html_escape(x.kind or "—"))
    created=brasilia_stamp(x.created_at) if x.created_at else "Registro anterior"
   month_key=(x.date.year,x.date.month)
-  rows_by_month.setdefault(month_key,[]).append("<div class='finance-movement-row' style='display:grid;grid-template-columns:110px minmax(150px,1.4fr) minmax(130px,1fr) 85px 115px 125px 90px minmax(230px,1.5fr);gap:10px;align-items:center;padding:10px;border-bottom:1px solid #e4edf1;font-size:13px'><div>"+protocol+"</div><div>"+patient+"</div><div>"+exam_type+"</div><div>"+priority+"</div><div><span class='badge'>"+status+"</span></div><div>"+created+"</div><div>R$ "+format(x.amount or 0,".2f")+"</div><div>"+action+"</div></div>")
+  rows_by_month.setdefault(month_key,[]).append("<div class='finance-movement-row' style='display:grid;grid-template-columns:95px minmax(130px,1fr) minmax(145px,1.2fr) minmax(130px,1fr) 75px 100px 120px 80px minmax(220px,1.5fr);gap:10px;align-items:center;padding:10px;border-bottom:1px solid #e4edf1;font-size:13px'><div>"+protocol+"</div><div>"+clinic_name+"</div><div>"+patient+"</div><div>"+exam_type+"</div><div>"+priority+"</div><div><span class='badge'>"+status+"</span></div><div>"+created+"</div><div>R$ "+format(x.amount or 0,".2f")+"</div><div>"+action+"</div></div>")
  rows="".join(
   "<details "+("open" if idx==0 else "")+" style='border:1px solid #dce8ec;border-radius:10px;margin:10px 0;overflow:hidden'>"
   +"<summary style='cursor:pointer;padding:14px;background:#eef5f7;font-weight:700'>"
   +month_names[key[1]-1]+" de "+str(key[0])+" — "+str(len(items))+" movimentação(ões)</summary>"
-  +"<div style='overflow-x:auto'><div style='min-width:1150px'><div style='display:grid;grid-template-columns:110px minmax(150px,1.4fr) minmax(130px,1fr) 85px 115px 125px 90px minmax(230px,1.5fr);gap:10px;padding:12px 10px;background:#f4f8fa;font-weight:700;font-size:13px'><div>Protocolo / lançamento</div><div>Paciente</div><div>Exame</div><div>Prioridade</div><div>Status</div><div>Criado em</div><div>Valor</div><div>Ação</div></div>"
+  +"<div style='overflow-x:auto'><div style='min-width:1320px'><div style='display:grid;grid-template-columns:95px minmax(130px,1fr) minmax(145px,1.2fr) minmax(130px,1fr) 75px 100px 120px 80px minmax(220px,1.5fr);gap:10px;padding:12px 10px;background:#f4f8fa;font-weight:700;font-size:13px'><div>Protocolo / lançamento</div><div>Clínica solicitante</div><div>Paciente</div><div>Exame</div><div>Prioridade</div><div>Status</div><div>Criado em</div><div>Valor</div><div>Ação</div></div>"
   +"".join(items)+"</div></div></details>"
   for idx,(key,items) in enumerate(sorted(rows_by_month.items(),reverse=True))
  )
