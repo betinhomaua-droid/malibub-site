@@ -38,6 +38,8 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_pdf_fixed_paragraphs_static.py' -v
       - name: Approved MALIBUB PDF layout checks
         run: python -m unittest discover -s tests -p 'test_pdf_approved_layout_static.py' -v
+      - name: Finance PDF preview regression checks
+        run: python -m unittest discover -s tests -p 'test_finance_report_preview_static.py' -v
       - name: CBCT PDF header regression checks
         run: python -m unittest discover -s tests -p 'test_pdf_cbct_header_static.py' -v
       - name: Security regression checks
