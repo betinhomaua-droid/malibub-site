@@ -2144,18 +2144,18 @@ def finance():
  # Relacione lançamentos automáticos aos exames pelo protocolo completo.
  # Lançamentos manuais permanecem visíveis, mesmo sem exame associado.
  import re
- linked_protocols={match.group(1) for x in entries if (match:=re.fullmatch(r"Laudo (\\d+)",x.description or ""))}
+ linked_protocols={match.group(1) for x in entries if (match:=re.fullmatch(r"Laudo (\d+)",x.description or ""))}
  linked_exams={e.protocol:e for e in Exam.query.filter(Exam.protocol.in_(linked_protocols)).all()} if linked_protocols else {}
  rows_by_month={}
  month_names=("Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro")
  for x in entries:
-  match=re.fullmatch(r"Laudo (\\d+)",x.description or "")
+  match=re.fullmatch(r"Laudo (\d+)",x.description or "")
   e=linked_exams.get(match.group(1)) if match else None
   protected=x.kind=="Entrada" and ((x.description or "").startswith("Laudo ") or (x.description or "").startswith("Laudos ·"))
   if protected:
    action="<form method='post' action='/finance/"+str(x.id)+"/corrigir-valor' style='margin:0;display:flex;gap:6px;align-items:center;flex-wrap:wrap'>"+csrf_field()+"<input type='number' name='amount' min='0.01' step='0.01' value='"+format(x.amount or 0,'.2f')+"' required style='width:90px;margin:0'><button type='submit' class='gold' style='margin:0'>Corrigir valor</button></form>"
   else:
-   action="<form method='post' action='/finance/"+str(x.id)+"/excluir' style='margin:0' onsubmit=\\\"return confirm('Excluir este lançamento?')\\\">"+csrf_field()+"<button type='submit'>Excluir</button></form>"
+   action="<form method='post' action='/finance/"+str(x.id)+"/excluir' style='margin:0'>"+csrf_field()+"<button type='submit'>Excluir</button></form>"
   if e:
    protocol=html_escape(e.protocol or "")
    patient=html_escape(e.patient or "—")
