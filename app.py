@@ -2141,21 +2141,42 @@ def finance():
  health="POSITIVA" if saldo>0 else ("EQUILIBRADA" if saldo==0 else "NEGATIVA")
  clinics=User.query.filter_by(role="Clinica").order_by(User.name).all()
  clinic_options="".join("<option value='"+str(u.id)+"'>"+str(html_escape(u.name))+"</option>" for u in clinics)
+ # Relacione lançamentos automáticos aos exames pelo protocolo completo.
+ # Lançamentos manuais permanecem visíveis, mesmo sem exame associado.
+ import re
+ linked_protocols={match.group(1) for x in entries if (match:=re.fullmatch(r"Laudo (\\d+)",x.description or ""))}
+ linked_exams={e.protocol:e for e in Exam.query.filter(Exam.protocol.in_(linked_protocols)).all()} if linked_protocols else {}
  rows_by_month={}
  month_names=("Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro")
  for x in entries:
+  match=re.fullmatch(r"Laudo (\\d+)",x.description or "")
+  e=linked_exams.get(match.group(1)) if match else None
   protected=x.kind=="Entrada" and ((x.description or "").startswith("Laudo ") or (x.description or "").startswith("Laudos ·"))
   if protected:
-   action="<form method='post' action='/finance/"+str(x.id)+"/corrigir-valor' style='margin:0;display:flex;gap:6px;align-items:center'>"+csrf_field()+"<input type='number' name='amount' min='0.01' step='0.01' value='"+format(x.amount or 0,'.2f')+"' required style='width:110px;margin:0'><button type='submit' class='gold' style='margin:0'>Corrigir valor</button></form>"
+   action="<form method='post' action='/finance/"+str(x.id)+"/corrigir-valor' style='margin:0;display:flex;gap:6px;align-items:center;flex-wrap:wrap'>"+csrf_field()+"<input type='number' name='amount' min='0.01' step='0.01' value='"+format(x.amount or 0,'.2f')+"' required style='width:90px;margin:0'><button type='submit' class='gold' style='margin:0'>Corrigir valor</button></form>"
   else:
-   action="<form method='post' action='/finance/"+str(x.id)+"/excluir' style='margin:0' onsubmit=\"return confirm('Excluir este lançamento?')\">"+csrf_field()+"<button type='submit'>Excluir</button></form>"
+   action="<form method='post' action='/finance/"+str(x.id)+"/excluir' style='margin:0' onsubmit=\\\"return confirm('Excluir este lançamento?')\\\">"+csrf_field()+"<button type='submit'>Excluir</button></form>"
+  if e:
+   protocol=html_escape(e.protocol or "")
+   patient=html_escape(e.patient or "—")
+   exam_type=html_escape(e.exam_type or "—")
+   priority=html_escape("Urgente" if (e.priority or "").upper()=="URG" else "Normal")
+   status=html_escape(e.status or "—")
+   created=brasilia_stamp(e.created_at) if e.created_at else "—"
+   view=f'<a href="/result/{e.id}" target="_blank" rel="noopener">Resultado</a>' if e.status=="Liberado" else f'<a href="/report/{e.id}">Abrir exame</a>'
+   action=view+" &nbsp; "+action
+  else:
+   protocol=html_escape(x.description or "Lançamento manual")
+   patient="—"; exam_type="—"; priority="—"
+   status=html_escape(x.kind or "—")
+   created=brasilia_stamp(x.created_at) if x.created_at else "Registro anterior"
   month_key=(x.date.year,x.date.month)
-  rows_by_month.setdefault(month_key,[]).append("<tr><td>"+x.date.strftime("%m/%Y")+"</td><td>"+(brasilia_stamp(x.created_at) if x.created_at else "Registro anterior")+"</td><td>"+str(html_escape(x.description or ""))+"</td><td>"+str(html_escape(x.kind or ""))+"</td><td>R$ "+format(x.amount,".2f")+"</td><td>"+action+"</td></tr>")
+  rows_by_month.setdefault(month_key,[]).append("<tr><td>"+protocol+"</td><td>"+patient+"</td><td>"+exam_type+"</td><td>"+priority+"</td><td><span class='badge'>"+status+"</span></td><td>"+created+"</td><td>R$ "+format(x.amount or 0,".2f")+"</td><td>"+action+"</td></tr>")
  rows="".join(
   "<details "+("open" if idx==0 else "")+" style='border:1px solid #dce8ec;border-radius:10px;margin:10px 0;overflow:hidden'>"
   +"<summary style='cursor:pointer;padding:14px;background:#eef5f7;font-weight:700'>"
   +month_names[key[1]-1]+" de "+str(key[0])+" — "+str(len(items))+" movimentação(ões)</summary>"
-  +"<div style='overflow-x:auto'><table><tr><th>Competência</th><th>Cadastrado em</th><th>Categoria / descrição</th><th>Tipo</th><th>Valor</th><th>Ação</th></tr>"
+  +"<div style='overflow-x:auto'><table><tr><th>Protocolo / lançamento</th><th>Paciente</th><th>Exame</th><th>Prioridade</th><th>Status</th><th>Criado em</th><th>Valor</th><th>Ação</th></tr>"
   +"".join(items)+"</table></div></details>"
   for idx,(key,items) in enumerate(sorted(rows_by_month.items(),reverse=True))
  )
