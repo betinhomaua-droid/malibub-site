@@ -10,7 +10,9 @@ class FinanceMovementExamDetailsTest(unittest.TestCase):
   self.assertIn('linked_exams={e.protocol:e for e in Exam.query.filter(Exam.protocol.in_(linked_protocols)).all()}',source)
   self.assertIn('Protocolo / lançamento</div><div>Paciente</div><div>Exame</div><div>Prioridade</div><div>Status</div><div>Criado em</div><div>Valor</div><div>Ação',source)
   self.assertIn('finance-movement-row',source)
-  self.assertIn('patient=html_escape(e.patient or "—")',source)
+  self.assertIn('protocol=str(html_escape(e.protocol or ""))',source)
+  self.assertIn('status=str(html_escape(e.status or "—"))',source)
+  self.assertIn('patient=str(html_escape(e.patient or "—"))',source)
   self.assertIn('if e.status=="Liberado" else',source)
   self.assertIn('patient="—"; exam_type="—"; priority="—"',source)
 
