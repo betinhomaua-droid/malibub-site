@@ -2157,18 +2157,18 @@ def finance():
   else:
    action="<form method='post' action='/finance/"+str(x.id)+"/excluir' style='margin:0'>"+csrf_field()+"<button type='submit'>Excluir</button></form>"
   if e:
-   protocol=html_escape(e.protocol or "")
-   patient=html_escape(e.patient or "—")
-   exam_type=html_escape(e.exam_type or "—")
-   priority=html_escape("Urgente" if (e.priority or "").upper()=="URG" else "Normal")
-   status=html_escape(e.status or "—")
+   protocol=str(html_escape(e.protocol or ""))
+   patient=str(html_escape(e.patient or "—"))
+   exam_type=str(html_escape(e.exam_type or "—"))
+   priority=str(html_escape("Urgente" if (e.priority or "").upper()=="URG" else "Normal"))
+   status=str(html_escape(e.status or "—"))
    created=brasilia_stamp(e.created_at) if e.created_at else "—"
    view=f'<a href="/result/{e.id}" target="_blank" rel="noopener">Resultado</a>' if e.status=="Liberado" else f'<a href="/report/{e.id}">Abrir exame</a>'
    action=view+" &nbsp; "+action
   else:
-   protocol=html_escape(x.description or "Lançamento manual")
+   protocol=str(html_escape(x.description or "Lançamento manual"))
    patient="—"; exam_type="—"; priority="—"
-   status=html_escape(x.kind or "—")
+   status=str(html_escape(x.kind or "—"))
    created=brasilia_stamp(x.created_at) if x.created_at else "Registro anterior"
   month_key=(x.date.year,x.date.month)
   rows_by_month.setdefault(month_key,[]).append("<div class='finance-movement-row' style='display:grid;grid-template-columns:110px minmax(150px,1.4fr) minmax(130px,1fr) 85px 115px 125px 90px minmax(230px,1.5fr);gap:10px;align-items:center;padding:10px;border-bottom:1px solid #e4edf1;font-size:13px'><div>"+protocol+"</div><div>"+patient+"</div><div>"+exam_type+"</div><div>"+priority+"</div><div><span class='badge'>"+status+"</span></div><div>"+created+"</div><div>R$ "+format(x.amount or 0,".2f")+"</div><div>"+action+"</div></div>")
