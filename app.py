@@ -323,6 +323,16 @@ class ExamFile(db.Model):
  id=db.Column(db.Integer,primary_key=True); exam_id=db.Column(db.Integer); name=db.Column(db.String(255)); stored=db.Column(db.String(255)); kind=db.Column(db.String(30),default="entrada"); uploaded_by=db.Column(db.String(100)); scan_status=db.Column(db.String(20),default="PENDENTE"); scan_detail=db.Column(db.String(255))
 class Finance(db.Model):
  id=db.Column(db.Integer,primary_key=True); date=db.Column(db.Date,default=datetime.utcnow().date); description=db.Column(db.String(200)); kind=db.Column(db.String(20)); amount=db.Column(db.Float,default=0); created_at=db.Column(db.DateTime,default=datetime.utcnow)
+class ExternalExam(db.Model):
+ id=db.Column(db.Integer,primary_key=True)
+ clinic_id=db.Column(db.Integer,index=True,nullable=False)
+ patient=db.Column(db.String(120),nullable=False)
+ exam_type=db.Column(db.String(100),nullable=False)
+ service_date=db.Column(db.Date,nullable=False)
+ competence=db.Column(db.Date,nullable=False,index=True)
+ finance_id=db.Column(db.Integer,db.ForeignKey("finance.id"),unique=True,nullable=False)
+ created_at=db.Column(db.DateTime,default=datetime.utcnow)
+
 class PricePreset(db.Model):
  id=db.Column(db.Integer,primary_key=True)
  name=db.Column(db.String(100),nullable=False)
@@ -2112,6 +2122,51 @@ def finance_apply_preset():
  flash("Tabela aplicada. Exames anteriores preservados.")
  return redirect(url_for("admin_clinic_prices",uid=clinic.id))
 
+@app.route("/finance/exames-externos",methods=["GET","POST"])
+def finance_external_exams():
+ if session.get("role")!="Radiologista": return redirect("/")
+ clinics=User.query.filter_by(role="Clinica",active=True).order_by(User.name).all()
+ if request.method=="POST":
+  try:
+   clinic_id=int(request.form.get("clinic_id",""))
+   clinic=next((u for u in clinics if u.id==clinic_id),None)
+   patient=request.form.get("patient","").strip()[:120]
+   exam_type=request.form.get("exam_type","").strip()[:100]
+   service_date=datetime.strptime(request.form.get("service_date",""),"%Y-%m-%d").date()
+   y,m=map(int,request.form.get("competence","").split("-"))
+   competence=date(y,m,1)
+   amount=round(float(request.form.get("amount","").replace(",",".")),2)
+   if not clinic or not patient or not exam_type or not (2000<=y<=2100) or amount<=0 or not math.isfinite(amount): raise ValueError
+  except (ValueError,TypeError,OverflowError):
+   flash("Confira clínica, paciente, tipo, data, competência e valor positivo."); return redirect("/finance/exames-externos")
+  # A receita e o exame externo são gravados na mesma transação.
+  revenue=Finance(date=competence,description="Exame externo",kind="Entrada",amount=amount,created_at=datetime.utcnow())
+  db.session.add(revenue)
+  db.session.flush()
+  db.session.add(ExternalExam(clinic_id=clinic.id,patient=patient,exam_type=exam_type,service_date=service_date,competence=competence,finance_id=revenue.id))
+  db.session.commit()
+  flash("Exame externo incluído no faturamento mensal da clínica.")
+  return redirect("/finance/exames-externos")
+ options="".join("<option value='"+str(u.id)+"'>"+str(html_escape(u.name or u.legal_name or str(u.id)))+"</option>" for u in clinics)
+ today=datetime.now(ZoneInfo("America/Sao_Paulo")).date()
+ recent=ExternalExam.query.order_by(ExternalExam.id.desc()).limit(50).all()
+ clinic_map={u.id:u for u in User.query.filter(User.id.in_({x.clinic_id for x in recent})).all()} if recent else {}
+ amounts={f.id:f.amount for f in Finance.query.filter(Finance.id.in_({x.finance_id for x in recent})).all()} if recent else {}
+ rows="".join("<tr><td>"+str(html_escape((clinic_map.get(x.clinic_id).name if clinic_map.get(x.clinic_id) else "—")))+"</td><td>"+str(html_escape(x.patient))+"</td><td>"+str(html_escape(x.exam_type))+"</td><td>"+x.service_date.strftime("%d/%m/%Y")+"</td><td>"+x.competence.strftime("%m/%Y")+"</td><td>R$ "+format(amounts.get(x.finance_id,0),".2f")+"</td><td><form method='post' action='/finance/exames-externos/"+str(x.id)+"/excluir' onsubmit=\\\"return confirm('Excluir este exame externo e sua receita?')\\\">"+csrf_field()+"<button type='submit'>Excluir</button></form></td></tr>" for x in recent)
+ body=f"""<h1>Exames externos</h1><p class="muted">Controle financeiro, sem laudos ou anexos. Cada lançamento entra automaticamente na competência da clínica.</p><div class="card"><h2>Novo exame externo</h2><form method="post">{csrf_field()}<div class="grid"><label>Clínica<select name="clinic_id" required><option value="">Selecione</option>{options}</select></label><label>Paciente<input name="patient" maxlength="120" required></label><label>Tipo de exame<input name="exam_type" maxlength="100" required></label><label>Data do serviço<input type="date" name="service_date" value="{today.isoformat()}" required></label><label>Competência<input type="month" name="competence" value="{today.strftime('%Y-%m')}" required></label><label>Valor (R$)<input type="number" name="amount" min="0.01" step="0.01" required></label></div><button class="gold" type="submit">Adicionar ao faturamento</button></form></div><div class="card"><h2>Últimos lançamentos externos</h2><div style="overflow-x:auto"><table><tr><th>Clínica</th><th>Paciente</th><th>Exame</th><th>Data</th><th>Competência</th><th>Valor</th><th>Ação</th></tr>{rows or '<tr><td colspan="7">Nenhum lançamento externo.</td></tr>'}</table></div></div><a class="btn" href="/finance">Voltar ao financeiro</a>"""
+ return page(body)
+
+@app.post("/finance/exames-externos/<int:external_id>/excluir")
+def finance_external_delete(external_id):
+ if session.get("role")!="Radiologista": return redirect("/")
+ external=ExternalExam.query.get_or_404(external_id)
+ revenue=db.session.get(Finance,external.finance_id)
+ db.session.delete(external)
+ if revenue: db.session.delete(revenue)
+ db.session.commit()
+ flash("Exame externo e receita correspondente excluídos.")
+ return redirect("/finance/exames-externos")
+
 @app.route("/finance",methods=["GET","POST"])
 def finance():
  if session.get("role")!="Radiologista": return redirect("/")
@@ -2173,6 +2228,9 @@ def finance():
  linked_exams={e.protocol:e for e in Exam.query.filter(Exam.protocol.in_(linked_protocols)).all()} if linked_protocols else {}
  linked_clinic_ids={e.clinic_id for e in linked_exams.values() if e.clinic_id}
  linked_clinics={u.id:u for u in User.query.filter(User.id.in_(linked_clinic_ids)).all()} if linked_clinic_ids else {}
+ external_by_finance={x.finance_id:x for x in ExternalExam.query.filter(ExternalExam.finance_id.in_([v.id for v in entries])).all()} if entries else {}
+ external_clinic_ids={x.clinic_id for x in external_by_finance.values()}
+ external_clinics={u.id:u for u in User.query.filter(User.id.in_(external_clinic_ids)).all()} if external_clinic_ids else {}
  rows_by_month={}
  month_names=("Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro")
  for x in entries:
@@ -2183,6 +2241,7 @@ def finance():
    action="<form method='post' action='/finance/"+str(x.id)+"/corrigir-valor' style='margin:0;display:flex;gap:6px;align-items:center;flex-wrap:wrap'>"+csrf_field()+"<input type='number' name='amount' min='0.01' step='0.01' value='"+format(x.amount or 0,'.2f')+"' required style='width:90px;margin:0'><button type='submit' class='gold' style='margin:0'>Corrigir valor</button></form>"
   else:
    action="<form method='post' action='/finance/"+str(x.id)+"/excluir' style='margin:0'>"+csrf_field()+"<button type='submit'>Excluir</button></form>"
+  external=external_by_finance.get(x.id)
   if e:
    protocol=str(html_escape(e.protocol or ""))
    clinic=linked_clinics.get(e.clinic_id)
@@ -2194,6 +2253,16 @@ def finance():
    created=brasilia_stamp(e.created_at) if e.created_at else "—"
    view=f'<a href="/result/{e.id}" target="_blank" rel="noopener">Resultado</a>' if e.status=="Liberado" else f'<a href="/report/{e.id}">Abrir exame</a>'
    action=view+" &nbsp; "+action
+  elif external:
+   protocol="Externo"
+   clinic=external_clinics.get(external.clinic_id)
+   clinic_name=str(html_escape((clinic.name or clinic.legal_name) if clinic else "—"))
+   patient=str(html_escape(external.patient))
+   exam_type=str(html_escape(external.exam_type))
+   priority="—"
+   status="Externo"
+   created=external.service_date.strftime("%d/%m/%Y")
+   action="<form method='post' action='/finance/exames-externos/"+str(external.id)+"/excluir' style='margin:0'>"+csrf_field()+"<button type='submit'>Excluir</button></form>"
   else:
    protocol=str(html_escape(x.description or "Lançamento manual"))
    clinic_name="—"; patient="—"; exam_type="—"; priority="—"
@@ -2209,7 +2278,7 @@ def finance():
   +"".join(items)+"</div></div></details>"
   for idx,(key,items) in enumerate(sorted(rows_by_month.items(),reverse=True))
  )
- body=f'''<h1>Financeiro MALIBUB</h1><p class="muted">Acompanhe receitas, custos da plataforma e saúde financeira.</p><p><a class="btn gold" href="/finance/tabelas">Tipos de exames e tabelas de preços</a></p>
+ body=f'''<h1>Financeiro MALIBUB</h1><p class="muted">Acompanhe receitas, custos da plataforma e saúde financeira.</p><p><a class="btn gold" href="/finance/exames-externos">Cadastrar exame externo</a> <a class="btn gold" href="/finance/tabelas">Tipos de exames e tabelas de preços</a></p>
  <form method="get" class="card"><label>Período mensal<input type="month" name="month" value="{html_escape(month)}"></label><button type="submit">Filtrar</button><a class="btn" href="/finance">Todo o período</a></form>
  <div class="cards"><div class="card">Entradas<b>R$ {ent:.2f}</b></div><div class="card">Saídas<b>R$ {sai:.2f}</b></div><div class="card">Saldo<b>R$ {saldo:.2f}</b></div><div class="card">Infraestrutura<b>R$ {infra:.2f}</b></div><div class="card">Custos fixos<b>R$ {fixed:.2f}</b></div><div class="card">Custos variáveis<b>R$ {variable:.2f}</b></div><div class="card">Margem<b>{margem:.1f}%</b></div><div class="card">Saúde financeira<b>{health}</b></div><div class="card">Laudos liberados<b>{released}</b></div><div class="card">Receita de laudos<b>R$ {report_revenue:.2f}</b></div><div class="card">Ticket médio<b>R$ {ticket:.2f}</b></div><div class="card">Ponto de equilíbrio<b>{break_even:.1f} laudos</b></div></div>
  <div class="card"><h2>Relatório de produção para cobrança</h2><p class="muted">Gere o demonstrativo mensal em PDF com quantidade de laudos e valores da clínica.</p><form method="get" action="/finance/relatorio-producao"><div class="grid"><label>Clínica<select name="clinic_id" required><option value="">Selecione</option>{clinic_options}</select></label><label>Período<input type="month" name="month" value="{html_escape(month)}" required></label></div><button class="gold" type="submit" name="preview" value="0">Baixar relatório PDF</button> <button type="submit" name="preview" value="1" formtarget="_blank">Visualizar relatório</button></form></div> <div class="card"><h2>Novo lançamento</h2><form method="post">{csrf_field()}<div class="grid"><label>Categoria<select name="category"><option>Laudos</option><option>Registro</option><option>Hospedagem</option><option>Armazenamento</option><option>Domínio</option><option>Infraestrutura</option><option>Marketing</option><option>Impostos</option><option>Outros</option></select></label><label>Classificação do custo<select name="cost_class"><option value="">Não se aplica</option><option>Fixo</option><option>Variável</option></select></label><label>Descrição<input name="description" placeholder="Ex.: renovação anual, mensalidade, consumo R2" required></label><label>Mês de competência<input type="month" name="competence" value="{datetime.now(ZoneInfo('America/Sao_Paulo')).strftime('%Y-%m')}" required><small class="muted">O lançamento entrará nos totais do mês escolhido, mesmo se cadastrado depois.</small></label><label>Tipo<select name="kind"><option>Entrada</option><option>Saída</option></select></label><label>Valor (R$)<input type="number" min="0" step="0.01" name="amount" required></label></div><button class="gold">Adicionar lançamento</button></form></div>
@@ -2233,6 +2302,8 @@ def finance_production_report():
   flash("Período inválido.")
   return redirect("/finance")
  exams=Exam.query.filter(Exam.clinic_id==clinic.id,Exam.status=="Liberado",Exam.released_at>=first,Exam.released_at<last).order_by(Exam.released_at).all()
+ externals=ExternalExam.query.filter(ExternalExam.clinic_id==clinic.id,ExternalExam.competence>=first.date(),ExternalExam.competence<last.date()).order_by(ExternalExam.service_date,ExternalExam.id).all()
+ external_finance={f.id:f for f in Finance.query.filter(Finance.id.in_([x.finance_id for x in externals])).all()} if externals else {}
  from reportlab.lib.pagesizes import A4
  from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
  from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
@@ -2249,19 +2320,24 @@ def finance_production_report():
    values[e.protocol]=item.amount or 0; billing_issues.append(f"{e.protocol}: valor zerado")
   else:
    values[e.protocol]=item.amount
- total=sum(v for v in values.values() if v is not None and v>0)
+ external_total=sum(external_finance[x.finance_id].amount for x in externals if x.finance_id in external_finance and external_finance[x.finance_id].amount>0)
+ total=sum(v for v in values.values() if v is not None and v>0)+external_total
  buf=io.BytesIO()
  doc=SimpleDocTemplate(buf,pagesize=A4,rightMargin=16*mm,leftMargin=16*mm,topMargin=18*mm,bottomMargin=18*mm)
  styles=getSampleStyleSheet()
  title=ParagraphStyle("malibub_title",parent=styles["Title"],fontName="Helvetica-Bold",fontSize=17,leading=21,alignment=TA_CENTER,textColor=colors.HexColor("#087b9b"))
- story=[Paragraph("MALIBUB IMAGINOLOGIA ODONTOLÓGICA",title),Paragraph("Relatório de Produção por Período",styles["Heading2"]),Spacer(1,5*mm),Paragraph(f"<b>Clínica:</b> {escape(clinic.name)}",styles["BodyText"]),Paragraph(f"<b>Período:</b> {first.strftime('%d/%m/%Y')} a {(last-timedelta(days=1)).strftime('%d/%m/%Y')}",styles["BodyText"]),Paragraph(f"<b>Quantidade de laudos:</b> {len(exams)}",styles["BodyText"]),Spacer(1,5*mm)]
+ story=[Paragraph("MALIBUB IMAGINOLOGIA ODONTOLÓGICA",title),Paragraph("Relatório de Produção por Período",styles["Heading2"]),Spacer(1,5*mm),Paragraph(f"<b>Clínica:</b> {escape(clinic.name)}",styles["BodyText"]),Paragraph(f"<b>Período:</b> {first.strftime('%d/%m/%Y')} a {(last-timedelta(days=1)).strftime('%d/%m/%Y')}",styles["BodyText"]),Paragraph(f"<b>Exames da plataforma:</b> {len(exams)} · <b>Exames externos:</b> {len(externals)}",styles["BodyText"]),Spacer(1,5*mm)]
  patient_style=ParagraphStyle("production_patient",parent=styles["BodyText"],fontName="Helvetica",fontSize=8,leading=10)
  exam_style=ParagraphStyle("production_exam",parent=patient_style)
- data=[["Data","Paciente","Protocolo","Exame","Valor"]]
+ data=[["Data","Paciente","Origem","Exame","Valor"]]
  for e in exams:
   value=values[e.protocol]
   value_text="PENDENTE" if value is None or value<=0 else f"R$ {value:.2f}"
-  data.append([(e.released_at or e.created_at).strftime("%d/%m/%Y"),Paragraph(escape(e.patient or "-"),patient_style),e.protocol,Paragraph(escape(e.exam_type or "-"),exam_style),value_text])
+  data.append([(e.released_at or e.created_at).strftime("%d/%m/%Y"),Paragraph(escape(e.patient or "-"),patient_style),"Plataforma",Paragraph(escape(e.exam_type or "-"),exam_style),value_text])
+ for x in externals:
+  item=external_finance.get(x.finance_id)
+  if not item or not item.amount or item.amount<=0: billing_issues.append(f"Externo #{x.id}: receita ausente ou zerada")
+  data.append([x.service_date.strftime("%d/%m/%Y"),Paragraph(escape(x.patient),patient_style),"Externo",Paragraph(escape(x.exam_type),exam_style),f"R$ {item.amount:.2f}" if item and item.amount and item.amount>0 else "PENDENTE"])
  data.append(["","","","TOTAL VÁLIDO",f"R$ {total:.2f}"])
  table=Table(data,colWidths=[24*mm,45*mm,38*mm,47*mm,24*mm],repeatRows=1)
  table.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,0),colors.HexColor("#087b9b")),("TEXTCOLOR",(0,0),(-1,0),colors.white),("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),("FONTNAME",(3,-1),(-1,-1),"Helvetica-Bold"),("GRID",(0,0),(-1,-1),0.4,colors.HexColor("#b8cbd2")),("VALIGN",(0,0),(-1,-1),"TOP"),("ALIGN",(-1,1),(-1,-1),"RIGHT"),("PADDING",(0,0),(-1,-1),6)]))
@@ -2301,6 +2377,8 @@ def finance_correct_value(fid):
 def finance_delete(fid):
  if session.get("role")!="Radiologista": return redirect("/")
  item=Finance.query.get_or_404(fid)
+ if ExternalExam.query.filter_by(finance_id=item.id).first():
+  flash("Exames externos devem ser excluídos pela área Exames externos."); return redirect("/finance")
  if item.kind=="Entrada" and (item.description or "").startswith("Laudo "):
   flash("Receitas automáticas de laudos não podem ser excluídas manualmente.")
   return redirect("/finance")
