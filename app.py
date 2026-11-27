@@ -267,6 +267,7 @@ def assets(filename):
  return send_from_directory(Path(app.root_path)/"assets", filename)
 
 class User(db.Model):
+ imaging_software=db.Column(db.String(160),nullable=True)
  legal_name=db.Column(db.String(180),nullable=True)
  cnpj=db.Column(db.String(18),nullable=True)
  phone=db.Column(db.String(25),nullable=True)
@@ -283,6 +284,7 @@ class User(db.Model):
 class ReportModel(db.Model):
  id=db.Column(db.Integer,primary_key=True); clinic_id=db.Column(db.Integer,index=True,nullable=False); name=db.Column(db.String(255)); stored=db.Column(db.String(255)); created_at=db.Column(db.DateTime,default=datetime.utcnow)
 class Exam(db.Model):
+ imaging_software=db.Column(db.String(40),nullable=True)
  id=db.Column(db.Integer,primary_key=True); protocol=db.Column(db.String(30),unique=True); patient=db.Column(db.String(120)); sex=db.Column(db.String(20)); birth=db.Column(db.String(20)); dentist=db.Column(db.String(120)); exam_date=db.Column(db.String(20)); exam_type=db.Column(db.String(100)); observation=db.Column(db.String(500)); anamnesis=db.Column(db.String(500)); priority=db.Column(db.String(20),default="NORMAL"); contracted_amount=db.Column(db.Float); status=db.Column(db.String(50),default="Enviado"); clinic_id=db.Column(db.Integer); due_at=db.Column(db.DateTime); report=db.Column(db.Text,default=""); report_html=db.Column(db.Text,default=""); revision_reason=db.Column(db.Text); revision_response=db.Column(db.Text); revision_requested_at=db.Column(db.DateTime); released_at=db.Column(db.DateTime); signed_by=db.Column(db.String(120)); signed_at=db.Column(db.DateTime); created_at=db.Column(db.DateTime,default=datetime.utcnow)
 def next_exam_protocol():
  # Sequencia anual global, protegida por lock transacional no PostgreSQL.
@@ -443,6 +445,8 @@ def init():
    db.session.execute(db.text("ALTER TABLE exam ADD COLUMN IF NOT EXISTS revision_response TEXT"))
    db.session.execute(db.text("ALTER TABLE finance ADD COLUMN IF NOT EXISTS created_at TIMESTAMP"))
    db.session.execute(db.text("ALTER TABLE exam ADD COLUMN IF NOT EXISTS revision_requested_at TIMESTAMP"))
+   db.session.execute(db.text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS imaging_software VARCHAR(160)'))
+   db.session.execute(db.text("ALTER TABLE exam ADD COLUMN IF NOT EXISTS imaging_software VARCHAR(40)"))
    db.session.execute(db.text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS legal_name VARCHAR(180)'))
    db.session.execute(db.text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS cnpj VARCHAR(18)'))
    db.session.execute(db.text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS phone VARCHAR(25)'))
@@ -462,6 +466,9 @@ def init():
  if db.engine.dialect.name=="sqlite":
   try:
    user_cols=[r[1] for r in db.session.execute(db.text("PRAGMA table_info('user')")).fetchall()]
+   if "imaging_software" not in user_cols: db.session.execute(db.text('ALTER TABLE "user" ADD COLUMN imaging_software VARCHAR(160)'))
+   exam_cols=[r[1] for r in db.session.execute(db.text("PRAGMA table_info('exam')")).fetchall()]
+   if "imaging_software" not in exam_cols: db.session.execute(db.text('ALTER TABLE exam ADD COLUMN imaging_software VARCHAR(40)'))
    if "legal_name" not in user_cols: db.session.execute(db.text('ALTER TABLE "user" ADD COLUMN legal_name VARCHAR(180)'))
    if "cnpj" not in user_cols: db.session.execute(db.text('ALTER TABLE "user" ADD COLUMN cnpj VARCHAR(18)'))
    if "phone" not in user_cols: db.session.execute(db.text('ALTER TABLE "user" ADD COLUMN phone VARCHAR(25)'))
@@ -571,10 +578,18 @@ def login():
 CLINIC_FIELDS=["legal_name","cnpj","phone","address","address_number","address_extra","district","city","state","postal_code","contact_name","billing_email"]
 CLINIC_LABELS=["Razão social","CNPJ","Telefone / WhatsApp","Endereço","Número","Complemento","Bairro","Cidade","UF","CEP","Responsável","E-mail de cobrança"]
 STANDARD_PRICES_2026=[("Panorâmica 2D",20.0),("Implante até 3 elementos",45.0),("Maxila ou mandíbula",50.0),("Dentes inclusos",50.0),("Endodontia",70.0),("ATM",70.0),("Periodontia",70.0),("Seio maxilar",70.0),("Patologia",70.0),("Tomografia de face",120.0),("Tomografia zigomática",120.0)]
+IMAGING_SOFTWARE=("Imaging Studio","I Dixel","Ondemand","Romexis")
+def clinic_software_list(u):
+ return [name for name in IMAGING_SOFTWARE if name in (u.imaging_software or "").split("|")]
+def validate_exam_software(value,clinic):
+ options=clinic_software_list(clinic)
+ return value in options and bool(value)
+
 def clinic_fields_form(u=None):
- return "".join("<label>"+str(html_escape(label))+"<input name='"+field+"' maxlength='180' value='"+str(html_escape(str(getattr(u,field,None) or "")))+"'></label>" for field,label in zip(CLINIC_FIELDS,CLINIC_LABELS))
+ return "<fieldset><legend>Softwares utilizados pela clínica</legend><p class=\'muted\'>Selecione um ou mais softwares.</p>"+"".join("<label style=\'display:inline-flex;gap:8px;align-items:center;margin-right:20px\'><input type=\'checkbox\' name=\'imaging_software\' value=\'"+str(html_escape(name))+"\' "+("checked" if u and name in clinic_software_list(u) else "")+">"+str(html_escape(name))+"</label>" for name in IMAGING_SOFTWARE)+"</fieldset>"+"".join("<label>"+str(html_escape(label))+"<input name='"+field+"' maxlength='180' value='"+str(html_escape(str(getattr(u,field,None) or "")))+"'></label>" for field,label in zip(CLINIC_FIELDS,CLINIC_LABELS))
 def clinic_fields_save(u):
  for field in CLINIC_FIELDS: setattr(u,field,request.form.get(field,"").strip()[:180] or None)
+ u.imaging_software="|".join(name for name in IMAGING_SOFTWARE if name in request.form.getlist("imaging_software")) or None
 def valid_clinic_cnpj(u):
  digits="".join(c for c in (u.cnpj or "") if c.isdigit())
  if not digits: return True
@@ -1086,10 +1101,13 @@ def direct_upload_finalize():
  price=ClinicPrice.query.filter_by(clinic_id=session["uid"],exam_type=exam_type,active=True).first()
  if not price: return {"error":"invalid_exam_type"},400
  if priority not in {"NORMAL","URG"}: return {"error":"invalid_priority"},400
+ clinic=db.session.get(User,session["uid"])
+ software=str(data.get("imaging_software","")).strip()
+ if not clinic or not validate_exam_software(software,clinic): return {"error":"invalid_imaging_software"},400
  try:
   verified=[verify_direct_upload_grant(item,"exam") for item in files]
   verified_requests=[verify_direct_upload_grant(item,"request") for item in request_files]
-  e=Exam(protocol=next_exam_protocol(),patient=patient,sex=str(data.get("sex","Não informado")).strip(),birth=str(data.get("birth",""))[:20],dentist=dentist,exam_date=str(data.get("exam_date",""))[:20],exam_type=exam_type,observation=str(data.get("observation","")).strip()[:500],priority=priority,contracted_amount=round(price.amount*(1.5 if priority=="URG" else 1.0),2),clinic_id=session["uid"],status="Aguardando laudo",due_at=(datetime.utcnow()+timedelta(hours=24) if priority=="URG" else add_business_days_utc(datetime.utcnow(),2)))
+  e=Exam(imaging_software=software,protocol=next_exam_protocol(),patient=patient,sex=str(data.get("sex","Não informado")).strip(),birth=str(data.get("birth",""))[:20],dentist=dentist,exam_date=str(data.get("exam_date",""))[:20],exam_type=exam_type,observation=str(data.get("observation","")).strip()[:500],priority=priority,contracted_amount=round(price.amount*(1.5 if priority=="URG" else 1.0),2),clinic_id=session["uid"],status="Aguardando laudo",due_at=(datetime.utcnow()+timedelta(hours=24) if priority=="URG" else add_business_days_utc(datetime.utcnow(),2)))
   db.session.add(e); db.session.flush()
   for key,name in verified: db.session.add(ExamFile(exam_id=e.id,name=name,stored=key,scan_status="NAO_VERIFICADO",scan_detail="Verificação antivírus opcional pela radiologista."))
   for request_key,request_name in verified_requests:
@@ -1141,6 +1159,10 @@ def new():
   sex=request.form.get("sex","Não informado").strip()
   exam_type=request.form.get("exam_type","").strip()[:80]
   priority=request.form.get("priority","NORMAL").strip().upper()
+  software=request.form.get("imaging_software","").strip()
+  clinic=db.session.get(User,session["uid"])
+  if not clinic or not validate_exam_software(software,clinic):
+   flash("Selecione um software cadastrado para esta clínica."); return redirect("/new")
   if not patient or not dentist or not exam_type:
    flash("Preencha os dados obrigatórios do exame.")
    return redirect("/new")
@@ -1151,7 +1173,7 @@ def new():
   if priority not in {"NORMAL","URG"}:
    flash("Selecione um prazo válido.")
    return redirect("/new")
-  e=Exam(protocol=next_exam_protocol(),patient=patient,sex=sex,birth=request.form.get("birth",""),dentist=dentist,exam_date=request.form.get("exam_date",""),exam_type=exam_type,observation=request.form.get("observation","").strip()[:500],anamnesis=request.form.get("anamnesis","").strip()[:500],priority=priority,contracted_amount=round(price.amount*(1.5 if priority=="URG" else 1.0),2),clinic_id=session["uid"],status="Aguardando laudo",due_at=(datetime.utcnow()+timedelta(hours=24) if priority=="URG" else add_business_days_utc(datetime.utcnow(),2)))
+  e=Exam(imaging_software=software,protocol=next_exam_protocol(),patient=patient,sex=sex,birth=request.form.get("birth",""),dentist=dentist,exam_date=request.form.get("exam_date",""),exam_type=exam_type,observation=request.form.get("observation","").strip()[:500],anamnesis=request.form.get("anamnesis","").strip()[:500],priority=priority,contracted_amount=round(price.amount*(1.5 if priority=="URG" else 1.0),2),clinic_id=session["uid"],status="Aguardando laudo",due_at=(datetime.utcnow()+timedelta(hours=24) if priority=="URG" else add_business_days_utc(datetime.utcnow(),2)))
   db.session.add(e); db.session.flush()
   uploaded=[]
   try:
@@ -1177,12 +1199,15 @@ def new():
    flash("Não foi possível concluir o envio. Nenhum exame incompleto foi criado; tente novamente.")
    return redirect("/new")
   return redirect("/dashboard")
+ clinic=db.session.get(User,session["uid"])
+ software_options=clinic_software_list(clinic) if clinic else []
+ software_select="<label>Software utilizado neste exame<select name=\'imaging_software\' required>"+("<option value=\'\' disabled selected>Selecione o software</option>" if len(software_options)>1 else "")+"".join("<option value=\'"+str(html_escape(name))+"\'>"+str(html_escape(name))+"</option>" for name in software_options)+"</select></label>" if software_options else "<p class=\'notice\'>Nenhum software configurado para esta clínica. Solicite à MALIBUB que atualize o cadastro antes de enviar exames.</p>"
  clinic_exam_types=ClinicPrice.query.filter_by(clinic_id=session["uid"],active=True).order_by(ClinicPrice.exam_type.asc()).all()
  exam_type_options="".join(f"<option value='{html_escape(x.exam_type)}'>{html_escape(x.exam_type)}</option>" for x in clinic_exam_types)
  if not exam_type_options:
   exam_type_options="<option value='' disabled selected>Nenhum exame cadastrado para esta clínica</option>"
  turnstile_widget=(f'<div class="cf-turnstile" data-sitekey="{html_escape(TURNSTILE_SITE_KEY)}" data-theme="light"></div><script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>' if TURNSTILE_SITE_KEY else "")
- body=f'''<h1>Novo Exame</h1><div class="card"><form id="exam-form" method="post" enctype="multipart/form-data">{csrf_field()}<div class="grid"><label>Nome do paciente<input name="patient" required></label><label>Sexo<select name="sex"><option>Feminino</option><option>Masculino</option><option>Não informado</option></select></label><label>Data de nascimento<input type="date" name="birth" required></label><label>Dentista solicitante<input name="dentist" required></label><label>Data do exame<input type="date" name="exam_date" required></label><div class="grid"><label>Tipo de exame<select name="exam_type" required>{exam_type_options}</select></label><label>Prazo<select name="priority" required><option value="NORMAL">Normal — até 2 dias úteis</option><option value="URG">URG — até 24h (+50% do valor do exame)</option></select></label></div></div><label>Motivo do exame <span class="muted">(Implante, exodontia, avaliação de ATM, maxila/mandíbula etc. — pode aparecer no cabeçalho do laudo)</span><textarea name="observation" maxlength="500"></textarea></label><label>Observações / Anamnese <span class="muted">(Dor, trauma, fratura, tratamento de canal anterior etc. — informação interna, não aparece no PDF do laudo)</span><textarea name="anamnesis" maxlength="500"></textarea></label>
+ body=f'''<h1>Novo Exame</h1><div class="card"><form id="exam-form" method="post" enctype="multipart/form-data">{csrf_field()}<div class="grid"><label>Nome do paciente<input name="patient" required></label><label>Sexo<select name="sex"><option>Feminino</option><option>Masculino</option><option>Não informado</option></select></label><label>Data de nascimento<input type="date" name="birth" required></label><label>Dentista solicitante<input name="dentist" required></label><label>Data do exame<input type="date" name="exam_date" required></label><div class="grid"><label>Tipo de exame<select name="exam_type" required>{exam_type_options}</select></label>{software_select}<label>Prazo<select name="priority" required><option value="NORMAL">Normal — até 2 dias úteis</option><option value="URG">URG — até 24h (+50% do valor do exame)</option></select></label></div></div><label>Motivo do exame <span class="muted">(Implante, exodontia, avaliação de ATM, maxila/mandíbula etc. — pode aparecer no cabeçalho do laudo)</span><textarea name="observation" maxlength="500"></textarea></label><label>Observações / Anamnese <span class="muted">(Dor, trauma, fratura, tratamento de canal anterior etc. — informação interna, não aparece no PDF do laudo)</span><textarea name="anamnesis" maxlength="500"></textarea></label>
 <div class="card" style="margin-top:18px"><h3>Requisição / pedido do dentista <span style="color:#b42318">*</span></h3><p class="muted">Obrigatório para enviar o exame. Se o pedido tiver mais de uma página, selecione todos os arquivos. Formatos: PDF, JPG ou PNG.</p><input id="dentist-request" type="file" name="dentist_request" multiple accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" style="display:none"><div style="display:flex;gap:10px;flex-wrap:wrap"><button type="button" class="blue" id="pick-request">Selecionar arquivos</button><button type="button" class="blue" id="pick-request-more">Adicionar mais arquivos</button></div><div id="request-status" class="notice" style="display:none;margin-top:10px"></div><div id="request-list" style="margin-top:10px"></div></div>
 <div class="card" style="margin-top:18px"><h3>Arquivos do exame</h3><p class="muted">Adicione imagens, DICOM, PDF, ZIP ou RAR. Você pode combinar vários arquivos no mesmo exame.</p>
 <input id="exam-files" type="file" multiple accept=".jpg,.jpeg,.png,.pdf,.dcm,.zip,.rar" style="display:none">
@@ -1228,7 +1253,7 @@ def new():
     const a=await fetch("/new/direct-upload-url",{{method:"POST",headers:{{"Content-Type":"application/json","X-CSRF-Token":csrf}},body:JSON.stringify({{name:file.name,content_type:file.type||"application/octet-stream",kind:"exam",turnstile_proof:humanProof}})}});if(!a.ok)throw new Error("auth");const s=await a.json();
     const p=await fetch(s.url,{{method:"PUT",headers:{{"Content-Type":s.content_type}},body:file}});if(!p.ok)throw new Error("put");uploaded.push({{key:s.key,name:file.name,grant:s.grant}});
    }}
-   box.textContent="Finalizando envio...";const fd=new FormData(form),payload={{files:uploaded,request_files:requestFiles,turnstile_proof:humanProof}};["patient","sex","birth","dentist","exam_date","exam_type","priority","observation"].forEach(k=>payload[k]=fd.get(k)||"");
+   box.textContent="Finalizando envio...";const fd=new FormData(form),payload={{files:uploaded,request_files:requestFiles,turnstile_proof:humanProof}};["patient","sex","birth","dentist","exam_date","exam_type","imaging_software","priority","observation"].forEach(k=>payload[k]=fd.get(k)||"");
    const d=await fetch("/new/direct-finalize",{{method:"POST",headers:{{"Content-Type":"application/json","X-CSRF-Token":csrf}},body:JSON.stringify(payload)}});if(!d.ok)throw new Error("finalize");const r=await d.json();location.href=r.redirect||"/dashboard";
   }}catch(e){{box.textContent="O envio direto não pôde ser concluído. Tente novamente.";btn.disabled=false;}}
  }});
