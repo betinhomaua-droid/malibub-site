@@ -3,10 +3,10 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from markupsafe import escape as html_escape
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
 from collections import defaultdict, deque
 from zoneinfo import ZoneInfo
-import time
+import time, math
 from pathlib import Path
 import os, uuid, io, secrets, zipfile, base64
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
@@ -2152,7 +2152,7 @@ def finance_external_exams():
  recent=ExternalExam.query.order_by(ExternalExam.id.desc()).limit(50).all()
  clinic_map={u.id:u for u in User.query.filter(User.id.in_({x.clinic_id for x in recent})).all()} if recent else {}
  amounts={f.id:f.amount for f in Finance.query.filter(Finance.id.in_({x.finance_id for x in recent})).all()} if recent else {}
- rows="".join("<tr><td>"+str(html_escape((clinic_map.get(x.clinic_id).name if clinic_map.get(x.clinic_id) else "—")))+"</td><td>"+str(html_escape(x.patient))+"</td><td>"+str(html_escape(x.exam_type))+"</td><td>"+x.service_date.strftime("%d/%m/%Y")+"</td><td>"+x.competence.strftime("%m/%Y")+"</td><td>R$ "+format(amounts.get(x.finance_id,0),".2f")+"</td><td><form method='post' action='/finance/exames-externos/"+str(x.id)+"/excluir' onsubmit=\\\"return confirm('Excluir este exame externo e sua receita?')\\\">"+csrf_field()+"<button type='submit'>Excluir</button></form></td></tr>" for x in recent)
+ rows="".join("<tr><td>"+str(html_escape((clinic_map.get(x.clinic_id).name if clinic_map.get(x.clinic_id) else "—")))+"</td><td>"+str(html_escape(x.patient))+"</td><td>"+str(html_escape(x.exam_type))+"</td><td>"+x.service_date.strftime("%d/%m/%Y")+"</td><td>"+x.competence.strftime("%m/%Y")+"</td><td>R$ "+format(amounts.get(x.finance_id,0),".2f")+"</td><td><form method='post' action='/finance/exames-externos/"+str(x.id)+"/excluir'>"+csrf_field()+"<button type='submit'>Excluir</button></form></td></tr>" for x in recent)
  body=f"""<h1>Exames externos</h1><p class="muted">Controle financeiro, sem laudos ou anexos. Cada lançamento entra automaticamente na competência da clínica.</p><div class="card"><h2>Novo exame externo</h2><form method="post">{csrf_field()}<div class="grid"><label>Clínica<select name="clinic_id" required><option value="">Selecione</option>{options}</select></label><label>Paciente<input name="patient" maxlength="120" required></label><label>Tipo de exame<input name="exam_type" maxlength="100" required></label><label>Data do serviço<input type="date" name="service_date" value="{today.isoformat()}" required></label><label>Competência<input type="month" name="competence" value="{today.strftime('%Y-%m')}" required></label><label>Valor (R$)<input type="number" name="amount" min="0.01" step="0.01" required></label></div><button class="gold" type="submit">Adicionar ao faturamento</button></form></div><div class="card"><h2>Últimos lançamentos externos</h2><div style="overflow-x:auto"><table><tr><th>Clínica</th><th>Paciente</th><th>Exame</th><th>Data</th><th>Competência</th><th>Valor</th><th>Ação</th></tr>{rows or '<tr><td colspan="7">Nenhum lançamento externo.</td></tr>'}</table></div></div><a class="btn" href="/finance">Voltar ao financeiro</a>"""
  return page(body)
 
