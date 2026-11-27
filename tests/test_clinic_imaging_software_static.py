@@ -8,7 +8,7 @@ class ClinicImagingSoftwareTests(unittest.TestCase):
   ast.parse(source)
   self.assertIn('IMAGING_SOFTWARE=("Imaging Studio","I Dixel","Ondemand","Romexis")',source)
   self.assertIn('request.form.getlist("imaging_software")',source)
-  self.assertIn('name=\\\'imaging_software\\\' required',source)
+  self.assertIn('software_select=',source)
   self.assertIn('validate_exam_software(software,clinic)',source)
   self.assertIn('e=Exam(imaging_software=software,protocol=',source)
   self.assertIn('"exam_type","imaging_software","priority"',source)
